@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp
+  xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+  xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+  xsi:type="TaskPaneApp">
+
+  <Id>a1b2c3d4-e5f6-7890-abcd-ef1234567890</Id>
+  <Version>1.0.0.0</Version>
+  <ProviderName>Your Company</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+
+  <DisplayName DefaultValue="Slide Cleanup" />
+  <Description DefaultValue="AI-powered slide formatter — syncs your slide to the master theme in one click." />
+
+  <Hosts>
+    <Host Name="Presentation" />
+  </Hosts>
+
+  <DefaultSettings>
+    <!-- !! REPLACE THIS URL with your Vercel deployment URL !! -->
+    <SourceLocation DefaultValue="https://YOUR-APP.vercel.app" />
+  </DefaultSettings>
+
+  <Permissions>ReadWriteDocument</Permissions>
+
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Hosts>
+      <Host xsi:type="Presentation">
+        <DesktopFormFactor>
+
+          <GetStarted>
+            <Title resid="GetStarted.Title" />
+            <Description resid="GetStarted.Description" />
+            <LearnMoreUrl resid="GetStarted.LearnMoreUrl" />
+          </GetStarted>
+
+          <FunctionFile resid="Commands.Url" />
+
+          <ExtensionPoint xsi:type="PrimaryCommandSurface">
+            <OfficeTab id="TabHome">
+              <Group id="CommandsGroup">
+                <Label resid="CommandsGroup.Label" />
+                <Icon>
+                  <bt:Image size="16" resid="Icon.16x16" />
+                  <bt:Image size="32" resid="Icon.32x32" />
+                  <bt:Image size="80" resid="Icon.80x80" />
+                </Icon>
+                <Control xsi:type="Button" id="TaskpaneButton">
+                  <Label resid="TaskpaneButton.Label" />
+                  <Supertip>
+                    <Title resid="TaskpaneButton.Label" />
+                    <Description resid="TaskpaneButton.Tooltip" />
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16x16" />
+                    <bt:Image size="32" resid="Icon.32x32" />
+                    <bt:Image size="80" resid="Icon.80x80" />
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>ButtonId1</TaskpaneId>
+                    <SourceLocation resid="Taskpane.Url" />
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+
+          <ExtensionPoint xsi:type="SlideSurface">
+            <OfficeMenu id="ContextMenuCell">
+              <Control xsi:type="Button" id="ContextMenuButton">
+                <Label resid="TaskpaneButton.Label" />
+                <Supertip>
+                  <Title resid="TaskpaneButton.Label" />
+                  <Description resid="TaskpaneButton.Tooltip" />
+                </Supertip>
+                <Icon>
+                  <bt:Image size="16" resid="Icon.16x16" />
+                  <bt:Image size="32" resid="Icon.32x32" />
+                  <bt:Image size="80" resid="Icon.80x80" />
+                </Icon>
+                <Action xsi:type="ShowTaskpane">
+                  <TaskpaneId>ButtonId1</TaskpaneId>
+                  <SourceLocation resid="Taskpane.Url" />
+                </Action>
+              </Control>
+            </OfficeMenu>
+          </ExtensionPoint>
+
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+
+    <Resources>
+      <bt:Images>
+        <!-- Using simple placeholder icons — replace with your own 16/32/80px PNGs hosted on Vercel -->
+        <bt:Image id="Icon.16x16" DefaultValue="https://YOUR-APP.vercel.app/icon-16.png" />
+        <bt:Image id="Icon.32x32" DefaultValue="https://YOUR-APP.vercel.app/icon-32.png" />
+        <bt:Image id="Icon.80x80" DefaultValue="https://YOUR-APP.vercel.app/icon-80.png" />
+      </bt:Images>
+      <bt:Urls>
+        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://YOUR-APP.vercel.app" />
+        <bt:Url id="Commands.Url" DefaultValue="https://YOUR-APP.vercel.app" />
+        <bt:Url id="Taskpane.Url" DefaultValue="https://YOUR-APP.vercel.app" />
+      </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="GetStarted.Title" DefaultValue="Slide Cleanup is ready" />
+        <bt:String id="CommandsGroup.Label" DefaultValue="AI Tools" />
+        <bt:String id="TaskpaneButton.Label" DefaultValue="Cleanup Slide" />
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="GetStarted.Description" DefaultValue="Select a slide and click Cleanup Slide to reformat it to your master theme." />
+        <bt:String id="TaskpaneButton.Tooltip" DefaultValue="AI-powered slide cleanup — syncs fonts, colours and layout to your master theme." />
+      </bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>

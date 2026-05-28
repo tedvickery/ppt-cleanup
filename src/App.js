@@ -1,0 +1,1102 @@
+import { useState, useCallback } from "react";
+import JSZip from "jszip";
+
+const STORAGE_KEY = "ppt_cleanup_api_key";
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   XML READING — get the raw .pptx bytes from Office, unzip, parse XML
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function getFileBytes() {
+  return new Promise((resolve, reject) => {
+    Office.context.document.getFileAsync(
+      Office.FileType.Compressed,
+      { sliceSize: 65536 },
+      (result) => {
+        if (result.status === Office.AsyncResultStatus.Failed)
+          return reject(new Error(result.error.message));
+
+        const file = result.value;
+        const sliceCount = file.sliceCount;
+        const slices = [];
+
+        function getSlice(index) {
+          file.getSliceAsync(index, (sliceResult) => {
+            if (sliceResult.status === Office.AsyncResultStatus.Failed) {
+              file.closeAsync();
+              return reject(new Error(sliceResult.error.message));
+            }
+            slices.push(sliceResult.value.data);
+            if (index < sliceCount - 1) {
+              getSlice(index + 1);
+            } else {
+              file.closeAsync();
+              // Combine all slices into one Uint8Array
+              const total = slices.reduce((n, s) => n + s.byteLength, 0);
+              const combined = new Uint8Array(total);
+              let offset = 0;
+              for (const slice of slices) {
+                combined.set(new Uint8Array(slice), offset);
+                offset += slice.byteLength;
+              }
+              resolve(combined);
+            }
+          });
+        }
+        getSlice(0);
+      }
+    );
+  });
+}
+
+function parseXml(xmlString) {
+  return new DOMParser().parseFromString(xmlString, "application/xml");
+}
+
+// Resolve a theme colour reference (e.g. "dk1", "lt1", "accent1") to hex
+function resolveThemeColor(ref, themeColors) {
+  const map = {
+    dk1: "dark1", dk2: "dark2",
+    lt1: "light1", lt2: "light2",
+    accent1: "accent1", accent2: "accent2",
+    accent3: "accent3", accent4: "accent4",
+    accent5: "accent5", accent6: "accent6",
+    hlink: "hyperlink", folHlink: "followedHyperlink",
+  };
+  return themeColors[map[ref] || ref] || null;
+}
+
+// Parse <a:srgbClr val="RRGGBB"> or <a:sysClr> or <a:schemeClr> into hex
+function extractColor(el, themeColors) {
+  if (!el) return null;
+  const srgb = el.querySelector("srgbClr");
+  if (srgb) return "#" + srgb.getAttribute("val");
+  const sys = el.querySelector("sysClr");
+  if (sys) return "#" + (sys.getAttribute("lastClr") || "000000");
+  const scheme = el.querySelector("schemeClr");
+  if (scheme) return resolveThemeColor(scheme.getAttribute("val"), themeColors);
+  return null;
+}
+
+// Extract font size from <a:sz val="2400"> (hundredths of a point)
+function extractFontSize(el) {
+  if (!el) return null;
+  const sz = el.querySelector("sz");
+  if (sz) return parseInt(sz.getAttribute("val"), 10) / 100;
+  return null;
+}
+
+// Extract font name from <a:latin typeface="Calibri"> or <a:ea> / <a:cs>
+function extractFontName(el) {
+  if (!el) return null;
+  const latin = el.querySelector("latin");
+  if (latin) {
+    const tf = latin.getAttribute("typeface");
+    // +mj-lt = major (heading) font, +mn-lt = minor (body) font — resolved later
+    if (tf && !tf.startsWith("+")) return tf;
+  }
+  return null;
+}
+
+function isBold(el) {
+  if (!el) return null;
+  const rPr = el.querySelector("rPr");
+  if (!rPr) return null;
+  const b = rPr.getAttribute("b");
+  return b === "1" || b === "true" ? true : b === "0" || b === "false" ? false : null;
+}
+
+// pt to inches
+function emuToInches(emu) {
+  return parseFloat((parseInt(emu, 10) / 914400).toFixed(3));
+}
+
+/* ── Parse theme1.xml ───────────────────────────────────────────────────── */
+
+function parseThemeXml(xml) {
+  const doc = parseXml(xml);
+
+  // Colour scheme
+  const colors = {};
+  const colorMap = {
+    dk1: "dark1", dk2: "dark2", lt1: "light1", lt2: "light2",
+    accent1: "accent1", accent2: "accent2", accent3: "accent3",
+    accent4: "accent4", accent5: "accent5", accent6: "accent6",
+  };
+  for (const [tag, name] of Object.entries(colorMap)) {
+    // Try namespace-aware and plain
+    const el = doc.querySelector(`${tag}, [*|tag="${tag}"]`) ||
+               doc.getElementsByTagNameNS("*", tag)[0];
+    if (el) {
+      const srgb = el.querySelector("srgbClr") ||
+                   el.getElementsByTagNameNS("*", "srgbClr")[0];
+      const sys  = el.querySelector("sysClr") ||
+                   el.getElementsByTagNameNS("*", "sysClr")[0];
+      if (srgb) colors[name] = "#" + srgb.getAttribute("val");
+      else if (sys) colors[name] = "#" + (sys.getAttribute("lastClr") || "000000");
+    }
+  }
+
+  // Font scheme
+  const majorEl = doc.getElementsByTagNameNS("*", "majorFont")[0];
+  const minorEl = doc.getElementsByTagNameNS("*", "minorFont")[0];
+  const majorLatin = majorEl?.getElementsByTagNameNS("*", "latin")[0];
+  const minorLatin = minorEl?.getElementsByTagNameNS("*", "latin")[0];
+
+  return {
+    colors,
+    fonts: {
+      heading: majorLatin?.getAttribute("typeface") || null,
+      body: minorLatin?.getAttribute("typeface") || null,
+    },
+  };
+}
+
+/* ── Parse slideMaster1.xml ─────────────────────────────────────────────── */
+
+function parseMasterXml(xml, theme) {
+  const doc = parseXml(xml);
+  const placeholders = [];
+
+  // sp = shape elements
+  const shapes = doc.getElementsByTagNameNS("*", "sp");
+  for (const sp of shapes) {
+    // ph = placeholder element
+    const ph = sp.getElementsByTagNameNS("*", "ph")[0];
+    const phType = ph?.getAttribute("type") || "body";
+    const phIdx  = ph?.getAttribute("idx") || "0";
+
+    // Position & size from spPr/xfrm
+    const xfrm = sp.getElementsByTagNameNS("*", "xfrm")[0];
+    const off  = xfrm?.getElementsByTagNameNS("*", "off")[0];
+    const ext  = xfrm?.getElementsByTagNameNS("*", "ext")[0];
+
+    const position = off && ext ? {
+      left:   emuToInches(off.getAttribute("x")),
+      top:    emuToInches(off.getAttribute("y")),
+      width:  emuToInches(ext.getAttribute("cx")),
+      height: emuToInches(ext.getAttribute("cy")),
+    } : null;
+
+    // Font from txBody > lstStyle > lvl1pPr / defRPr
+    // or directly on the paragraph run
+    const txBody    = sp.getElementsByTagNameNS("*", "txBody")[0];
+    const lstStyle  = txBody?.getElementsByTagNameNS("*", "lstStyle")[0];
+    const lvl1pPr   = lstStyle?.getElementsByTagNameNS("*", "lvl1pPr")[0];
+    const defRPr    = lvl1pPr?.getElementsByTagNameNS("*", "defRPr")[0];
+
+    // Also check direct paragraph runs
+    const firstPara = txBody?.getElementsByTagNameNS("*", "p")[0];
+    const pPr       = firstPara?.getElementsByTagNameNS("*", "pPr")[0];
+    const firstRPr  = firstPara?.getElementsByTagNameNS("*", "r")[0]
+                        ?.getElementsByTagNameNS("*", "rPr")[0];
+
+    const rPr = defRPr || firstRPr;
+
+    // Font name — check rPr first, then fall back to theme fonts
+    let fontName = null;
+    if (rPr) {
+      const latin = rPr.getElementsByTagNameNS("*", "latin")[0];
+      const tf = latin?.getAttribute("typeface");
+      if (tf && tf.startsWith("+mj")) fontName = theme.fonts.heading;
+      else if (tf && tf.startsWith("+mn")) fontName = theme.fonts.body;
+      else if (tf) fontName = tf;
+    }
+    // Default by placeholder type
+    if (!fontName) {
+      fontName = (phType === "title" || phType === "ctrTitle")
+        ? theme.fonts.heading
+        : theme.fonts.body;
+    }
+
+    // Font size
+    let fontSize = null;
+    if (rPr) fontSize = extractFontSize({ querySelector: (s) => rPr.getElementsByTagNameNS("*", s.replace("a:", ""))[0] });
+    if (!fontSize && defRPr) {
+      const sz = defRPr.getAttribute("sz");
+      if (sz) fontSize = parseInt(sz, 10) / 100;
+    }
+    if (!fontSize) fontSize = (phType === "title" || phType === "ctrTitle") ? 36 : 18;
+
+    // Colour
+    let color = null;
+    if (rPr) {
+      const solidFill = rPr.getElementsByTagNameNS("*", "solidFill")[0];
+      if (solidFill) {
+        const srgb   = solidFill.getElementsByTagNameNS("*", "srgbClr")[0];
+        const scheme = solidFill.getElementsByTagNameNS("*", "schemeClr")[0];
+        const sys    = solidFill.getElementsByTagNameNS("*", "sysClr")[0];
+        if (srgb)   color = "#" + srgb.getAttribute("val");
+        else if (sys) color = "#" + (sys.getAttribute("lastClr") || "000000");
+        else if (scheme) color = resolveThemeColor(scheme.getAttribute("val"), theme.colors);
+      }
+    }
+    if (!color) {
+      color = (phType === "title" || phType === "ctrTitle")
+        ? (theme.colors.dark1 || "#000000")
+        : (theme.colors.dark2 || theme.colors.dark1 || "#000000");
+    }
+
+    // Bold
+    let bold = null;
+    if (rPr) {
+      const b = rPr.getAttribute("b");
+      bold = b === "1" || b === "true";
+    }
+    if (bold === null) bold = (phType === "title" || phType === "ctrTitle");
+
+    // Alignment
+    let alignment = "left";
+    const algn = pPr?.getAttribute("algn") || lvl1pPr?.getAttribute("algn");
+    if (algn === "ctr") alignment = "center";
+    else if (algn === "r") alignment = "right";
+    else if (algn === "just") alignment = "justify";
+
+    placeholders.push({
+      type: phType,
+      idx: phIdx,
+      font: { name: fontName, size: fontSize, color, bold },
+      alignment,
+      position,
+    });
+  }
+
+  return placeholders;
+}
+
+/* ── Parse slide XML for current slide shapes ───────────────────────────── */
+
+function parseSlideXml(xml, theme, masterPlaceholders) {
+  const doc = parseXml(xml);
+  const shapes = [];
+
+  const spEls = doc.getElementsByTagNameNS("*", "sp");
+  for (const sp of spEls) {
+    const nvSpPr = sp.getElementsByTagNameNS("*", "nvSpPr")[0];
+    const cNvPr  = nvSpPr?.getElementsByTagNameNS("*", "cNvPr")[0];
+    const ph     = sp.getElementsByTagNameNS("*", "ph")[0];
+
+    const id   = cNvPr?.getAttribute("id") || "";
+    const name = cNvPr?.getAttribute("name") || "";
+    const phType = ph?.getAttribute("type") || "body";
+    const phIdx  = ph?.getAttribute("idx") || "0";
+
+    // Position
+    const xfrm = sp.getElementsByTagNameNS("*", "xfrm")[0];
+    const off  = xfrm?.getElementsByTagNameNS("*", "off")[0];
+    const ext  = xfrm?.getElementsByTagNameNS("*", "ext")[0];
+    const position = off && ext ? {
+      left:   emuToInches(off.getAttribute("x")),
+      top:    emuToInches(off.getAttribute("y")),
+      width:  emuToInches(ext.getAttribute("cx")),
+      height: emuToInches(ext.getAttribute("cy")),
+    } : null;
+
+    // Text content
+    const txBody = sp.getElementsByTagNameNS("*", "txBody")[0];
+    if (!txBody) continue;
+
+    // Collect all text
+    const runs = txBody.getElementsByTagNameNS("*", "r");
+    const textContent = Array.from(runs).map(r => {
+      const t = r.getElementsByTagNameNS("*", "t")[0];
+      return t?.textContent || "";
+    }).join("");
+
+    if (!textContent.trim() && runs.length === 0) continue;
+
+    // Get font from first run's rPr
+    const firstRun = txBody.getElementsByTagNameNS("*", "r")[0];
+    const rPr = firstRun?.getElementsByTagNameNS("*", "rPr")[0];
+
+    let fontName = null, fontSize = null, color = null, bold = null;
+
+    if (rPr) {
+      // Font name
+      const latin = rPr.getElementsByTagNameNS("*", "latin")[0];
+      const tf = latin?.getAttribute("typeface");
+      if (tf && tf.startsWith("+mj")) fontName = theme.fonts.heading;
+      else if (tf && tf.startsWith("+mn")) fontName = theme.fonts.body;
+      else if (tf) fontName = tf;
+
+      // Size
+      const sz = rPr.getAttribute("sz");
+      if (sz) fontSize = parseInt(sz, 10) / 100;
+
+      // Colour
+      const solidFill = rPr.getElementsByTagNameNS("*", "solidFill")[0];
+      if (solidFill) {
+        const srgb   = solidFill.getElementsByTagNameNS("*", "srgbClr")[0];
+        const scheme = solidFill.getElementsByTagNameNS("*", "schemeClr")[0];
+        const sys    = solidFill.getElementsByTagNameNS("*", "sysClr")[0];
+        if (srgb)    color = "#" + srgb.getAttribute("val");
+        else if (sys) color = "#" + (sys.getAttribute("lastClr") || "000000");
+        else if (scheme) color = resolveThemeColor(scheme.getAttribute("val"), theme.colors);
+      }
+
+      // Bold
+      const b = rPr.getAttribute("b");
+      bold = b === "1" || b === "true" ? true : b === "0" || b === "false" ? false : null;
+    }
+
+    // Paragraph alignment
+    const firstPara = txBody.getElementsByTagNameNS("*", "p")[0];
+    const pPr = firstPara?.getElementsByTagNameNS("*", "pPr")[0];
+    let alignment = "left";
+    const algn = pPr?.getAttribute("algn");
+    if (algn === "ctr") alignment = "center";
+    else if (algn === "r") alignment = "right";
+
+    // Find matching master placeholder for inherited values
+    const masterPh = masterPlaceholders.find(
+      (p) => p.type === phType || (phType === "body" && p.idx === phIdx)
+    ) || masterPlaceholders.find((p) => p.type === "body");
+
+    shapes.push({
+      id,
+      name,
+      phType,
+      phIdx,
+      position,
+      textContent: textContent.substring(0, 100),
+      current: {
+        fontName: fontName || "(inherited)",
+        fontSize: fontSize || "(inherited)",
+        color: color || "(inherited)",
+        bold: bold !== null ? bold : "(inherited)",
+        alignment,
+      },
+      masterTarget: masterPh ? {
+        fontName: masterPh.font.name,
+        fontSize: masterPh.font.size,
+        color: masterPh.font.color,
+        bold: masterPh.font.bold,
+        alignment: masterPh.alignment,
+        position: masterPh.position,
+      } : null,
+    });
+  }
+
+  return shapes;
+}
+
+/* ── Read all masters from the file for the picker ──────────────────────── */
+
+async function readAllMasters(zip) {
+  // presentation.xml.rels tells us exactly which masters exist and in what order
+  const relsFile = zip.file("ppt/_rels/presentation.xml.rels");
+  const masters = [];
+
+  if (relsFile) {
+    const relsXml = await relsFile.async("string");
+    const relsDoc = parseXml(relsXml);
+    const rels = relsDoc.getElementsByTagNameNS("*", "Relationship");
+
+    for (const rel of rels) {
+      const target = rel.getAttribute("Target") || "";
+      const match = target.match(/slideMasters\/slideMaster(\d+)\.xml/);
+      if (!match) continue;
+
+      const masterIndex = parseInt(match[1], 10);
+      const masterPath = `ppt/slideMasters/slideMaster${masterIndex}.xml`;
+
+      // Each master references its own theme via its own rels file
+      const masterRelsPath = `ppt/slideMasters/_rels/slideMaster${masterIndex}.xml.rels`;
+      let theme = { colors: {}, fonts: { heading: null, body: null } };
+
+      const masterRelsFile = zip.file(masterRelsPath);
+      if (masterRelsFile) {
+        const masterRelsXml = await masterRelsFile.async("string");
+        const masterRelsDoc = parseXml(masterRelsXml);
+        const masterRels = masterRelsDoc.getElementsByTagNameNS("*", "Relationship");
+        for (const mRel of masterRels) {
+          const mTarget = mRel.getAttribute("Target") || "";
+          const themeMatch = mTarget.match(/\.\.\/theme\/theme(\d+)\.xml/);
+          if (themeMatch) {
+            const themeFile = zip.file(`ppt/theme/theme${themeMatch[1]}.xml`);
+            if (themeFile) {
+              const themeXml = await themeFile.async("string");
+              theme = parseThemeXml(themeXml);
+            }
+            break;
+          }
+        }
+      }
+
+      // Parse master name from XML (stored in <p:cSld name="...">)
+      const masterFile = zip.file(masterPath);
+      if (!masterFile) continue;
+      const masterXml = await masterFile.async("string");
+      const masterDoc = parseXml(masterXml);
+      const cSld = masterDoc.getElementsByTagNameNS("*", "cSld")[0];
+      const masterName = cSld?.getAttribute("name") || `Master ${masterIndex}`;
+
+      const placeholders = parseMasterXml(masterXml, theme);
+
+      masters.push({
+        index: masterIndex,
+        name: masterName,
+        theme,
+        placeholders,
+        // Summary info for the picker UI
+        headingFont: theme.fonts.heading,
+        bodyFont: theme.fonts.body,
+        colors: Object.entries(theme.colors).filter(([, v]) => v).slice(0, 5).map(([, v]) => v),
+      });
+    }
+  }
+
+  // Fallback: if rels parsing failed, try master1 directly
+  if (masters.length === 0) {
+    const masterFile = zip.file("ppt/slideMasters/slideMaster1.xml");
+    if (masterFile) {
+      const themeFile = zip.file("ppt/theme/theme1.xml");
+      const theme = themeFile
+        ? parseThemeXml(await themeFile.async("string"))
+        : { colors: {}, fonts: { heading: null, body: null } };
+      const masterXml = await masterFile.async("string");
+      masters.push({
+        index: 1,
+        name: "Master 1",
+        theme,
+        placeholders: parseMasterXml(masterXml, theme),
+        headingFont: theme.fonts.heading,
+        bodyFont: theme.fonts.body,
+        colors: Object.entries(theme.colors).filter(([, v]) => v).slice(0, 5).map(([, v]) => v),
+      });
+    }
+  }
+
+  return masters;
+}
+
+/* ── Main XML reader — ties it all together ─────────────────────────────── */
+
+// Phase 1: just read the file bytes and discover all masters
+async function readPptxFile() {
+  const bytes = await getFileBytes();
+  const zip = await JSZip.loadAsync(bytes);
+  const masters = await readAllMasters(zip);
+  return { zip, masters };
+}
+
+// Phase 2: read slide data using the chosen master
+async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlideIndex) {
+  const master = masters.find((m) => m.index === chosenMasterIndex) || masters[0];
+
+  const slideFile = zip.file(`ppt/slides/slide${selectedSlideIndex}.xml`);
+  if (!slideFile) throw new Error(`Slide ${selectedSlideIndex} not found in file`);
+  const slideXml = await slideFile.async("string");
+  const slideShapes = parseSlideXml(slideXml, master.theme, master.placeholders);
+
+  return {
+    theme: master.theme,
+    masterPlaceholders: master.placeholders,
+    masterName: master.name,
+    slideShapes,
+    slideIndex: selectedSlideIndex,
+  };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   OFFICE JS — get selected slide index + apply fixes (writes stay via JS API)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function getSelectedSlideIndex() {
+  return new Promise((resolve, reject) => {
+    Office.context.document.getSelectedDataAsync(
+      Office.CoercionType.SlideRange,
+      (result) => {
+        if (result.status === Office.AsyncResultStatus.Failed)
+          return reject(new Error(result.error.message));
+        resolve(result.value.slides[0].index);
+      }
+    );
+  });
+}
+
+async function duplicateSlide(slideIndex) {
+  return PowerPoint.run(async (ctx) => {
+    try {
+      const slides = ctx.presentation.slides;
+      slides.load("items");
+      await ctx.sync();
+      const source = slides.items[slideIndex - 1];
+      source.load("id");
+      await ctx.sync();
+      ctx.presentation.slides.add({ copiedFrom: source });
+      await ctx.sync();
+      return slideIndex + 1;
+    } catch {
+      return slideIndex; // fallback: edit original
+    }
+  });
+}
+
+async function applyFixes(slideIndex, fixes) {
+  return PowerPoint.run(async (ctx) => {
+    const slides = ctx.presentation.slides;
+    slides.load("items");
+    await ctx.sync();
+
+    const slide = slides.items[slideIndex - 1];
+    const shapes = slide.shapes;
+    shapes.load("items");
+    await ctx.sync();
+
+    for (const shape of shapes.items) shape.load(["id", "name"]);
+    await ctx.sync();
+
+    for (const fix of fixes) {
+      const target = shapes.items.find(
+        (s) => s.name === fix.shapeName || s.id === fix.shapeId
+      );
+      if (!target) continue;
+
+      if (fix.position) {
+        target.load(["left", "top", "width", "height"]);
+        await ctx.sync();
+        if (fix.position.left  !== undefined) target.left   = fix.position.left   * 914400 / 9525;
+        if (fix.position.top   !== undefined) target.top    = fix.position.top    * 914400 / 9525;
+        if (fix.position.width !== undefined) target.width  = fix.position.width  * 914400 / 9525;
+        if (fix.position.height!== undefined) target.height = fix.position.height * 914400 / 9525;
+      }
+
+      if (fix.font || fix.alignment) {
+        try {
+          const tf = target.textFrame;
+          const paragraphs = tf.paragraphs;
+          paragraphs.load("items");
+          await ctx.sync();
+
+          for (const para of paragraphs.items) {
+            if (fix.alignment) para.alignment = fix.alignment;
+            const runs = para.runs;
+            runs.load("items");
+            await ctx.sync();
+            for (const run of runs.items) {
+              if (fix.font?.name)             run.font.name  = fix.font.name;
+              if (fix.font?.size)             run.font.size  = fix.font.size;
+              if (fix.font?.color)            run.font.color = fix.font.color;
+              if (fix.font?.bold !== undefined) run.font.bold = fix.font.bold;
+            }
+          }
+        } catch (_) {}
+      }
+    }
+    await ctx.sync();
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   AI — build prompt from XML data and call Claude
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function buildPrompt(pptxData) {
+  const { theme, masterPlaceholders, slideShapes } = pptxData;
+
+  const themeSection = `
+THEME FONTS:
+  Heading/Title: "${theme.fonts.heading}"
+  Body/Content:  "${theme.fonts.body}"
+
+THEME COLOURS:
+${Object.entries(theme.colors).filter(([,v])=>v).map(([k,v])=>`  ${k}: ${v}`).join("\n")}`.trim();
+
+  const masterSection = masterPlaceholders.map(p =>
+    `  [${p.type}] font="${p.font.name}" size=${p.font.size}pt color=${p.font.color} bold=${p.font.bold} align=${p.alignment}${p.position ? ` pos=(${p.position.left}",${p.position.top}") size=(${p.position.width}"×${p.position.height}")` : ""}`
+  ).join("\n");
+
+  const slideSection = slideShapes.map(s =>
+    `  Shape: "${s.name}" [${s.phType}]
+    Current → font="${s.current.fontName}" size=${s.current.fontSize}pt color=${s.current.color} bold=${s.current.bold} align=${s.current.alignment}
+    Target  → font="${s.masterTarget?.fontName}" size=${s.masterTarget?.fontSize}pt color=${s.masterTarget?.color} bold=${s.masterTarget?.bold} align=${s.masterTarget?.alignment}
+    Text: "${s.textContent}"`
+  ).join("\n\n");
+
+  return `You are a PowerPoint formatting expert. Fix each slide shape so it exactly matches its target formatting from the slide master.
+
+━━━ THEME (from theme1.xml) ━━━
+${themeSection}
+
+━━━ SLIDE MASTER PLACEHOLDERS (from slideMaster1.xml) ━━━
+${masterSection}
+
+━━━ CURRENT SLIDE SHAPES ━━━
+${slideSection}
+
+For each shape where Current ≠ Target, output a fix.
+Return ONLY a valid JSON array. No markdown, no explanation.
+Each item: { "shapeName": "<exact name>", "font": { "name": "...", "size": N, "color": "#hex", "bold": true/false }, "alignment": "left|center|right", "position": { "left": N, "top": N } }
+Only include fields that need to change. Skip shapes already matching their target.`;
+}
+
+async function callClaude(pptxData, apiKey) {
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-allow-browser": "true",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 1000,
+      system: "You are a PowerPoint formatting assistant. Return ONLY valid JSON arrays. No markdown fences, no explanation, no preamble.",
+      messages: [{ role: "user", content: buildPrompt(pptxData) }],
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(err.error?.message || `API error ${response.status}`);
+  }
+
+  const data = await response.json();
+  const raw = data.content?.find((b) => b.type === "text")?.text || "[]";
+  return JSON.parse(raw.replace(/```json|```/g, "").trim());
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   UI COMPONENTS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function ApiKeyScreen({ onSave }) {
+  const [val, setVal] = useState("");
+  const [show, setShow] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const handleSave = () => {
+    const trimmed = val.trim();
+    if (!trimmed.startsWith("sk-ant-")) {
+      setErr("Key should start with sk-ant-  —  check you copied it correctly");
+      return;
+    }
+    localStorage.setItem(STORAGE_KEY, trimmed);
+    onSave(trimmed);
+  };
+
+  return (
+    <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", background: "#f8f9fb", minHeight: "100vh", display: "flex", flexDirection: "column", maxWidth: 340, margin: "0 auto" }}>
+      <div style={{ background: "linear-gradient(135deg,#1F5C9E,#2E86C1)", padding: "18px 16px 14px", color: "#fff" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>✦</div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>Slide Cleanup</div>
+            <div style={{ fontSize: 10, opacity: 0.75 }}>Setup — one time only</div>
+          </div>
+        </div>
+      </div>
+      <div style={{ flex: 1, padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ background: "#fff", borderRadius: 10, border: "1px solid #e5e7eb", padding: "14px" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#111827", marginBottom: 6 }}>Enter your Anthropic API key</div>
+          <div style={{ fontSize: 11, color: "#6b7280", lineHeight: 1.5, marginBottom: 14 }}>
+            Saved only on your computer. Get yours free at{" "}
+            <span style={{ color: "#1F5C9E", textDecoration: "underline", cursor: "pointer" }}
+              onClick={() => window.open("https://console.anthropic.com/settings/keys", "_blank")}>
+              console.anthropic.com
+            </span>
+          </div>
+          <div style={{ position: "relative", marginBottom: 10 }}>
+            <input
+              type={show ? "text" : "password"}
+              value={val}
+              onChange={(e) => { setVal(e.target.value); setErr(null); }}
+              placeholder="sk-ant-api03-…"
+              style={{ width: "100%", padding: "9px 36px 9px 10px", borderRadius: 7, border: `1px solid ${err ? "#fca5a5" : "#d1d5db"}`, fontSize: 12, fontFamily: "monospace", outline: "none", boxSizing: "border-box", background: err ? "#fef2f2" : "#fff" }}
+            />
+            <button onClick={() => setShow(s => !s)}
+              style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "#9ca3af", padding: 0 }}>
+              {show ? "🙈" : "👁"}
+            </button>
+          </div>
+          {err && <div style={{ fontSize: 11, color: "#dc2626", marginBottom: 8 }}>{err}</div>}
+          <button onClick={handleSave} disabled={!val.trim()}
+            style={{ width: "100%", padding: "11px 0", background: "#1F5C9E", color: "#fff", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: val.trim() ? "pointer" : "not-allowed", opacity: val.trim() ? 1 : 0.5 }}>
+            Save & continue →
+          </button>
+        </div>
+        <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "10px 12px", fontSize: 11, color: "#92400e" }}>
+          🔒 Stored in your browser only — never leaves your machine except to call Anthropic directly.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LogLine({ entry }) {
+  const color = entry.msg.startsWith("✓") ? "#4ade80" : entry.msg.startsWith("✗") ? "#f87171" : "#94a3b8";
+  return (
+    <div style={{ display: "flex", gap: 8, marginBottom: 3 }}>
+      <span style={{ fontSize: 9, color: "#475569", fontFamily: "monospace", flexShrink: 0 }}>{entry.time}</span>
+      <span style={{ fontSize: 10, color, fontFamily: "monospace" }}>{entry.msg}</span>
+    </div>
+  );
+}
+
+function ThemeCard({ theme, masterPlaceholders }) {
+  if (!theme) return null;
+  const colors = Object.entries(theme.colors).filter(([,v]) => v).slice(0, 6);
+  return (
+    <div style={{ background: "#fff", borderRadius: 10, border: "1px solid #e5e7eb", padding: "12px 14px" }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>
+        Detected from file
+      </div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+        {theme.fonts.heading && (
+          <span style={{ fontSize: 10, background: "#eff6ff", color: "#1e40af", padding: "2px 8px", borderRadius: 20, border: "1px solid #bfdbfe" }}>
+            Aa {theme.fonts.heading}
+          </span>
+        )}
+        {theme.fonts.body && theme.fonts.body !== theme.fonts.heading && (
+          <span style={{ fontSize: 10, background: "#f5f3ff", color: "#6d28d9", padding: "2px 8px", borderRadius: 20, border: "1px solid #ddd6fe" }}>
+            Aa {theme.fonts.body}
+          </span>
+        )}
+      </div>
+      <div style={{ display: "flex", gap: 4, marginBottom: 8, flexWrap: "wrap" }}>
+        {colors.map(([k, v]) => (
+          <div key={k} title={`${k}: ${v}`} style={{ display: "flex", alignItems: "center", gap: 3 }}>
+            <div style={{ width: 14, height: 14, borderRadius: 3, background: v, border: "1px solid rgba(0,0,0,0.1)" }} />
+            <span style={{ fontSize: 9, color: "#6b7280", fontFamily: "monospace" }}>{v}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize: 10, color: "#9ca3af" }}>
+        {masterPlaceholders.length} master placeholder{masterPlaceholders.length !== 1 ? "s" : ""} · read from XML
+      </div>
+    </div>
+  );
+}
+
+function MasterPicker({ masters, onSelect }) {
+  const [chosen, setChosen] = useState(masters[0]?.index);
+
+  return (
+    <div style={{ background: "#fff", borderRadius: 10, border: "1px solid #e5e7eb", padding: "14px", animation: "fadeIn 0.3s ease" }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>
+        Multiple masters found
+      </div>
+      <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 12 }}>
+        This file has {masters.length} slide masters — pick the one to clean up to:
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+        {masters.map((m) => {
+          const isChosen = chosen === m.index;
+          return (
+            <div
+              key={m.index}
+              onClick={() => setChosen(m.index)}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 8,
+                border: `2px solid ${isChosen ? "#1F5C9E" : "#e5e7eb"}`,
+                background: isChosen ? "#eff6ff" : "#fafafa",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+                <div style={{
+                  width: 16, height: 16, borderRadius: "50%",
+                  border: `2px solid ${isChosen ? "#1F5C9E" : "#d1d5db"}`,
+                  background: isChosen ? "#1F5C9E" : "#fff",
+                  flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  {isChosen && <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#fff" }} />}
+                </div>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#111827" }}>
+                  {m.name || `Master ${m.index}`}
+                </span>
+              </div>
+
+              {/* Font badges */}
+              <div style={{ display: "flex", gap: 5, marginBottom: 6, paddingLeft: 24, flexWrap: "wrap" }}>
+                {m.headingFont && (
+                  <span style={{ fontSize: 9, background: "#eff6ff", color: "#1e40af", padding: "1px 6px", borderRadius: 20, border: "1px solid #bfdbfe" }}>
+                    Aa {m.headingFont}
+                  </span>
+                )}
+                {m.bodyFont && m.bodyFont !== m.headingFont && (
+                  <span style={{ fontSize: 9, background: "#f5f3ff", color: "#6d28d9", padding: "1px 6px", borderRadius: 20, border: "1px solid #ddd6fe" }}>
+                    Aa {m.bodyFont}
+                  </span>
+                )}
+              </div>
+
+              {/* Colour swatches */}
+              {m.colors.length > 0 && (
+                <div style={{ display: "flex", gap: 3, paddingLeft: 24 }}>
+                  {m.colors.map((hex, i) => (
+                    <div key={i} title={hex} style={{
+                      width: 14, height: 14, borderRadius: 3,
+                      background: hex, border: "1px solid rgba(0,0,0,0.1)",
+                    }} />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <button
+        onClick={() => onSelect(chosen)}
+        style={{
+          width: "100%", padding: "11px 0", background: "#1F5C9E", color: "#fff",
+          border: "none", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer",
+        }}
+      >
+        Use this master →
+      </button>
+    </div>
+  );
+}
+
+function FixBadge({ count }) {
+  return (
+    <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+      <span style={{ fontSize: 20 }}>✓</span>
+      <div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#166534" }}>Cleanup complete</div>
+        <div style={{ fontSize: 11, color: "#15803d" }}>
+          {count} shape{count !== 1 ? "s" : ""} reformatted · original preserved
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MAIN APP
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+export default function App() {
+  const [status, setStatus] = useState("idle");
+  const [log, setLog] = useState([]);
+  const [fixCount, setFixCount] = useState(0);
+  const [error, setError] = useState(null);
+  const [detectedTheme, setDetectedTheme] = useState(null);
+  const [detectedMaster, setDetectedMaster] = useState([]);
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem(STORAGE_KEY) || "");
+  const [showSettings, setShowSettings] = useState(false);
+
+  // Multi-master state
+  const [availableMasters, setAvailableMasters] = useState([]);
+  const [pendingZip, setPendingZip] = useState(null);
+  const [pendingSlideIndex, setPendingSlideIndex] = useState(null);
+  const [showMasterPicker, setShowMasterPicker] = useState(false);
+
+  if (!apiKey) return <ApiKeyScreen onSave={setApiKey} />;
+
+  if (showSettings) return (
+    <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", background: "#f8f9fb", minHeight: "100vh", maxWidth: 340, margin: "0 auto" }}>
+      <div style={{ background: "linear-gradient(135deg,#1F5C9E,#2E86C1)", padding: "14px 16px", color: "#fff", display: "flex", alignItems: "center", gap: 10 }}>
+        <button onClick={() => setShowSettings(false)} style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "#fff", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 12 }}>← Back</button>
+        <span style={{ fontWeight: 700, fontSize: 14 }}>API Key Settings</span>
+      </div>
+      <div style={{ padding: 16 }}>
+        <ApiKeyScreen onSave={(k) => { setApiKey(k); setShowSettings(false); }} />
+      </div>
+    </div>
+  );
+
+  const addLog = (msg) => setLog(l => [...l, {
+    time: new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+    msg,
+  }]);
+
+  // Phase 2: run cleanup with a chosen master
+  const runCleanupWithMaster = async (zip, masters, chosenMasterIndex, slideIndex) => {
+    setShowMasterPicker(false);
+    setStatus("running");
+
+    try {
+      addLog(`Using master: "${masters.find(m => m.index === chosenMasterIndex)?.name || chosenMasterIndex}"`);
+      addLog("Reading slide shapes from XML…");
+      const pptxData = await readSlideWithMaster(zip, masters, chosenMasterIndex, slideIndex);
+      setDetectedTheme(pptxData.theme);
+      setDetectedMaster(pptxData.masterPlaceholders);
+      addLog(`Theme: "${pptxData.theme.fonts.heading}" / "${pptxData.theme.fonts.body}"`);
+      addLog(`${pptxData.masterPlaceholders.length} placeholders · ${pptxData.slideShapes.length} slide shapes`);
+
+      addLog("Duplicating slide…");
+      const dupIndex = await duplicateSlide(slideIndex);
+      addLog(dupIndex === slideIndex
+        ? "⚠ Duplication unavailable — editing original"
+        : `Duplicate created at position ${dupIndex}`);
+
+      addLog("Sending to Claude for analysis…");
+      const fixes = await callClaude(pptxData, apiKey);
+      addLog(`${fixes.length} fix${fixes.length !== 1 ? "es" : ""} identified`);
+
+      if (fixes.length === 0) {
+        addLog("✓ Slide already matches master theme");
+        setFixCount(0);
+        setStatus("done");
+        return;
+      }
+
+      addLog("Applying fixes…");
+      await applyFixes(dupIndex, fixes);
+      addLog(`✓ Done — ${fixes.length} shape${fixes.length !== 1 ? "s" : ""} reformatted`);
+      setFixCount(fixes.length);
+      setStatus("done");
+    } catch (err) {
+      setError(err.message);
+      addLog("✗ " + err.message);
+      setStatus("error");
+    }
+  };
+
+  // Phase 1: read file, discover masters, show picker if needed
+  const handleCleanup = useCallback(async () => {
+    setStatus("running");
+    setLog([]);
+    setError(null);
+    setFixCount(0);
+    setDetectedTheme(null);
+    setDetectedMaster([]);
+    setShowMasterPicker(false);
+    setAvailableMasters([]);
+    setPendingZip(null);
+    setPendingSlideIndex(null);
+
+    try {
+      addLog("Reading selected slide…");
+      const slideIndex = await getSelectedSlideIndex();
+      addLog(`Slide ${slideIndex} selected`);
+
+      addLog("Reading .pptx file…");
+      const { zip, masters } = await readPptxFile();
+      addLog(`Found ${masters.length} slide master${masters.length !== 1 ? "s" : ""}`);
+
+      if (masters.length === 0) throw new Error("No slide masters found in this file");
+
+      if (masters.length === 1) {
+        // Only one master — skip picker, go straight to cleanup
+        await runCleanupWithMaster(zip, masters, masters[0].index, slideIndex);
+      } else {
+        // Multiple masters — show picker
+        setAvailableMasters(masters);
+        setPendingZip(zip);
+        setPendingSlideIndex(slideIndex);
+        setStatus("picking");
+        setShowMasterPicker(true);
+        addLog("Multiple masters detected — please choose one");
+      }
+    } catch (err) {
+      setError(err.message);
+      addLog("✗ " + err.message);
+      setStatus("error");
+    }
+  }, [apiKey]);
+
+  const isRunning = status === "running";
+
+  return (
+    <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", background: "#f8f9fb", minHeight: "100vh", display: "flex", flexDirection: "column", maxWidth: 340, margin: "0 auto" }}>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg) } }
+        @keyframes fadeIn { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:translateY(0)} }
+        .btn:hover:not(:disabled) { background: #174f8a !important; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(31,92,158,0.4) !important; }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+      `}</style>
+
+      {/* Header */}
+      <div style={{ background: "linear-gradient(135deg,#1F5C9E,#2E86C1)", padding: "18px 16px 14px", color: "#fff" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>✦</div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>Slide Cleanup</div>
+            <div style={{ fontSize: 10, opacity: 0.75 }}>AI · Reads live from .pptx XML</div>
+          </div>
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 10, opacity: 0.7 }}>
+              {status === "idle" && "Ready"}
+              {status === "running" && "Working…"}
+              {status === "done" && "✓ Done"}
+              {status === "error" && "✗ Error"}
+            </span>
+            <button onClick={() => setShowSettings(true)} title="API key settings"
+              style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "#fff", borderRadius: 6, width: 26, height: 26, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center" }}>⚙</button>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ flex: 1, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+
+        {/* Master picker — shown when multiple masters detected */}
+        {showMasterPicker && availableMasters.length > 1 && (
+          <MasterPicker
+            masters={availableMasters}
+            onSelect={(chosenIndex) =>
+              runCleanupWithMaster(pendingZip, availableMasters, chosenIndex, pendingSlideIndex)
+            }
+          />
+        )}
+
+        {/* Theme card once detected */}
+        {detectedTheme && !showMasterPicker && <ThemeCard theme={detectedTheme} masterPlaceholders={detectedMaster} />}}
+
+        {/* Info card when idle */}
+        {status === "idle" && !detectedTheme && (
+          <div style={{ background: "#fff", borderRadius: 10, border: "1px solid #e5e7eb", padding: "12px 14px" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>What cleanup does</div>
+            {[
+              ["⧉", "Duplicates the slide — original stays untouched"],
+              ["◎", "Reads theme + master directly from the .pptx XML"],
+              ["Aa", "Works on any file you open — no setup needed"],
+              ["✦", "Reformats every shape to exactly match the master"],
+            ].map(([icon, text]) => (
+              <div key={text} style={{ display: "flex", gap: 8, marginBottom: 5, alignItems: "flex-start" }}>
+                <span style={{ fontSize: 11, color: "#1F5C9E", flexShrink: 0, width: 16, textAlign: "center" }}>{icon}</span>
+                <span style={{ fontSize: 11, color: "#374151", lineHeight: 1.4 }}>{text}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Button — hidden while picker is showing */}
+        {!showMasterPicker && (
+        <button className="btn" onClick={handleCleanup} disabled={isRunning}
+          style={{ width: "100%", padding: "14px 0", background: status === "done" ? "#15803d" : "#1F5C9E", color: "#fff", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.2s ease", boxShadow: "0 4px 14px rgba(31,92,158,0.28)" }}>
+          {isRunning ? (
+            <>
+              <span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.3)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block" }} />
+              Working…
+            </>
+          ) : status === "done" ? "✓ Done — clean another?" : "✦ Cleanup Slide"}
+        </button>
+        )}
+
+        {status === "done" && fixCount > 0 && <FixBadge count={fixCount} />}
+        {status === "done" && fixCount === 0 && (
+          <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "10px 14px", fontSize: 11, color: "#166534" }}>
+            ✓ Slide already matches the master — no changes needed.
+          </div>
+        )}
+
+        {error && (
+          <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 12px", fontSize: 11, color: "#991b1b" }}>
+            <strong>Error:</strong> {error}
+          </div>
+        )}
+
+        {log.length > 0 && (
+          <div style={{ background: "#0f172a", borderRadius: 10, padding: "10px 12px" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#64748b", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>Activity</div>
+            {log.map((entry, i) => <LogLine key={i} entry={entry} />)}
+          </div>
+        )}
+      </div>
+
+      <div style={{ padding: "10px 16px", borderTop: "1px solid #e5e7eb", background: "#fff", display: "flex", justifyContent: "space-between" }}>
+        <span style={{ fontSize: 9, color: "#9ca3af", fontFamily: "monospace" }}>v2.1.0 · claude-sonnet-4</span>
+        <span style={{ fontSize: 9, color: "#9ca3af" }}>PowerPoint Add-in</span>
+      </div>
+    </div>
+  );
+}
