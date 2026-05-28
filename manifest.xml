@@ -8,19 +8,22 @@
 
   <Id>a1b2c3d4-e5f6-7890-abcd-ef1234567890</Id>
   <Version>1.0.0.0</Version>
-  <ProviderName>Your Company</ProviderName>
+  <ProviderName>Slide Cleanup</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
 
   <DisplayName DefaultValue="Slide Cleanup" />
-  <Description DefaultValue="AI-powered slide formatter — syncs your slide to the master theme in one click." />
+  <Description DefaultValue="AI-powered slide formatter that syncs your slide to the master theme." />
+
+  <IconUrl DefaultValue="https://ppt-cleanup-a982tc320-ted-s-projects14.vercel.app/icon-80.png" />
+  <HighResolutionIconUrl DefaultValue="https://ppt-cleanup-a982tc320-ted-s-projects14.vercel.app/icon-80.png" />
+  <SupportUrl DefaultValue="https://ppt-cleanup-a982tc320-ted-s-projects14.vercel.app" />
 
   <Hosts>
     <Host Name="Presentation" />
   </Hosts>
 
   <DefaultSettings>
-    <!-- !! REPLACE THIS URL with your Vercel deployment URL !! -->
-    <SourceLocation DefaultValue="https://ppt-cleanup.vercel.app" />
+    <SourceLocation DefaultValue="https://ppt-cleanup-a982tc320-ted-s-projects14.vercel.app" />
   </DefaultSettings>
 
   <Permissions>ReadWriteDocument</Permissions>
@@ -29,12 +32,6 @@
     <Hosts>
       <Host xsi:type="Presentation">
         <DesktopFormFactor>
-
-          <GetStarted>
-            <Title resid="GetStarted.Title" />
-            <Description resid="GetStarted.Description" />
-            <LearnMoreUrl resid="GetStarted.LearnMoreUrl" />
-          </GetStarted>
 
           <FunctionFile resid="Commands.Url" />
 
@@ -67,50 +64,25 @@
             </OfficeTab>
           </ExtensionPoint>
 
-          <ExtensionPoint xsi:type="SlideSurface">
-            <OfficeMenu id="ContextMenuCell">
-              <Control xsi:type="Button" id="ContextMenuButton">
-                <Label resid="TaskpaneButton.Label" />
-                <Supertip>
-                  <Title resid="TaskpaneButton.Label" />
-                  <Description resid="TaskpaneButton.Tooltip" />
-                </Supertip>
-                <Icon>
-                  <bt:Image size="16" resid="Icon.16x16" />
-                  <bt:Image size="32" resid="Icon.32x32" />
-                  <bt:Image size="80" resid="Icon.80x80" />
-                </Icon>
-                <Action xsi:type="ShowTaskpane">
-                  <TaskpaneId>ButtonId1</TaskpaneId>
-                  <SourceLocation resid="Taskpane.Url" />
-                </Action>
-              </Control>
-            </OfficeMenu>
-          </ExtensionPoint>
-
         </DesktopFormFactor>
       </Host>
     </Hosts>
 
     <Resources>
       <bt:Images>
-        <!-- Using simple placeholder icons — replace with your own 16/32/80px PNGs hosted on Vercel -->
-        <bt:Image id="Icon.16x16" DefaultValue="https://ppt-cleanup.vercel.app/icon-16.png" />
-        <bt:Image id="Icon.32x32" DefaultValue="https://ppt-cleanup.vercel.app/icon-32.png" />
-        <bt:Image id="Icon.80x80" DefaultValue="https://ppt-cleanup.vercel.app/icon-80.png" />
+        <bt:Image id="Icon.16x16" DefaultValue="https://cdn.jsdelivr.net/gh/microsoft/fluentui-system-icons/assets/Sparkle/SVG/ic_fluent_sparkle_16_regular.svg" />
+        <bt:Image id="Icon.32x32" DefaultValue="https://cdn.jsdelivr.net/gh/microsoft/fluentui-system-icons/assets/Sparkle/SVG/ic_fluent_sparkle_32_regular.svg" />
+        <bt:Image id="Icon.80x80" DefaultValue="https://cdn.jsdelivr.net/gh/microsoft/fluentui-system-icons/assets/Sparkle/SVG/ic_fluent_sparkle_48_regular.svg" />
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://ppt-cleanup.vercel.app" />
-        <bt:Url id="Commands.Url" DefaultValue="https://ppt-cleanup.vercel.app" />
-        <bt:Url id="Taskpane.Url" DefaultValue="https://ppt-cleanup.vercel.app" />
+        <bt:Url id="Commands.Url" DefaultValue="https://ppt-cleanup-a982tc320-ted-s-projects14.vercel.app" />
+        <bt:Url id="Taskpane.Url" DefaultValue="https://ppt-cleanup-a982tc320-ted-s-projects14.vercel.app" />
       </bt:Urls>
       <bt:ShortStrings>
-        <bt:String id="GetStarted.Title" DefaultValue="Slide Cleanup is ready" />
         <bt:String id="CommandsGroup.Label" DefaultValue="AI Tools" />
         <bt:String id="TaskpaneButton.Label" DefaultValue="Cleanup Slide" />
       </bt:ShortStrings>
       <bt:LongStrings>
-        <bt:String id="GetStarted.Description" DefaultValue="Select a slide and click Cleanup Slide to reformat it to your master theme." />
         <bt:String id="TaskpaneButton.Tooltip" DefaultValue="AI-powered slide cleanup — syncs fonts, colours and layout to your master theme." />
       </bt:LongStrings>
     </Resources>
