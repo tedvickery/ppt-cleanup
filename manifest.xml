@@ -20,7 +20,7 @@
 
   <DefaultSettings>
     <!-- !! REPLACE THIS URL with your Vercel deployment URL !! -->
-    <SourceLocation DefaultValue="https://YOUR-APP.vercel.app" />
+    <SourceLocation DefaultValue="https://ppt-cleanup.vercel.app" />
   </DefaultSettings>
 
   <Permissions>ReadWriteDocument</Permissions>
@@ -95,14 +95,14 @@
     <Resources>
       <bt:Images>
         <!-- Using simple placeholder icons — replace with your own 16/32/80px PNGs hosted on Vercel -->
-        <bt:Image id="Icon.16x16" DefaultValue="https://YOUR-APP.vercel.app/icon-16.png" />
-        <bt:Image id="Icon.32x32" DefaultValue="https://YOUR-APP.vercel.app/icon-32.png" />
-        <bt:Image id="Icon.80x80" DefaultValue="https://YOUR-APP.vercel.app/icon-80.png" />
+        <bt:Image id="Icon.16x16" DefaultValue="https://ppt-cleanup.vercel.app/icon-16.png" />
+        <bt:Image id="Icon.32x32" DefaultValue="https://ppt-cleanup.vercel.app/icon-32.png" />
+        <bt:Image id="Icon.80x80" DefaultValue="https://ppt-cleanup.vercel.app/icon-80.png" />
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://YOUR-APP.vercel.app" />
-        <bt:Url id="Commands.Url" DefaultValue="https://YOUR-APP.vercel.app" />
-        <bt:Url id="Taskpane.Url" DefaultValue="https://YOUR-APP.vercel.app" />
+        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://ppt-cleanup.vercel.app" />
+        <bt:Url id="Commands.Url" DefaultValue="https://ppt-cleanup.vercel.app" />
+        <bt:Url id="Taskpane.Url" DefaultValue="https://ppt-cleanup.vercel.app" />
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="GetStarted.Title" DefaultValue="Slide Cleanup is ready" />
