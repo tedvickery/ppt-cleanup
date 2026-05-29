@@ -717,35 +717,25 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
 
       // Only clear fill if it's a non-theme colour
       // Never clear fills that are theme colours or already none
+      // Clear fill if master says none — remove even theme-coloured fills
+      // if the master placeholder doesn't have a fill
       if (fix.fill === "none" && fix.shapeFill && fix.shapeFill !== "none") {
-        const fillHex = fix.shapeFill.replace("#", "").toUpperCase();
-        const isThemeColor = themeColorValues.has(fillHex);
-        if (!isThemeColor) {
-          try {
-            target.fill.clear();
-            console.log(`  ✓ Non-theme fill cleared on "${target.name}" (was ${fix.shapeFill})`);
-          } catch (e) {
-            console.log(`  Error clearing fill on "${target.name}":`, e.message);
-          }
-        } else {
-          console.log(`  Keeping theme fill on "${target.name}" (${fix.shapeFill})`);
+        try {
+          target.fill.clear();
+          console.log(`  ✓ Fill removed on "${target.name}" (was ${fix.shapeFill})`);
+        } catch (e) {
+          console.log(`  Error removing fill on "${target.name}":`, e.message);
         }
       }
 
-      // Remove non-theme border if instructed
+      // Remove border if instructed AND master has no border
+      // Even theme-coloured borders should be removed if the master doesn't have one
       if (fix.border === "none" && fix.shapeBorder && fix.shapeBorder !== "none") {
-        const borderHex = fix.shapeBorder.replace("#", "").toUpperCase();
-        const isThemeColor = themeColorValues.has(borderHex);
-        if (!isThemeColor) {
-          try {
-            // Set line to no fill to remove border
-            target.lineFormat.visible = false;
-            console.log(`  ✓ Non-theme border cleared on "${target.name}" (was ${fix.shapeBorder})`);
-          } catch (e) {
-            console.log(`  Error clearing border on "${target.name}":`, e.message);
-          }
-        } else {
-          console.log(`  Keeping theme border on "${target.name}" (${fix.shapeBorder})`);
+        try {
+          target.lineFormat.visible = false;
+          console.log(`  ✓ Border removed on "${target.name}" (was ${fix.shapeBorder})`);
+        } catch (e) {
+          console.log(`  Error removing border on "${target.name}":`, e.message);
         }
       }
 
@@ -846,8 +836,8 @@ FONT/COLOUR rules:
 - Fix font name, italic, bold to exactly match the target. If Current shows "(inherited)", treat it as matching — only fix if explicitly different.
 - Fix colour: if Current shows an explicit hex colour different from Target, fix it. If "(inherited)", leave it.
 - IMPORTANT: any shape where font/italic is explicitly set to something non-standard MUST be fixed.
-- FILL: ONLY include "fill": "none" if Current fill shows a hex colour that does NOT appear in the theme colours listed above. If fill is already "none" or matches a theme colour, leave it alone.
-- BORDER: ONLY include "border": "none" if Current border shows a hex colour that does NOT appear in the theme colours listed above. If border is already "none" or matches a theme colour, leave it alone.
+- FILL: Include "fill": "none" if Current fill is not "none" AND Target fill is "none". Theme-coloured fills should still be removed if the master says none.
+- BORDER: Include "border": "none" if Current border is not "none" AND Target border is "none". Theme-coloured borders should still be removed if the master says none.
 
 Skip shapes that already match their target formatting.
 Slide is 10" wide × 7.5" tall.
