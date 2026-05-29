@@ -310,6 +310,21 @@ function parseSlideXml(xml, theme, masterPlaceholders, layoutPositions = {}) {
   const shapes = [];
 
   const spEls = doc.getElementsByTagNameNS("*", "sp");
+  // Log ALL shape-like elements to find non-sp shapes
+  const allShapeTypes = ["sp", "pic", "cxnSp", "graphicFrame", "grpSp"];
+  const foundElements = {};
+  for (const type of allShapeTypes) {
+    const els = doc.getElementsByTagNameNS("*", type);
+    if (els.length > 0) {
+      foundElements[type] = Array.from(els).map(el => {
+        const cNvPr = el.getElementsByTagNameNS("*", "cNvPr")[0];
+        const solidFill = el.getElementsByTagNameNS("*", "solidFill")[0];
+        const srgb = solidFill?.getElementsByTagNameNS("*", "srgbClr")[0];
+        return `${cNvPr?.getAttribute("name")} fill=${srgb ? "#"+srgb.getAttribute("val") : "none"}`;
+      });
+    }
+  }
+  console.log("All shape elements:", JSON.stringify(foundElements));
   console.log("All sp elements in slide:", Array.from(spEls).map(sp => {
     const cNvPr = sp.getElementsByTagNameNS("*", "cNvPr")[0];
     const ph = sp.getElementsByTagNameNS("*", "ph")[0];
