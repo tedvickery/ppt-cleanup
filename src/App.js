@@ -780,29 +780,32 @@ FONT/COLOUR rules:
 - Fix font name, italic, bold to exactly match the target. If Current shows "(inherited)", treat it as matching — only fix if explicitly different.
 - Fix colour: if Current shows an explicit hex colour different from Target, fix it. If "(inherited)", leave it.
 - IMPORTANT: any shape where font/italic is explicitly set to something non-standard MUST be fixed.
-- FILL: if Current fill shows a hex colour (e.g. #F79646), the shape has a non-theme background fill that must be removed. Set "fill": "none" in the fix to remove it.
+- FILL: ONLY include "fill": "none" if Current fill shows a hex colour that does NOT appear in the theme colours listed above. If the fill colour matches a theme colour, leave it alone. If fill is already "none", leave it alone.
 
-POSITION/LAYOUT rules — apply design judgment like a professional designer:
+POSITION/LAYOUT rules — you MUST analyse the layout and fix these:
 
-WHEN TO MOVE (always fix these even when target says "preserve existing layout"):
-- Shape is overlapping another shape by more than 0.1" → separate them
-- Shape is partially or fully off-slide → move back in with 0.3" margin
-- Title shape is in the bottom half of the slide → move to top area
-- Shape is within 0.1" of slide edge without clear reason → add 0.3" margin
+Step 1 — identify columns and rows:
+- Group shapes by similar left edge (within 0.5") → these form a column
+- Group shapes by similar top edge (within 0.3") → these form a row
 
-SIZING (fix these even when target says "preserve existing layout"):
-- 2+ shapes that clearly form a column (similar left position, similar width) → normalise widths to match the widest
-- 2+ shapes in a row (similar top position) → normalise heights
-- Shape width + left position exceeds 9.7" → clip width so right edge is at 9.7"
+Step 2 — fix column alignment:
+- All shapes in a column must have the same left edge (use the leftmost value)
+- All shapes in a column must have the same width (use the widest value)
 
-SPACING (fix these even when target says "preserve existing layout"):
-- 2+ shapes stacked vertically in same column → ensure gaps between them are equal (use average gap)
-- 2+ shapes side by side in same row → ensure gaps are equal
-- Align left edges of shapes in the same column to the same value (nearest 0.1")
+Step 3 — fix row alignment:
+- All shapes in a row must have the same top edge (use the topmost value)
+- All shapes in a row must have the same height (use the tallest value)
 
-PRESERVE — only when shape genuinely looks fine:
-- If shape is well-positioned, correctly sized, not overlapping, and margins look intentional → omit position
-- When in doubt about position, omit it
+Step 4 — fix spacing:
+- Gaps between shapes in the same column must be equal
+- Gaps between shapes in the same row must be equal
+
+Step 5 — fix edge cases:
+- Any shape with right edge (left + width) > 9.7" → reduce width so right edge = 9.7"
+- Any shape within 0.1" of slide edge → adjust to 0.3" margin
+- Any overlapping shapes → separate them
+
+Apply ALL of steps 1-5 to the shapes above. Include position fixes for every shape that needs to move or resize. Do not skip shapes just because font/colour is fine.
 
 Slide is 10" wide × 7.5" tall. All position values in inches.
 
