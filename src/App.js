@@ -1261,27 +1261,26 @@ export default function App() {
       });
       await applyFixes(dupIndex, enrichedFixes, pptxData.theme.colors);
 
-      // Apply layout positions — use shape id for duplicate-named shapes
-      const shapeNameCounts = {};
-      pptxData.slideShapes.forEach(s => { shapeNameCounts[s.name] = (shapeNameCounts[s.name] || 0) + 1; });
-      const themeColorSet = new Set(Object.values(pptxData.theme.colors).filter(Boolean).map(c => c.toUpperCase()));
+      // Apply layout positions — skip shapes that share target position with others (can't tell apart)
+      const targetPosCounts = {};
+      pptxData.slideShapes.forEach(s => {
+        if (s.masterTarget?.position) {
+          const key = `${s.masterTarget.position.left},${s.masterTarget.position.top}`;
+          targetPosCounts[key] = (targetPosCounts[key] || 0) + 1;
+        }
+      });
       const positionFixes = pptxData.slideShapes
         .filter(s => s.masterTarget?.position && s.position)
         .filter(s => {
+          // Skip if multiple shapes share this target position
+          const key = `${s.masterTarget.position.left},${s.masterTarget.position.top}`;
+          if (targetPosCounts[key] > 1) return false;
           const t = s.masterTarget.position;
           const c = s.position;
-          const needsMove = Math.abs(t.left - c.left) > 0.15 ||
+          return Math.abs(t.left - c.left) > 0.15 ||
                  Math.abs(t.top - c.top) > 0.15 ||
                  Math.abs(t.width - c.width) > 0.15 ||
                  Math.abs(t.height - c.height) > 0.15;
-          if (!needsMove) return false;
-          if (s.shapeFill && s.shapeFill !== "none") {
-            const isExactTheme = themeColorSet.has(s.shapeFill.replace("#","").toUpperCase());
-            const fontAlreadyCorrect = s.current.fontName === s.masterTarget?.fontName ||
-                                       s.current.fontName === "(inherited)";
-            if (isExactTheme && fontAlreadyCorrect) return false;
-          }
-          return true;
         })
         .map(s => ({ shapeName: s.name, shapeId: s.id, position: s.masterTarget.position }));
 
