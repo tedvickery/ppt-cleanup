@@ -309,6 +309,26 @@ function parseSlideXml(xml, theme, masterPlaceholders) {
       height: emuToInches(ext.getAttribute("cy")),
     } : null;
 
+    // Shape fill colour — detect non-theme fills (e.g. orange background)
+    let shapeFill = null;
+    const spPr = sp.getElementsByTagNameNS("*", "spPr")[0];
+    if (spPr) {
+      const noFill = spPr.getElementsByTagNameNS("*", "noFill")[0];
+      if (noFill) {
+        shapeFill = "none";
+      } else {
+        const solidFill = spPr.getElementsByTagNameNS("*", "solidFill")[0];
+        if (solidFill) {
+          const srgb   = solidFill.getElementsByTagNameNS("*", "srgbClr")[0];
+          const scheme = solidFill.getElementsByTagNameNS("*", "schemeClr")[0];
+          const sys    = solidFill.getElementsByTagNameNS("*", "sysClr")[0];
+          if (srgb)    shapeFill = "#" + srgb.getAttribute("val");
+          else if (sys) shapeFill = "#" + (sys.getAttribute("lastClr") || "000000");
+          else if (scheme) shapeFill = "theme:" + scheme.getAttribute("val");
+        }
+      }
+    }
+
     // Text content
     const txBody = sp.getElementsByTagNameNS("*", "txBody")[0];
     if (!txBody) continue;
@@ -382,9 +402,16 @@ function parseSlideXml(xml, theme, masterPlaceholders) {
       const sz = rPr.getAttribute("sz");
       if (sz) fontSize = parseInt(sz, 10) / 100;
 
-      // Bold
+      // Bold + Italic
       const b = rPr.getAttribute("b");
       bold = b === "1" || b === "true" ? true : b === "0" || b === "false" ? false : null;
+    }
+
+    // Also check italic on first run
+    let italic = null;
+    if (rPr) {
+      const i = rPr.getAttribute("i");
+      italic = i === "1" || i === "true" ? true : i === "0" || i === "false" ? false : null;
     }
 
     // Paragraph alignment
@@ -406,12 +433,14 @@ function parseSlideXml(xml, theme, masterPlaceholders) {
       phType,
       phIdx,
       position,
+      shapeFill,
       textContent: textContent.substring(0, 100),
       current: {
         fontName: fontName || "(inherited)",
         fontSize: fontSize || "(inherited)",
         color: color || "(inherited)",
         bold: bold !== null ? bold : "(inherited)",
+        italic: italic !== null ? italic : "(inherited)",
         alignment,
       },
       masterTarget: masterPh ? {
@@ -423,8 +452,6 @@ function parseSlideXml(xml, theme, masterPlaceholders) {
         position: masterPh.position,
       } : null,
     });
-    // Debug: log raw txBody XML to help find orange colour storage
-    console.log(`Shape "${name}" txBody XML:`, sp.getElementsByTagNameNS("*", "txBody")[0]?.innerHTML?.substring(0, 500));
   }
 
   return shapes;
@@ -606,6 +633,16 @@ async function applyFixes(slideIndex, fixes) {
         if (height !== undefined && height > 0.1 && height <= 7.5){ target.height = height * inchToPt; }
       }
 
+      // Remove shape fill if instructed
+      if (fix.fill === "none") {
+        try {
+          target.fill.clear();
+          console.log(`  ✓ Fill cleared on "${target.name}"`);
+        } catch (e) {
+          console.log(`  Error clearing fill on "${target.name}":`, e.message);
+        }
+      }
+
       // Apply font and text alignment
       if (fix.font || fix.alignment) {
         try {
@@ -615,10 +652,11 @@ async function applyFixes(slideIndex, fixes) {
           await ctx.sync();
 
           if (fix.font) {
-            if (fix.font.name)               tr.font.name  = fix.font.name;
-            if (fix.font.size)               tr.font.size  = fix.font.size;
-            if (fix.font.color)              tr.font.color = fix.font.color;
-            if (fix.font.bold !== undefined)  tr.font.bold  = fix.font.bold;
+            if (fix.font.name)               tr.font.name   = fix.font.name;
+            if (fix.font.size)               tr.font.size   = fix.font.size;
+            if (fix.font.color)              tr.font.color  = fix.font.color;
+            if (fix.font.bold !== undefined)  tr.font.bold   = fix.font.bold;
+            if (fix.font.italic !== undefined) tr.font.italic = fix.font.italic;
           }
 
           if (fix.alignment) {
@@ -675,8 +713,8 @@ ${Object.entries(theme.colors).filter(([,v])=>v).map(([k,v])=>`  ${k}: ${v}`).jo
     // target position for all would cause Claude to stack them
     const showTargetPos = phTypeCounts[s.phType] === 1 && s.masterTarget?.position;
     return `  Shape: "${s.name}" [${s.phType}]
-    Current → font="${s.current.fontName}" size=${s.current.fontSize}pt color=${s.current.color} bold=${s.current.bold} align=${s.current.alignment}${s.position ? ` pos=(${s.position.left}",${s.position.top}") size=(${s.position.width}"×${s.position.height}")` : ""}
-    Target  → font="${s.masterTarget?.fontName}" size=${s.masterTarget?.fontSize}pt color=${s.masterTarget?.color} bold=${s.masterTarget?.bold} align=${s.masterTarget?.alignment}${showTargetPos ? ` pos=(${s.masterTarget.position.left}",${s.masterTarget.position.top}") size=(${s.masterTarget.position.width}"×${s.masterTarget.position.height}")` : " pos=(preserve existing layout)"}
+    Current → font="${s.current.fontName}" size=${s.current.fontSize}pt color=${s.current.color} bold=${s.current.bold} italic=${s.current.italic} align=${s.current.alignment} fill=${s.shapeFill || "none"}${s.position ? ` pos=(${s.position.left}",${s.position.top}") size=(${s.position.width}"×${s.position.height}")` : ""}
+    Target  → font="${s.masterTarget?.fontName}" size=${s.masterTarget?.fontSize}pt color=${s.masterTarget?.color} bold=${s.masterTarget?.bold} italic=false align=${s.masterTarget?.alignment} fill=none${showTargetPos ? ` pos=(${s.masterTarget.position.left}",${s.masterTarget.position.top}") size=(${s.masterTarget.position.width}"×${s.masterTarget.position.height}")` : " pos=(preserve existing layout)"}
     Text: "${s.textContent}"`;
   }).join("\n\n");
 
@@ -693,14 +731,13 @@ ${slideSection}
 
 For each shape where Current ≠ Target, output a fix.
 Return ONLY a valid JSON array. No markdown, no explanation.
-Each item: { "shapeName": "<exact name>", "font": { "name": "...", "size": N, "color": "#hex", "bold": true/false }, "alignment": "left|center|right", "position": { "left": N, "top": N, "width": N, "height": N } }
+Each item: { "shapeName": "<exact name>", "font": { "name": "...", "size": N, "color": "#hex", "bold": true/false, "italic": true/false }, "alignment": "left|center|right", "fill": "none", "position": { "left": N, "top": N, "width": N, "height": N } }
 
 FONT/COLOUR rules:
-- Fix font name to exactly match the target. If Current shows "(inherited)", treat it as matching the target font — only fix if explicitly different.
-- Fix colour: if Current shows an explicit hex colour different from Target, fix it. If Current shows "(inherited)", assume it inherits the target colour — leave it unless you have reason to think it's wrong.
-- Fix bold to match target. If "(inherited)", leave it.
-- Fix text alignment (left/center/right) to match the target.
-- IMPORTANT: any shape where the font name is explicitly set to something other than the target font MUST be fixed, even if colour/alignment look correct.
+- Fix font name, italic, bold to exactly match the target. If Current shows "(inherited)", treat it as matching — only fix if explicitly different.
+- Fix colour: if Current shows an explicit hex colour different from Target, fix it. If "(inherited)", leave it.
+- IMPORTANT: any shape where font/italic is explicitly set to something non-standard MUST be fixed.
+- FILL: if Current fill shows a hex colour (e.g. #F79646), the shape has a non-theme background fill that must be removed. Set "fill": "none" in the fix to remove it.
 
 POSITION/LAYOUT rules — apply design judgment like a professional designer:
 
