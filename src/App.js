@@ -283,7 +283,7 @@ function parseMasterXml(xml, theme) {
 
 /* ── Parse slide XML for current slide shapes ───────────────────────────── */
 
-function parseSlideXml(xml, theme, masterPlaceholders) {
+function parseSlideXml(xml, theme, masterPlaceholders, layoutPositions = {}) {
   const doc = parseXml(xml);
   const shapes = [];
 
@@ -298,7 +298,7 @@ function parseSlideXml(xml, theme, masterPlaceholders) {
     const phType = ph?.getAttribute("type") || "body";
     const phIdx  = ph?.getAttribute("idx") || "0";
 
-    // Position
+    // Position — use slide XML first, fall back to layout position
     const xfrm = sp.getElementsByTagNameNS("*", "xfrm")[0];
     const off  = xfrm?.getElementsByTagNameNS("*", "off")[0];
     const ext  = xfrm?.getElementsByTagNameNS("*", "ext")[0];
@@ -307,9 +307,7 @@ function parseSlideXml(xml, theme, masterPlaceholders) {
       top:    emuToInches(off.getAttribute("y")),
       width:  emuToInches(ext.getAttribute("cx")),
       height: emuToInches(ext.getAttribute("cy")),
-    } : null;
-
-    // Shape fill colour — detect non-theme fills (e.g. orange background)
+    } : (layoutPositions[`${phType}:${phIdx}`] || layoutPositions[`body:0`] || null);
     let shapeFill = null;
     const spPr = sp.getElementsByTagNameNS("*", "spPr")[0];
     if (spPr) {
@@ -564,7 +562,50 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
   const slideFile = zip.file(`ppt/slides/slide${selectedSlideIndex}.xml`);
   if (!slideFile) throw new Error(`Slide ${selectedSlideIndex} not found in file`);
   const slideXml = await slideFile.async("string");
-  const slideShapes = parseSlideXml(slideXml, master.theme, master.placeholders);
+
+  // Also read the slide's layout XML to get fallback positions
+  // The slide rels file tells us which layout this slide uses
+  const slideRelsFile = zip.file(`ppt/slides/_rels/slide${selectedSlideIndex}.xml.rels`);
+  let layoutPositions = {}; // phIdx/phType → position
+
+  if (slideRelsFile) {
+    const slideRelsXml = await slideRelsFile.async("string");
+    const relsDoc = parseXml(slideRelsXml);
+    const rels = relsDoc.getElementsByTagNameNS("*", "Relationship");
+    for (const rel of rels) {
+      const target = rel.getAttribute("Target") || "";
+      const match = target.match(/slideLayouts\/slideLayout(\d+)\.xml/);
+      if (match) {
+        const layoutFile = zip.file(`ppt/slideLayouts/slideLayout${match[1]}.xml`);
+        if (layoutFile) {
+          const layoutXml = await layoutFile.async("string");
+          const layoutDoc = parseXml(layoutXml);
+          const layoutShapes = layoutDoc.getElementsByTagNameNS("*", "sp");
+          for (const sp of layoutShapes) {
+            const ph = sp.getElementsByTagNameNS("*", "ph")[0];
+            if (!ph) continue;
+            const phType = ph.getAttribute("type") || "body";
+            const phIdx = ph.getAttribute("idx") || "0";
+            const xfrm = sp.getElementsByTagNameNS("*", "xfrm")[0];
+            const off = xfrm?.getElementsByTagNameNS("*", "off")[0];
+            const ext = xfrm?.getElementsByTagNameNS("*", "ext")[0];
+            if (off && ext) {
+              const key = `${phType}:${phIdx}`;
+              layoutPositions[key] = {
+                left:   emuToInches(off.getAttribute("x")),
+                top:    emuToInches(off.getAttribute("y")),
+                width:  emuToInches(ext.getAttribute("cx")),
+                height: emuToInches(ext.getAttribute("cy")),
+              };
+            }
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  const slideShapes = parseSlideXml(slideXml, master.theme, master.placeholders, layoutPositions);
 
   return {
     theme: master.theme,
