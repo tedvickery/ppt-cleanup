@@ -780,16 +780,27 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
 
       // Only clear fill if it's a non-theme colour
       // Never clear fills that are theme colours or already none
-      // Apply fill — snap to nearest theme colour if close, then set or clear
+      // Apply fill — snap to nearest theme colour if close, otherwise clear
       if (fix.fill !== undefined && fix.fill !== null) {
         try {
-          const snappedFill = fix.fill === "none" ? "none" : snapToThemeColor(fix.fill, themeColors);
-          if (snappedFill === "none") {
+          let fillAction = fix.fill;
+          // If we're told to clear but the shape has a fill, try snapping first
+          if (fix.fill === "none" && fix.shapeFill && fix.shapeFill !== "none" && !fix.shapeFill.startsWith("theme:")) {
+            const snapped = snapToThemeColor(fix.shapeFill, themeColors);
+            if (snapped !== fix.shapeFill) {
+              // Successfully snapped to a theme colour — use that instead of clearing
+              fillAction = snapped;
+            }
+          } else if (fix.fill !== "none") {
+            fillAction = snapToThemeColor(fix.fill, themeColors);
+          }
+
+          if (fillAction === "none") {
             target.fill.clear();
-            console.log(`  ✓ Fill cleared on "${target.name}"`);
-          } else if (snappedFill.startsWith("#")) {
-            target.fill.setSolidColor(snappedFill.replace("#", ""));
-            console.log(`  ✓ Fill set to ${snappedFill} on "${target.name}"`);
+            console.log(`  ✓ Fill cleared on "${target.name}" (was ${fix.shapeFill})`);
+          } else if (fillAction.startsWith("#")) {
+            target.fill.setSolidColor(fillAction.replace("#", ""));
+            console.log(`  ✓ Fill set to ${fillAction} on "${target.name}"`);
           }
         } catch (e) {
           console.log(`  Error setting fill on "${target.name}":`, e.message);
