@@ -937,7 +937,7 @@ FILL/BORDER rules:
 - If current fill is NOT a theme colour → include "fill":"none" to remove it
 - Theme colours are: #000000 #44546A #FFFFFF #E7E6E6 #55BC7E #FFC330 #BE80FF #FF8345 #FF70BF #60A2F5
 
-ALIGNMENT: set to match master target. Every shape with a non-template font MUST appear in output.`;`;
+ALIGNMENT: set to match master target. Every shape with a non-template font MUST appear in output.`;
 }
 
 async function callClaude(pptxData, apiKey) {
