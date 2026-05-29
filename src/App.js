@@ -617,6 +617,7 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
     masterPlaceholders: master.placeholders,
     masterName: master.name,
     slideShapes,
+    layoutPositions,
     slideIndex: selectedSlideIndex,
   };
 }
@@ -644,7 +645,14 @@ async function duplicateSlide(slideIndex) {
   return slideIndex;
 }
 
-async function applyFixes(slideIndex, fixes) {
+async function applyFixes(slideIndex, fixes, themeColors = {}) {
+  // Build a set of theme colour hex values for quick lookup
+  const themeColorValues = new Set(
+    Object.values(themeColors)
+      .filter(Boolean)
+      .map(v => v.toLowerCase().replace("#", ""))
+  );
+
   return PowerPoint.run(async (ctx) => {
     const slides = ctx.presentation.slides;
     slides.load("items");
@@ -679,13 +687,20 @@ async function applyFixes(slideIndex, fixes) {
         if (height !== undefined && height > 0.1 && height <= 7.5){ target.height = height * inchToPt; }
       }
 
-      // Remove shape fill if instructed
-      if (fix.fill === "none") {
-        try {
-          target.fill.clear();
-          console.log(`  ✓ Fill cleared on "${target.name}"`);
-        } catch (e) {
-          console.log(`  Error clearing fill on "${target.name}":`, e.message);
+      // Only clear fill if it's a non-theme colour
+      // Never clear fills that are theme colours or already none
+      if (fix.fill === "none" && fix.shapeFill && fix.shapeFill !== "none") {
+        const fillHex = fix.shapeFill.replace("#", "").toLowerCase();
+        const isThemeColor = themeColorValues.has(fillHex);
+        if (!isThemeColor) {
+          try {
+            target.fill.clear();
+            console.log(`  ✓ Non-theme fill cleared on "${target.name}" (was ${fix.shapeFill})`);
+          } catch (e) {
+            console.log(`  Error clearing fill on "${target.name}":`, e.message);
+          }
+        } else {
+          console.log(`  Keeping theme fill on "${target.name}" (${fix.shapeFill})`);
         }
       }
 
@@ -779,26 +794,17 @@ ${slideSection}
 
 For each shape where Current ≠ Target, output a fix.
 Return ONLY a valid JSON array. No markdown, no explanation.
-Each item: { "shapeName": "<exact name>", "font": { "name": "...", "size": N, "color": "#hex", "bold": true/false, "italic": true/false }, "alignment": "left|center|right", "fill": "none", "position": { "left": N, "top": N, "width": N, "height": N } }
+Each item: { "shapeName": "<exact name>", "font": { "name": "...", "size": N, "color": "#hex", "bold": true/false, "italic": true/false }, "alignment": "left|center|right", "fill": "none" }
+Note: do NOT include "position" — positions are handled separately.
 
 FONT/COLOUR rules:
 - Fix font name, italic, bold to exactly match the target. If Current shows "(inherited)", treat it as matching — only fix if explicitly different.
 - Fix colour: if Current shows an explicit hex colour different from Target, fix it. If "(inherited)", leave it.
 - IMPORTANT: any shape where font/italic is explicitly set to something non-standard MUST be fixed.
-- FILL: ONLY include "fill": "none" if Current fill shows a hex colour that does NOT appear in the theme colours listed above. If the fill colour matches a theme colour, leave it alone. If fill is already "none", leave it alone.
+- FILL: ONLY include "fill": "none" if Current fill shows a hex colour that does NOT appear in the theme colours listed above. If fill is already "none", leave it alone.
 
-POSITION/LAYOUT rules:
-- Each shape now has an explicit Target position from the slide layout. Move each shape to its target position if it differs from current by more than 0.1".
-- If Target shows "preserve existing layout", do not move that shape.
-- Also apply steps 2-5 for any remaining issues after moving to target positions:
-
-Step 5 — fix edge cases after positioning:
-- Any shape with right edge (left + width) > 9.7" → reduce width so right edge = 9.7"
-- Any overlapping shapes after repositioning → separate them
-
-Include position in the fix for any shape whose current position differs from target by more than 0.1" in left, top, width, or height.
-
-Slide is 10" wide × 7.5" tall. All position values in inches.
+Skip shapes that already match their target formatting.
+Slide is 10" wide × 7.5" tall.
 
 Skip shapes that already match their target formatting.`;
 }
@@ -1112,7 +1118,35 @@ export default function App() {
       }
 
       addLog("Applying fixes…");
-      await applyFixes(dupIndex, fixes);
+      // Enrich fixes with shapeFill so applyFixes can decide whether to clear
+      const enrichedFixes = fixes.map(fix => {
+        const shape = pptxData.slideShapes.find(s => s.name === fix.shapeName);
+        return { ...fix, shapeFill: shape?.shapeFill || null };
+      });
+      await applyFixes(dupIndex, enrichedFixes, pptxData.theme.colors);
+
+      // Apply layout positions directly — don't rely on Claude for this
+      // Each shape has an exact target position from the layout XML
+      const positionFixes = pptxData.slideShapes
+        .filter(s => s.masterTarget?.position && s.position)
+        .filter(s => {
+          const t = s.masterTarget.position;
+          const c = s.position;
+          // Only move if difference > 0.15" in any dimension
+          return Math.abs(t.left - c.left) > 0.15 ||
+                 Math.abs(t.top - c.top) > 0.15 ||
+                 Math.abs(t.width - c.width) > 0.15 ||
+                 Math.abs(t.height - c.height) > 0.15;
+        })
+        .map(s => ({
+          shapeName: s.name,
+          position: s.masterTarget.position,
+        }));
+
+      if (positionFixes.length > 0) {
+        addLog(`Applying ${positionFixes.length} layout position fix(es)…`);
+        await applyFixes(dupIndex, positionFixes, pptxData.theme.colors);
+      }
       addLog(`✓ Done — ${fixes.length} shape${fixes.length !== 1 ? "s" : ""} reformatted`);
       setFixCount(fixes.length);
       setStatus("done");
