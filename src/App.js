@@ -1280,9 +1280,19 @@ export default function App() {
       });
       await applyFixes(dupIndex, enrichedFixes, pptxData.theme.colors);
 
-      // Apply layout positions directly — index-based to handle duplicate shape names
-      let posMatchIndex = {};
+      // Apply layout positions directly — skip shapes with intentional theme fills
+      const themeColorSet = new Set(Object.values(pptxData.theme.colors).filter(Boolean).map(c => c.toUpperCase()));
+      let posMatchIndex2 = {};
       const positionFixes = pptxData.slideShapes
+        .filter(s => {
+          // Don't reposition shapes that have an intentional theme-coloured fill
+          if (s.shapeFill && s.shapeFill !== "none") {
+            const fillHex = s.shapeFill.replace("#", "").toUpperCase();
+            const snapped = snapToThemeColor(s.shapeFill, pptxData.theme.colors);
+            if (themeColorSet.has(fillHex) || snapped !== s.shapeFill) return false;
+          }
+          return true;
+        })
         .filter(s => s.masterTarget?.position && s.position)
         .filter(s => {
           const t = s.masterTarget.position;
@@ -1292,14 +1302,12 @@ export default function App() {
                  Math.abs(t.width - c.width) > 0.15 ||
                  Math.abs(t.height - c.height) > 0.15;
         })
-        // Only fix position for shapes whose phIdx is unique — avoid stacking duplicates
         .filter((s, _, arr) => {
-          const sameTarget = arr.filter(x => 
+          const sameTarget = arr.filter(x =>
             x.masterTarget.position.left === s.masterTarget.position.left &&
             x.masterTarget.position.top === s.masterTarget.position.top
           );
-          const idx = sameTarget.indexOf(s);
-          return idx === 0; // Only move the first shape with this target position
+          return sameTarget.indexOf(s) === 0;
         })
         .map(s => ({
           shapeName: s.name,
