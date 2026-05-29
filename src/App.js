@@ -538,14 +538,31 @@ async function duplicateSlide(slideIndex) {
       const slides = ctx.presentation.slides;
       slides.load("items");
       await ctx.sync();
+
       const source = slides.items[slideIndex - 1];
       source.load("id");
       await ctx.sync();
+
+      // addSlide with copiedFrom works on Desktop but not Online
+      // Test if it actually copied by checking slide count before and after
+      const countBefore = slides.items.length;
       ctx.presentation.slides.add({ copiedFrom: source });
       await ctx.sync();
-      return slideIndex + 1;
+
+      // Reload to check if a new slide was actually added
+      slides.load("items");
+      await ctx.sync();
+      const countAfter = slides.items.length;
+
+      if (countAfter > countBefore) {
+        // Move the new slide to be right after the source
+        return slideIndex + 1;
+      } else {
+        // Duplication didn't work — work on original
+        return slideIndex;
+      }
     } catch {
-      return slideIndex; // fallback: edit original
+      return slideIndex;
     }
   });
 }
@@ -933,7 +950,7 @@ export default function App() {
       addLog("Duplicating slide…");
       const dupIndex = await duplicateSlide(slideIndex);
       addLog(dupIndex === slideIndex
-        ? "⚠ Duplication unavailable — editing original"
+        ? "⚠ Running on original slide — use Ctrl+Z to undo if needed"
         : `Duplicate created at position ${dupIndex}`);
 
       addLog("Sending to Claude for analysis…");
