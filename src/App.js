@@ -425,6 +425,9 @@ function parseSlideXml(xml, theme, masterPlaceholders, layoutPositions = {}) {
       (p) => p.type === phType || (phType === "body" && p.idx === phIdx)
     ) || masterPlaceholders.find((p) => p.type === "body");
 
+    // Use layout position (per phIdx) as the target position — more accurate than master
+    const layoutTargetPos = layoutPositions[`${phType}:${phIdx}`] || layoutPositions[`${phType}:0`] || masterPh?.position || null;
+
     shapes.push({
       id,
       name,
@@ -447,7 +450,7 @@ function parseSlideXml(xml, theme, masterPlaceholders, layoutPositions = {}) {
         color: masterPh.font.color,
         bold: masterPh.font.bold,
         alignment: masterPh.alignment,
-        position: masterPh.position,
+        position: layoutTargetPos,
       } : null,
     });
   }
@@ -751,13 +754,15 @@ ${Object.entries(theme.colors).filter(([,v])=>v).map(([k,v])=>`  ${k}: ${v}`).jo
   });
 
   const slideSection = slideShapes.map(s => {
-    // Only show target position if this shape type is unique on the slide
-    // If multiple shapes share the same placeholder type, showing the same
-    // target position for all would cause Claude to stack them
-    const showTargetPos = phTypeCounts[s.phType] === 1 && s.masterTarget?.position;
+    // Use the layout position as the explicit target if available
+    // This is more accurate than the master position which is generic
+    const layoutKey = `${s.phType}:${s.phIdx}`;
+    const layoutPos = s.masterTarget?.position;
+    const showTargetPos = layoutPos != null;
+
     return `  Shape: "${s.name}" [${s.phType}]
     Current → font="${s.current.fontName}" size=${s.current.fontSize}pt color=${s.current.color} bold=${s.current.bold} italic=${s.current.italic} align=${s.current.alignment} fill=${s.shapeFill || "none"}${s.position ? ` pos=(${s.position.left}",${s.position.top}") size=(${s.position.width}"×${s.position.height}")` : ""}
-    Target  → font="${s.masterTarget?.fontName}" size=${s.masterTarget?.fontSize}pt color=${s.masterTarget?.color} bold=${s.masterTarget?.bold} italic=false align=${s.masterTarget?.alignment} fill=none${showTargetPos ? ` pos=(${s.masterTarget.position.left}",${s.masterTarget.position.top}") size=(${s.masterTarget.position.width}"×${s.masterTarget.position.height}")` : " pos=(preserve existing layout)"}
+    Target  → font="${s.masterTarget?.fontName}" size=${s.masterTarget?.fontSize}pt color=${s.masterTarget?.color} bold=${s.masterTarget?.bold} italic=false align=${s.masterTarget?.alignment} fill=none${showTargetPos ? ` pos=(${layoutPos.left}",${layoutPos.top}") size=(${layoutPos.width}"×${layoutPos.height}")` : " pos=(preserve existing layout)"}
     Text: "${s.textContent}"`;
   }).join("\n\n");
 
@@ -782,30 +787,16 @@ FONT/COLOUR rules:
 - IMPORTANT: any shape where font/italic is explicitly set to something non-standard MUST be fixed.
 - FILL: ONLY include "fill": "none" if Current fill shows a hex colour that does NOT appear in the theme colours listed above. If the fill colour matches a theme colour, leave it alone. If fill is already "none", leave it alone.
 
-POSITION/LAYOUT rules — you MUST analyse the layout and fix these:
+POSITION/LAYOUT rules:
+- Each shape now has an explicit Target position from the slide layout. Move each shape to its target position if it differs from current by more than 0.1".
+- If Target shows "preserve existing layout", do not move that shape.
+- Also apply steps 2-5 for any remaining issues after moving to target positions:
 
-Step 1 — identify columns and rows:
-- Group shapes by similar left edge (within 0.5") → these form a column
-- Group shapes by similar top edge (within 0.3") → these form a row
-
-Step 2 — fix column alignment:
-- All shapes in a column must have the same left edge (use the leftmost value)
-- All shapes in a column must have the same width (use the widest value)
-
-Step 3 — fix row alignment:
-- All shapes in a row must have the same top edge (use the topmost value)
-- All shapes in a row must have the same height (use the tallest value)
-
-Step 4 — fix spacing:
-- Gaps between shapes in the same column must be equal
-- Gaps between shapes in the same row must be equal
-
-Step 5 — fix edge cases:
+Step 5 — fix edge cases after positioning:
 - Any shape with right edge (left + width) > 9.7" → reduce width so right edge = 9.7"
-- Any shape within 0.1" of slide edge → adjust to 0.3" margin
-- Any overlapping shapes → separate them
+- Any overlapping shapes after repositioning → separate them
 
-Apply ALL of steps 1-5 to the shapes above. Include position fixes for every shape that needs to move or resize. Do not skip shapes just because font/colour is fine.
+Include position in the fix for any shape whose current position differs from target by more than 0.1" in left, top, width, or height.
 
 Slide is 10" wide × 7.5" tall. All position values in inches.
 
