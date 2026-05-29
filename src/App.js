@@ -552,13 +552,17 @@ async function applyFixes(slideIndex, fixes) {
     for (const shape of shapes.items) shape.load(["id", "name", "left", "top", "width", "height"]);
     await ctx.sync();
 
+    const shapeNames = shapes.items.map(s => s.name);
+    console.log("Shapes on slide:", JSON.stringify(shapeNames));
+    console.log("Fixes from Claude:", JSON.stringify(fixes));
+
     for (const fix of fixes) {
       const target = shapes.items.find(
         (s) => s.name === fix.shapeName || s.id === fix.shapeId
       );
+      console.log(`Fix for "${fix.shapeName}" → ${target ? "FOUND: " + target.name : "NOT FOUND"}`);
       if (!target) continue;
 
-      // Apply font and alignment only — positions handled separately
       if (fix.font || fix.alignment) {
         try {
           const tf = target.textFrame;
@@ -571,6 +575,7 @@ async function applyFixes(slideIndex, fixes) {
             const runs = para.runs;
             runs.load("items");
             await ctx.sync();
+            console.log(`  Applying to "${target.name}": font=${fix.font?.name} size=${fix.font?.size} color=${fix.font?.color} runs=${runs.items.length}`);
             for (const run of runs.items) {
               if (fix.font?.name)              run.font.name  = fix.font.name;
               if (fix.font?.size)              run.font.size  = fix.font.size;
@@ -578,7 +583,9 @@ async function applyFixes(slideIndex, fixes) {
               if (fix.font?.bold !== undefined) run.font.bold  = fix.font.bold;
             }
           }
-        } catch (_) {}
+        } catch (e) {
+          console.log(`  Error on "${target.name}":`, e.message);
+        }
       }
     }
     await ctx.sync();
