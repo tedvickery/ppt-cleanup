@@ -941,6 +941,8 @@ ALIGNMENT:
 - Set alignment to match the master target for that placeholder type
 
 Skip shapes that already match. Do not include "position" in the output.`;
+}
+
 async function callClaude(pptxData, apiKey) {
   const prompt = buildPrompt(pptxData);
   console.log("=== PROMPT TO CLAUDE ===\n", prompt);
