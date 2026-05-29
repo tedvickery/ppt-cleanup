@@ -789,7 +789,7 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
       // Use the shape's id/name from that array to find the correct Office JS shape
       const slideShape = fix.shapeIndex !== undefined ? fix._slideShape : null;
       const lookupName = slideShape?.name || fix.shapeName;
-      const lookupId = slideShape?.id;
+      const lookupId = slideShape?.id || fix.shapeId;
       const target = lookupId
         ? (shapes.items.find(s => s.id === lookupId) || shapes.items.find(s => s.name === lookupName))
         : shapes.items.find(s => s.name === lookupName || s.id === fix.shapeId);
@@ -1268,35 +1268,29 @@ export default function App() {
       });
       await applyFixes(dupIndex, enrichedFixes, pptxData.theme.colors);
 
-      // Apply layout positions directly — skip shapes with duplicate names (can't reliably match)
+      // Apply layout positions — use shape id for duplicate-named shapes
       const shapeNameCounts = {};
       pptxData.slideShapes.forEach(s => { shapeNameCounts[s.name] = (shapeNameCounts[s.name] || 0) + 1; });
-
       const themeColorSet = new Set(Object.values(pptxData.theme.colors).filter(Boolean).map(c => c.toUpperCase()));
       const positionFixes = pptxData.slideShapes
-        .filter(s => shapeNameCounts[s.name] === 1) // Only move uniquely-named shapes
-        .filter(s => {
-          // Don't reposition shapes with intentional theme fills
-          if (s.shapeFill && s.shapeFill !== "none") {
-            const fillHex = s.shapeFill.replace("#", "").toUpperCase();
-            const snapped = snapToThemeColor(s.shapeFill, pptxData.theme.colors);
-            if (themeColorSet.has(fillHex) || snapped !== s.shapeFill) return false;
-          }
-          return true;
-        })
         .filter(s => s.masterTarget?.position && s.position)
         .filter(s => {
           const t = s.masterTarget.position;
           const c = s.position;
-          return Math.abs(t.left - c.left) > 0.15 ||
+          const needsMove = Math.abs(t.left - c.left) > 0.15 ||
                  Math.abs(t.top - c.top) > 0.15 ||
                  Math.abs(t.width - c.width) > 0.15 ||
                  Math.abs(t.height - c.height) > 0.15;
+          if (!needsMove) return false;
+          if (s.shapeFill && s.shapeFill !== "none") {
+            const isExactTheme = themeColorSet.has(s.shapeFill.replace("#","").toUpperCase());
+            const fontAlreadyCorrect = s.current.fontName === s.masterTarget?.fontName ||
+                                       s.current.fontName === "(inherited)";
+            if (isExactTheme && fontAlreadyCorrect) return false;
+          }
+          return true;
         })
-        .map(s => ({
-          shapeName: s.name,
-          position: s.masterTarget.position,
-        }));
+        .map(s => ({ shapeName: s.name, shapeId: s.id, position: s.masterTarget.position }));
 
       if (positionFixes.length > 0) {
         addLog(`Applying ${positionFixes.length} layout position fix(es)…`);
