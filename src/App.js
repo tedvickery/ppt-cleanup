@@ -15,7 +15,7 @@ function getFileBytes() {
 
     Office.context.document.getFileAsync(
       Office.FileType.Compressed,
-      { sliceSize: 4096 },
+      { sliceSize: 4194304 },
       (result) => {
         if (result.status === Office.AsyncResultStatus.Failed) {
           clearTimeout(timeout);
@@ -24,6 +24,7 @@ function getFileBytes() {
 
         const file = result.value;
         const sliceCount = file.sliceCount;
+        console.log(`File has ${sliceCount} slices`);
         const slices = [];
 
         function getSlice(index) {
@@ -35,6 +36,7 @@ function getFileBytes() {
             }
             slices.push(sliceResult.value.data);
             if (index < sliceCount - 1) {
+              if (index % 10 === 0) console.log(`Slice ${index}/${sliceCount}`);
               getSlice(index + 1);
             } else {
               clearTimeout(timeout);
