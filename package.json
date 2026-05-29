@@ -2,6 +2,7 @@
   "name": "ppt-cleanup-addin",
   "version": "0.1.0",
   "private": true,
+  "homepage": ".",
   "dependencies": {
     "jszip": "^3.10.1",
     "react": "^18.2.0",

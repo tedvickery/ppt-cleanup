@@ -14,16 +14,16 @@
   <DisplayName DefaultValue="Slide Cleanup" />
   <Description DefaultValue="AI-powered slide formatter that syncs your slide to the master theme." />
 
-  <IconUrl DefaultValue="https://ppt-cleanup-a982tc320-ted-s-projects14.vercel.app/icon-80.png" />
-  <HighResolutionIconUrl DefaultValue="https://ppt-cleanup-a982tc320-ted-s-projects14.vercel.app/icon-80.png" />
-  <SupportUrl DefaultValue="https://ppt-cleanup-a982tc320-ted-s-projects14.vercel.app" />
+  <IconUrl DefaultValue="https://ppt-cleanup.vercel.app/icon-80.png" />
+  <HighResolutionIconUrl DefaultValue="https://ppt-cleanup.vercel.app/icon-80.png" />
+  <SupportUrl DefaultValue="https://ppt-cleanup.vercel.app" />
 
   <Hosts>
     <Host Name="Presentation" />
   </Hosts>
 
   <DefaultSettings>
-    <SourceLocation DefaultValue="https://ppt-cleanup-a982tc320-ted-s-projects14.vercel.app" />
+    <SourceLocation DefaultValue="https://ppt-cleanup.vercel.app" />
   </DefaultSettings>
 
   <Permissions>ReadWriteDocument</Permissions>
@@ -75,8 +75,8 @@
         <bt:Image id="Icon.80x80" DefaultValue="https://cdn.jsdelivr.net/gh/microsoft/fluentui-system-icons/assets/Sparkle/SVG/ic_fluent_sparkle_48_regular.svg" />
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="Commands.Url" DefaultValue="https://ppt-cleanup-a982tc320-ted-s-projects14.vercel.app" />
-        <bt:Url id="Taskpane.Url" DefaultValue="https://ppt-cleanup-a982tc320-ted-s-projects14.vercel.app" />
+        <bt:Url id="Commands.Url" DefaultValue="https://ppt-cleanup.vercel.app" />
+        <bt:Url id="Taskpane.Url" DefaultValue="https://ppt-cleanup.vercel.app" />
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="CommandsGroup.Label" DefaultValue="AI Tools" />
