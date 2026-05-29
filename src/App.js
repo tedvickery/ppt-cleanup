@@ -269,12 +269,34 @@ function parseMasterXml(xml, theme) {
     else if (algn === "r") alignment = "right";
     else if (algn === "just") alignment = "justify";
 
+    // Master placeholder fill
+    let masterFill = null;
+    const spPrEl = sp.getElementsByTagNameNS("*", "spPr")[0];
+    if (spPrEl) {
+      const noFill = spPrEl.getElementsByTagNameNS("*", "noFill")[0];
+      if (noFill) {
+        masterFill = "none";
+      } else {
+        const solidFill = spPrEl.getElementsByTagNameNS("*", "solidFill")[0];
+        if (solidFill) {
+          const srgb = solidFill.getElementsByTagNameNS("*", "srgbClr")[0];
+          const scheme = solidFill.getElementsByTagNameNS("*", "schemeClr")[0];
+          if (srgb) masterFill = "#" + srgb.getAttribute("val").toUpperCase();
+          else if (scheme) {
+            const resolved = resolveThemeColor(scheme.getAttribute("val"), theme.colors);
+            masterFill = resolved || ("theme:" + scheme.getAttribute("val"));
+          }
+        }
+      }
+    }
+
     placeholders.push({
       type: phType,
       idx: phIdx,
       font: { name: fontName, size: fontSize, color, bold },
       alignment,
       position,
+      fill: masterFill,
     });
   }
 
@@ -479,6 +501,7 @@ function parseSlideXml(xml, theme, masterPlaceholders, layoutPositions = {}) {
         bold: masterPh.font.bold,
         alignment: masterPh.alignment,
         position: layoutTargetPos,
+        fill: masterPh.fill || "none",
       } : null,
     });
   }
@@ -673,6 +696,46 @@ async function duplicateSlide(slideIndex) {
   return slideIndex;
 }
 
+/* ── Colour snapping — find nearest theme colour within threshold ─────────── */
+
+function hexToRgb(hex) {
+  const h = hex.replace("#", "");
+  return {
+    r: parseInt(h.substring(0, 2), 16),
+    g: parseInt(h.substring(2, 4), 16),
+    b: parseInt(h.substring(4, 6), 16),
+  };
+}
+
+function colourDistance(hex1, hex2) {
+  const a = hexToRgb(hex1), b = hexToRgb(hex2);
+  // Weighted Euclidean distance (human perception weighting)
+  return Math.sqrt(
+    2 * Math.pow(a.r - b.r, 2) +
+    4 * Math.pow(a.g - b.g, 2) +
+    3 * Math.pow(a.b - b.b, 2)
+  );
+}
+
+// Snap a hex colour to the nearest theme colour if within threshold (max ~80 on 0-765 scale)
+function snapToThemeColor(hex, themeColors, threshold = 80) {
+  if (!hex || hex === "none" || hex.startsWith("theme:")) return hex;
+  let nearest = null, nearestDist = Infinity;
+  for (const [, themeHex] of Object.entries(themeColors)) {
+    if (!themeHex) continue;
+    const dist = colourDistance(hex, themeHex);
+    if (dist < nearestDist) {
+      nearestDist = dist;
+      nearest = themeHex;
+    }
+  }
+  if (nearestDist <= threshold) {
+    console.log(`  Snapping ${hex} → ${nearest} (distance: ${nearestDist.toFixed(0)})`);
+    return nearest;
+  }
+  return hex; // too different from any theme colour — return as-is
+}
+
 async function applyFixes(slideIndex, fixes, themeColors = {}) {
   // Build a set of theme colour hex values for quick lookup
   const themeColorValues = new Set(
@@ -717,25 +780,36 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
 
       // Only clear fill if it's a non-theme colour
       // Never clear fills that are theme colours or already none
-      // Clear fill if master says none — remove even theme-coloured fills
-      // if the master placeholder doesn't have a fill
-      if (fix.fill === "none" && fix.shapeFill && fix.shapeFill !== "none") {
+      // Apply fill — snap to nearest theme colour if close, then set or clear
+      if (fix.fill !== undefined && fix.fill !== null) {
         try {
-          target.fill.clear();
-          console.log(`  ✓ Fill removed on "${target.name}" (was ${fix.shapeFill})`);
+          const snappedFill = fix.fill === "none" ? "none" : snapToThemeColor(fix.fill, themeColors);
+          if (snappedFill === "none") {
+            target.fill.clear();
+            console.log(`  ✓ Fill cleared on "${target.name}"`);
+          } else if (snappedFill.startsWith("#")) {
+            target.fill.setSolidColor(snappedFill.replace("#", ""));
+            console.log(`  ✓ Fill set to ${snappedFill} on "${target.name}"`);
+          }
         } catch (e) {
-          console.log(`  Error removing fill on "${target.name}":`, e.message);
+          console.log(`  Error setting fill on "${target.name}":`, e.message);
         }
       }
 
-      // Remove border if instructed AND master has no border
-      // Even theme-coloured borders should be removed if the master doesn't have one
-      if (fix.border === "none" && fix.shapeBorder && fix.shapeBorder !== "none") {
+      // Apply border — snap to nearest theme colour if close, then set or remove
+      if (fix.border !== undefined && fix.border !== null) {
         try {
-          target.lineFormat.visible = false;
-          console.log(`  ✓ Border removed on "${target.name}" (was ${fix.shapeBorder})`);
+          const snappedBorder = fix.border === "none" ? "none" : snapToThemeColor(fix.border, themeColors);
+          if (snappedBorder === "none") {
+            target.lineFormat.visible = false;
+            console.log(`  ✓ Border removed on "${target.name}"`);
+          } else if (snappedBorder.startsWith("#")) {
+            target.lineFormat.color = snappedBorder.replace("#", "");
+            target.lineFormat.visible = true;
+            console.log(`  ✓ Border set to ${snappedBorder} on "${target.name}"`);
+          }
         } catch (e) {
-          console.log(`  Error removing border on "${target.name}":`, e.message);
+          console.log(`  Error setting border on "${target.name}":`, e.message);
         }
       }
 
@@ -750,7 +824,10 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
           if (fix.font) {
             if (fix.font.name)               tr.font.name   = fix.font.name;
             if (fix.font.size)               tr.font.size   = fix.font.size;
-            if (fix.font.color)              tr.font.color  = fix.font.color;
+            if (fix.font.color) {
+              const snappedColor = snapToThemeColor(fix.font.color, themeColors);
+              tr.font.color = snappedColor.replace("#", "");
+            }
             if (fix.font.bold !== undefined)  tr.font.bold   = fix.font.bold;
             if (fix.font.italic !== undefined) tr.font.italic = fix.font.italic;
           }
@@ -812,7 +889,7 @@ ${Object.entries(theme.colors).filter(([,v])=>v).map(([k,v])=>`  ${k}: ${v}`).jo
 
     return `  Shape: "${s.name}" [${s.phType}]
     Current → font="${s.current.fontName}" size=${s.current.fontSize}pt color=${s.current.color} bold=${s.current.bold} italic=${s.current.italic} align=${s.current.alignment} fill=${s.shapeFill || "none"} border=${s.shapeBorder || "none"}${s.position ? ` pos=(${s.position.left}",${s.position.top}") size=(${s.position.width}"×${s.position.height}")` : ""}
-    Target  → font="${s.masterTarget?.fontName}" size=${s.masterTarget?.fontSize}pt color=${s.masterTarget?.color} bold=${s.masterTarget?.bold} italic=false align=${s.masterTarget?.alignment} fill=none border=none${showTargetPos ? ` pos=(${layoutPos.left}",${layoutPos.top}") size=(${layoutPos.width}"×${layoutPos.height}")` : " pos=(preserve existing layout)"}
+    Target  → font="${s.masterTarget?.fontName}" size=${s.masterTarget?.fontSize}pt color=${s.masterTarget?.color} bold=${s.masterTarget?.bold} italic=false align=${s.masterTarget?.alignment} fill=${s.masterTarget?.fill || "none"} border=none${showTargetPos ? ` pos=(${layoutPos.left}",${layoutPos.top}") size=(${layoutPos.width}"×${layoutPos.height}")` : " pos=(preserve existing layout)"}
     Text: "${s.textContent}"`;
   }).join("\n\n");
 
@@ -829,15 +906,15 @@ ${slideSection}
 
 For each shape where Current ≠ Target, output a fix.
 Return ONLY a valid JSON array. No markdown, no explanation.
-Each item: { "shapeName": "<exact name>", "font": { "name": "...", "size": N, "color": "#hex", "bold": true/false, "italic": true/false }, "alignment": "left|center|right", "fill": "none", "border": "none" }
+Each item: { "shapeName": "<exact name>", "font": { "name": "...", "size": N, "color": "#hex", "bold": true/false, "italic": true/false }, "alignment": "left|center|right", "fill": "#hex or none", "border": "#hex or none" }
 Note: do NOT include "position" — positions are handled separately.
 
 FONT/COLOUR rules:
 - Fix font name, italic, bold to exactly match the target. If Current shows "(inherited)", treat it as matching — only fix if explicitly different.
 - Fix colour: if Current shows an explicit hex colour different from Target, fix it. If "(inherited)", leave it.
 - IMPORTANT: any shape where font/italic is explicitly set to something non-standard MUST be fixed.
-- FILL: Include "fill": "none" if Current fill is not "none" AND Target fill is "none". Theme-coloured fills should still be removed if the master says none.
-- BORDER: Include "border": "none" if Current border is not "none" AND Target border is "none". Theme-coloured borders should still be removed if the master says none.
+- FILL: If Current fill ≠ Target fill, include "fill" with the Target value (either a hex colour or "none"). If they match, omit fill entirely.
+- BORDER: If Current border ≠ Target border, include "border" with the Target value (either a hex colour or "none"). If they match, omit border entirely.
 
 Skip shapes that already match their target formatting.
 Slide is 10" wide × 7.5" tall.
