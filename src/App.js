@@ -423,6 +423,8 @@ function parseSlideXml(xml, theme, masterPlaceholders) {
         position: masterPh.position,
       } : null,
     });
+    // Debug: log raw txBody XML to help find orange colour storage
+    console.log(`Shape "${name}" txBody XML:`, sp.getElementsByTagNameNS("*", "txBody")[0]?.innerHTML?.substring(0, 500));
   }
 
   return shapes;
