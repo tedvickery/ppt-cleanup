@@ -533,38 +533,9 @@ function getSelectedSlideIndex() {
 }
 
 async function duplicateSlide(slideIndex) {
-  return PowerPoint.run(async (ctx) => {
-    try {
-      const slides = ctx.presentation.slides;
-      slides.load("items");
-      await ctx.sync();
-
-      const source = slides.items[slideIndex - 1];
-      source.load("id");
-      await ctx.sync();
-
-      // addSlide with copiedFrom works on Desktop but not Online
-      // Test if it actually copied by checking slide count before and after
-      const countBefore = slides.items.length;
-      ctx.presentation.slides.add({ copiedFrom: source });
-      await ctx.sync();
-
-      // Reload to check if a new slide was actually added
-      slides.load("items");
-      await ctx.sync();
-      const countAfter = slides.items.length;
-
-      if (countAfter > countBefore) {
-        // Move the new slide to be right after the source
-        return slideIndex + 1;
-      } else {
-        // Duplication didn't work — work on original
-        return slideIndex;
-      }
-    } catch {
-      return slideIndex;
-    }
-  });
+  // PowerPoint Online doesn't support reliable slide duplication via JS API
+  // Work on the original slide — user can Ctrl+Z to undo
+  return slideIndex;
 }
 
 async function applyFixes(slideIndex, fixes) {
