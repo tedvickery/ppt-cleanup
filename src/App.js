@@ -41,12 +41,20 @@ function getFileBytes() {
             } else {
               clearTimeout(timeout);
               file.closeAsync();
-              const total = slices.reduce((n, s) => n + s.byteLength, 0);
+              // PowerPoint Online returns slices as regular arrays, not ArrayBuffers
+              // Handle both formats
+              const byteArrays = slices.map(s => {
+                if (s instanceof ArrayBuffer) return new Uint8Array(s);
+                if (s instanceof Uint8Array) return s;
+                // Plain array of numbers
+                return new Uint8Array(s);
+              });
+              const total = byteArrays.reduce((n, s) => n + s.length, 0);
               const combined = new Uint8Array(total);
               let offset = 0;
-              for (const slice of slices) {
-                combined.set(new Uint8Array(slice), offset);
-                offset += slice.byteLength;
+              for (const arr of byteArrays) {
+                combined.set(arr, offset);
+                offset += arr.length;
               }
               resolve(combined);
             }
