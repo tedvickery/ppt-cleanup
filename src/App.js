@@ -9,12 +9,18 @@ const STORAGE_KEY = "ppt_cleanup_api_key";
 
 function getFileBytes() {
   return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error("File read timed out — try again"));
+    }, 30000);
+
     Office.context.document.getFileAsync(
       Office.FileType.Compressed,
-      { sliceSize: 65536 },
+      { sliceSize: 4096 },
       (result) => {
-        if (result.status === Office.AsyncResultStatus.Failed)
+        if (result.status === Office.AsyncResultStatus.Failed) {
+          clearTimeout(timeout);
           return reject(new Error(result.error.message));
+        }
 
         const file = result.value;
         const sliceCount = file.sliceCount;
@@ -23,6 +29,7 @@ function getFileBytes() {
         function getSlice(index) {
           file.getSliceAsync(index, (sliceResult) => {
             if (sliceResult.status === Office.AsyncResultStatus.Failed) {
+              clearTimeout(timeout);
               file.closeAsync();
               return reject(new Error(sliceResult.error.message));
             }
@@ -30,8 +37,8 @@ function getFileBytes() {
             if (index < sliceCount - 1) {
               getSlice(index + 1);
             } else {
+              clearTimeout(timeout);
               file.closeAsync();
-              // Combine all slices into one Uint8Array
               const total = slices.reduce((n, s) => n + s.byteLength, 0);
               const combined = new Uint8Array(total);
               let offset = 0;
@@ -969,7 +976,7 @@ export default function App() {
       const slideIndex = await getSelectedSlideIndex();
       addLog(`Slide ${slideIndex} selected`);
 
-      addLog("Reading .pptx file…");
+      addLog("Reading .pptx file (this may take a moment)…");
       const { zip, masters } = await readPptxFile();
       addLog(`Found ${masters.length} slide master${masters.length !== 1 ? "s" : ""}`);
 
