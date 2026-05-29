@@ -322,26 +322,52 @@ function parseSlideXml(xml, theme, masterPlaceholders) {
 
     if (!textContent.trim() && runs.length === 0) continue;
 
-    // Get font from runs — scan all runs to detect explicit colours
+    // Get font from runs — scan all runs AND paragraph-level overrides for explicit colours
     const allRuns = Array.from(txBody.getElementsByTagNameNS("*", "r"));
     const firstRun = allRuns[0];
     const rPr = firstRun?.getElementsByTagNameNS("*", "rPr")[0];
+    const allParas = Array.from(txBody.getElementsByTagNameNS("*", "p"));
 
     let fontName = null, fontSize = null, color = null, bold = null;
 
-    // Scan all runs for explicit colour overrides (catches orange, red etc applied manually)
+    // Helper to extract colour from a solidFill element's parent
+    function extractColorFromEl(el) {
+      if (!el) return null;
+      const solidFill = el.getElementsByTagNameNS("*", "solidFill")[0];
+      if (!solidFill) return null;
+      const srgb   = solidFill.getElementsByTagNameNS("*", "srgbClr")[0];
+      const scheme = solidFill.getElementsByTagNameNS("*", "schemeClr")[0];
+      const sys    = solidFill.getElementsByTagNameNS("*", "sysClr")[0];
+      if (srgb)    return "#" + srgb.getAttribute("val");
+      if (sys)     return "#" + (sys.getAttribute("lastClr") || "000000");
+      if (scheme)  return resolveThemeColor(scheme.getAttribute("val"), theme.colors);
+      return null;
+    }
+
+    // Priority 1: explicit colour on runs (most specific)
     for (const run of allRuns) {
       const rp = run.getElementsByTagNameNS("*", "rPr")[0];
-      if (!rp) continue;
-      const solidFill = rp.getElementsByTagNameNS("*", "solidFill")[0];
-      if (solidFill) {
-        const srgb   = solidFill.getElementsByTagNameNS("*", "srgbClr")[0];
-        const scheme = solidFill.getElementsByTagNameNS("*", "schemeClr")[0];
-        const sys    = solidFill.getElementsByTagNameNS("*", "sysClr")[0];
-        if (srgb)        { color = "#" + srgb.getAttribute("val"); break; }
-        else if (sys)    { color = "#" + (sys.getAttribute("lastClr") || "000000"); break; }
-        else if (scheme) { color = resolveThemeColor(scheme.getAttribute("val"), theme.colors); break; }
+      const c = extractColorFromEl(rp);
+      if (c) { color = c; break; }
+    }
+
+    // Priority 2: paragraph-level defRPr colour
+    if (!color) {
+      for (const para of allParas) {
+        const pPrEl = para.getElementsByTagNameNS("*", "pPr")[0];
+        const defRPr = pPrEl?.getElementsByTagNameNS("*", "defRPr")[0];
+        const c = extractColorFromEl(defRPr);
+        if (c) { color = c; break; }
       }
+    }
+
+    // Priority 3: txBody lstStyle defRPr colour
+    if (!color) {
+      const lstStyle = txBody.getElementsByTagNameNS("*", "lstStyle")[0];
+      const lvl1pPr = lstStyle?.getElementsByTagNameNS("*", "lvl1pPr")[0];
+      const defRPr = lvl1pPr?.getElementsByTagNameNS("*", "defRPr")[0];
+      const c = extractColorFromEl(defRPr);
+      if (c) color = c;
     }
 
     if (rPr) {
@@ -668,32 +694,33 @@ Return ONLY a valid JSON array. No markdown, no explanation.
 Each item: { "shapeName": "<exact name>", "font": { "name": "...", "size": N, "color": "#hex", "bold": true/false }, "alignment": "left|center|right", "position": { "left": N, "top": N, "width": N, "height": N } }
 
 FONT/COLOUR rules:
-- Fix font name, size, colour, bold to exactly match the target
-- Fix text alignment (left/center/right) to match the target
+- Fix font name to exactly match the target. If Current shows "(inherited)", treat it as matching the target font — only fix if explicitly different.
+- Fix colour: if Current shows an explicit hex colour different from Target, fix it. If Current shows "(inherited)", assume it inherits the target colour — leave it unless you have reason to think it's wrong.
+- Fix bold to match target. If "(inherited)", leave it.
+- Fix text alignment (left/center/right) to match the target.
+- IMPORTANT: any shape where the font name is explicitly set to something other than the target font MUST be fixed, even if colour/alignment look correct.
 
 POSITION/LAYOUT rules — apply design judgment like a professional designer:
 
-WHEN TO MOVE:
-- Shape is overlapping another shape → separate them
-- Shape is partially or fully off-slide → move it back in with 0.3" margin
-- Title shape is not in the top area of the slide → move it up
-- Shape is within 0.1" of a slide edge (not intentionally flush) → add 0.3" margin
+WHEN TO MOVE (always fix these even when target says "preserve existing layout"):
+- Shape is overlapping another shape by more than 0.1" → separate them
+- Shape is partially or fully off-slide → move back in with 0.3" margin
+- Title shape is in the bottom half of the slide → move to top area
+- Shape is within 0.1" of slide edge without clear reason → add 0.3" margin
 
-SIZING:
-- If 2+ shapes clearly form a column or row and should be the same width/height, normalise them to match (use the largest as reference)
-- If shapes form a two-column layout, ensure both columns have equal width
-- If a shape's width extends beyond the slide (>10"), clip it to 9.4" with 0.3" margins each side
+SIZING (fix these even when target says "preserve existing layout"):
+- 2+ shapes that clearly form a column (similar left position, similar width) → normalise widths to match the widest
+- 2+ shapes in a row (similar top position) → normalise heights
+- Shape width + left position exceeds 9.7" → clip width so right edge is at 9.7"
 
-SPACING:
-- If 2+ shapes are stacked vertically and clearly form a group, ensure consistent vertical gaps between them (use the smallest existing gap as reference)
-- If 2+ shapes are side by side horizontally, ensure consistent horizontal gaps
-- Align left edges of shapes in the same column (snap to nearest 0.1")
-- Align top edges of shapes in the same row (snap to nearest 0.1")
+SPACING (fix these even when target says "preserve existing layout"):
+- 2+ shapes stacked vertically in same column → ensure gaps between them are equal (use average gap)
+- 2+ shapes side by side in same row → ensure gaps are equal
+- Align left edges of shapes in the same column to the same value (nearest 0.1")
 
-PRESERVE:
-- If Target shows "preserve existing layout" and the shape looks fine → omit position entirely
-- Never move a shape that is already well-placed just to match the master coordinates
-- When in doubt, omit position from the fix
+PRESERVE — only when shape genuinely looks fine:
+- If shape is well-positioned, correctly sized, not overlapping, and margins look intentional → omit position
+- When in doubt about position, omit it
 
 Slide is 10" wide × 7.5" tall. All position values in inches.
 
