@@ -561,7 +561,7 @@ async function applyFixes(slideIndex, fixes) {
     shapes.load("items");
     await ctx.sync();
 
-    for (const shape of shapes.items) shape.load(["id", "name"]);
+    for (const shape of shapes.items) shape.load(["id", "name", "left", "top", "width", "height"]);
     await ctx.sync();
 
     for (const fix of fixes) {
@@ -570,15 +570,22 @@ async function applyFixes(slideIndex, fixes) {
       );
       if (!target) continue;
 
+      // Apply position — inches to points (1 inch = 72 points)
+      // Safety check: keep shapes within slide bounds (10" x 7.5" = 720pt x 540pt)
       if (fix.position) {
-        target.load(["left", "top", "width", "height"]);
-        await ctx.sync();
-        if (fix.position.left  !== undefined) target.left   = fix.position.left   * 914400 / 9525;
-        if (fix.position.top   !== undefined) target.top    = fix.position.top    * 914400 / 9525;
-        if (fix.position.width !== undefined) target.width  = fix.position.width  * 914400 / 9525;
-        if (fix.position.height!== undefined) target.height = fix.position.height * 914400 / 9525;
+        const newLeft   = fix.position.left   !== undefined ? fix.position.left   * 72 : null;
+        const newTop    = fix.position.top    !== undefined ? fix.position.top    * 72 : null;
+        const newWidth  = fix.position.width  !== undefined ? fix.position.width  * 72 : null;
+        const newHeight = fix.position.height !== undefined ? fix.position.height * 72 : null;
+
+        // Only apply if values are sensible (within slide bounds)
+        if (newLeft  !== null && newLeft  >= 0 && newLeft  < 720) target.left   = newLeft;
+        if (newTop   !== null && newTop   >= 0 && newTop   < 540) target.top    = newTop;
+        if (newWidth !== null && newWidth  > 0 && newWidth <= 720) target.width  = newWidth;
+        if (newHeight!== null && newHeight > 0 && newHeight<= 540) target.height = newHeight;
       }
 
+      // Apply font and alignment
       if (fix.font || fix.alignment) {
         try {
           const tf = target.textFrame;
@@ -592,10 +599,10 @@ async function applyFixes(slideIndex, fixes) {
             runs.load("items");
             await ctx.sync();
             for (const run of runs.items) {
-              if (fix.font?.name)             run.font.name  = fix.font.name;
-              if (fix.font?.size)             run.font.size  = fix.font.size;
-              if (fix.font?.color)            run.font.color = fix.font.color;
-              if (fix.font?.bold !== undefined) run.font.bold = fix.font.bold;
+              if (fix.font?.name)              run.font.name  = fix.font.name;
+              if (fix.font?.size)              run.font.size  = fix.font.size;
+              if (fix.font?.color)             run.font.color = fix.font.color;
+              if (fix.font?.bold !== undefined) run.font.bold  = fix.font.bold;
             }
           }
         } catch (_) {}
@@ -644,8 +651,9 @@ ${slideSection}
 
 For each shape where Current ≠ Target, output a fix.
 Return ONLY a valid JSON array. No markdown, no explanation.
-Each item: { "shapeName": "<exact name>", "font": { "name": "...", "size": N, "color": "#hex", "bold": true/false }, "alignment": "left|center|right", "position": { "left": N, "top": N } }
-Only include fields that need to change. Skip shapes already matching their target.`;
+Each item: { "shapeName": "<exact name>", "font": { "name": "...", "size": N, "color": "#hex", "bold": true/false }, "alignment": "left|center|right", "position": { "left": N, "top": N, "width": N, "height": N } }
+All position values must be in inches. Slide is 10" wide × 7.5" tall. Only include position if it genuinely needs to change to match the master.
+Skip shapes that already match their target.`;
 }
 
 async function callClaude(pptxData, apiKey) {
