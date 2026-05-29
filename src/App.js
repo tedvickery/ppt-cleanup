@@ -764,11 +764,8 @@ function snapToThemeColor(hex, themeColors, threshold = 100) {
 }
 
 async function applyFixes(slideIndex, fixes, themeColors = {}) {
-  // Build a set of theme colour hex values for quick lookup
   const themeColorValues = new Set(
-    Object.values(themeColors)
-      .filter(Boolean)
-      .map(v => v.toUpperCase().replace("#", ""))
+    Object.values(themeColors).filter(Boolean).map(v => v.toUpperCase().replace("#", ""))
   );
 
   return PowerPoint.run(async (ctx) => {
@@ -788,14 +785,11 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
     console.log("Fixes from Claude:", JSON.stringify(fixes));
 
     for (const fix of fixes) {
-      const target = shapes.items.find(
-        (s) => s.name === fix.shapeName || s.id === fix.shapeId
-      );
+      const target = shapes.items.find(s => s.name === fix.shapeName || s.id === fix.shapeId);
       console.log(`Fix for "${fix.shapeName}" → ${target ? "FOUND" : "NOT FOUND"}`);
       if (!target) continue;
 
-      // Apply position — 1 inch = 72 points in Office JS API
-      // Guard: only move if value is within slide bounds and non-zero
+      // Position
       if (fix.position) {
         const inchToPt = 72;
         const { left, top, width, height } = fix.position;
@@ -805,53 +799,55 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
         if (height !== undefined && height > 0.1 && height <= 7.5){ target.height = height * inchToPt; }
       }
 
-      // Only clear fill if it's a non-theme colour
-      // Never clear fills that are theme colours or already none
-      // Apply fill — snap to nearest theme colour; keep if it snaps, clear if it doesn't
+      // Fill — keep theme colours, snap near-theme, clear non-theme
       if (fix.fill !== undefined && fix.fill !== null) {
         try {
           if (fix.fill === "none" && fix.shapeFill && fix.shapeFill !== "none") {
+            const isExactTheme = Object.values(themeColors).some(c => c && c.toUpperCase() === fix.shapeFill.toUpperCase());
             const snapped = snapToThemeColor(fix.shapeFill, themeColors);
-            if (snapped !== fix.shapeFill) {
-              // Snapped to a theme colour — set it rather than clearing
+            const didSnap = snapped !== fix.shapeFill;
+            if (isExactTheme) {
+              console.log(`  Keeping exact theme fill (${fix.shapeFill})`);
+            } else if (didSnap) {
               target.fill.setSolidColor(snapped.replace("#", ""));
-              console.log(`  ✓ Fill snapped to ${snapped} on "${target.name}" (was ${fix.shapeFill})`);
-            } else if (Object.values(themeColors).some(c => c && c.toUpperCase() === fix.shapeFill.toUpperCase())) {
-              // Already an exact theme colour — keep it, don't clear
-              console.log(`  Keeping exact theme fill on "${target.name}" (${fix.shapeFill})`);
+              console.log(`  ✓ Fill snapped ${fix.shapeFill} → ${snapped}`);
             } else {
-              // Not a theme colour and didn't snap — clear it
               target.fill.clear();
-              console.log(`  ✓ Non-theme fill cleared on "${target.name}" (was ${fix.shapeFill})`);
+              console.log(`  ✓ Non-theme fill cleared (was ${fix.shapeFill})`);
             }
           } else if (fix.fill && fix.fill !== "none") {
             const snapped = snapToThemeColor(fix.fill, themeColors);
             target.fill.setSolidColor(snapped.replace("#", ""));
-            console.log(`  ✓ Fill set to ${snapped} on "${target.name}"`);
+            console.log(`  ✓ Fill set to ${snapped}`);
           }
-        } catch (e) {
-          console.log(`  Error setting fill on "${target.name}":`, e.message);
-        }
+        } catch (e) { console.log(`  Error setting fill:`, e.message); }
       }
 
-      // Apply border — snap to nearest theme colour if close, then set or remove
+      // Border — same logic as fill
       if (fix.border !== undefined && fix.border !== null) {
         try {
-          const snappedBorder = fix.border === "none" ? "none" : snapToThemeColor(fix.border, themeColors);
-          if (snappedBorder === "none") {
-            target.lineFormat.visible = false;
-            console.log(`  ✓ Border removed on "${target.name}"`);
-          } else if (snappedBorder.startsWith("#")) {
-            target.lineFormat.color = snappedBorder.replace("#", "");
+          if (fix.border === "none" && fix.shapeBorder && fix.shapeBorder !== "none") {
+            const isExactTheme = Object.values(themeColors).some(c => c && c.toUpperCase() === fix.shapeBorder.toUpperCase());
+            const snapped = snapToThemeColor(fix.shapeBorder, themeColors);
+            if (isExactTheme) {
+              console.log(`  Keeping exact theme border (${fix.shapeBorder})`);
+            } else if (snapped !== fix.shapeBorder) {
+              target.lineFormat.color = snapped.replace("#", "");
+              target.lineFormat.visible = true;
+              console.log(`  ✓ Border snapped ${fix.shapeBorder} → ${snapped}`);
+            } else {
+              target.lineFormat.visible = false;
+              console.log(`  ✓ Non-theme border removed (was ${fix.shapeBorder})`);
+            }
+          } else if (fix.border && fix.border !== "none") {
+            const snapped = snapToThemeColor(fix.border, themeColors);
+            target.lineFormat.color = snapped.replace("#", "");
             target.lineFormat.visible = true;
-            console.log(`  ✓ Border set to ${snappedBorder} on "${target.name}"`);
           }
-        } catch (e) {
-          console.log(`  Error setting border on "${target.name}":`, e.message);
-        }
+        } catch (e) { console.log(`  Error setting border:`, e.message); }
       }
 
-      // Apply font and text alignment
+      // Font, colour, alignment
       if (fix.font || fix.alignment) {
         try {
           const tf = target.textFrame;
@@ -860,33 +856,24 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
           await ctx.sync();
 
           if (fix.font) {
-            if (fix.font.name)               tr.font.name   = fix.font.name;
-            if (fix.font.size)               tr.font.size   = fix.font.size;
+            if (fix.font.name)  tr.font.name = fix.font.name;
+            if (fix.font.size)  tr.font.size = fix.font.size;
             if (fix.font.color) {
-              const snappedColor = snapToThemeColor(fix.font.color, themeColors);
-              tr.font.color = snappedColor.replace("#", "");
+              const snapped = snapToThemeColor(fix.font.color, themeColors);
+              tr.font.color = snapped.replace("#", "");
             }
-            if (fix.font.bold !== undefined)  tr.font.bold   = fix.font.bold;
-            if (fix.font.italic !== undefined) tr.font.italic = fix.font.italic;
+            if (fix.font.bold    !== undefined) tr.font.bold   = fix.font.bold;
+            if (fix.font.italic  !== undefined) tr.font.italic = fix.font.italic;
           }
 
           if (fix.alignment) {
-            const alignMap = {
-              left:    PowerPoint.ParagraphHorizontalAlignment.left,
-              center:  PowerPoint.ParagraphHorizontalAlignment.center,
-              right:   PowerPoint.ParagraphHorizontalAlignment.right,
-              justify: PowerPoint.ParagraphHorizontalAlignment.justify,
-            };
-            if (alignMap[fix.alignment]) {
-              tr.paragraphFormat.horizontalAlignment = alignMap[fix.alignment];
-            }
+            const alignMap = { left: PowerPoint.ParagraphHorizontalAlignment.left, center: PowerPoint.ParagraphHorizontalAlignment.center, right: PowerPoint.ParagraphHorizontalAlignment.right };
+            if (alignMap[fix.alignment]) tr.paragraphFormat.horizontalAlignment = alignMap[fix.alignment];
           }
 
           await ctx.sync();
           console.log(`  ✓ Font/alignment applied to "${target.name}"`);
-        } catch (e) {
-          console.log(`  Error on "${target.name}":`, e.message);
-        }
+        } catch (e) { console.log(`  Error applying font:`, e.message); }
       }
     }
     await ctx.sync();
@@ -900,66 +887,60 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
 function buildPrompt(pptxData) {
   const { theme, masterPlaceholders, slideShapes } = pptxData;
 
-  const themeSection = `
-THEME FONTS:
-  Heading/Title: "${theme.fonts.heading}"
-  Body/Content:  "${theme.fonts.body}"
+  const themeSection = `━━━ THEME ━━━
+FONTS: heading="${theme.fonts.heading}" body="${theme.fonts.body}"
+COLOURS: ${Object.entries(theme.colors).filter(([,v])=>v).map(([k,v])=>`${k}=${v}`).join(" ")}`;
 
-THEME COLOURS:
-${Object.entries(theme.colors).filter(([,v])=>v).map(([k,v])=>`  ${k}: ${v}`).join("\n")}`.trim();
+  const masterSection = `━━━ MASTER PLACEHOLDERS ━━━
+${masterPlaceholders.map(p => `  [${p.type}] font="${p.font.name}" size=${p.font.size}pt color=${p.font.color} align=${p.alignment}`).join("\n")}`;
 
-  const masterSection = masterPlaceholders.map(p =>
-    `  [${p.type}] font="${p.font.name}" size=${p.font.size}pt color=${p.font.color} bold=${p.font.bold} align=${p.alignment}${p.position ? ` pos=(${p.position.left}",${p.position.top}") size=(${p.position.width}"×${p.position.height}")` : ""}`
-  ).join("\n");
-
-  // Count how many slide shapes map to each master placeholder type
   const phTypeCounts = {};
-  slideShapes.forEach(s => {
-    phTypeCounts[s.phType] = (phTypeCounts[s.phType] || 0) + 1;
-  });
+  slideShapes.forEach(s => { phTypeCounts[s.phType] = (phTypeCounts[s.phType] || 0) + 1; });
 
   const slideSection = slideShapes.map(s => {
-    // Use the layout position as the explicit target if available
-    // This is more accurate than the master position which is generic
-    const layoutKey = `${s.phType}:${s.phIdx}`;
     const layoutPos = s.masterTarget?.position;
-    const showTargetPos = layoutPos != null;
-
+    const showPos = layoutPos && phTypeCounts[s.phType] === 1;
     return `  Shape: "${s.name}" [${s.phType}]
-    Current → font="${s.current.fontName}" size=${s.current.fontSize}pt color=${s.current.color} bold=${s.current.bold} italic=${s.current.italic} align=${s.current.alignment} fill=${s.shapeFill || "none"} border=${s.shapeBorder || "none"}${s.position ? ` pos=(${s.position.left}",${s.position.top}") size=(${s.position.width}"×${s.position.height}")` : ""}
-    Target  → font="${s.masterTarget?.fontName}" size=${s.masterTarget?.fontSize}pt color=${s.masterTarget?.color} bold=${s.masterTarget?.bold} italic=false align=${s.masterTarget?.alignment} fill=${s.masterTarget?.fill || "none"} border=none${showTargetPos ? ` pos=(${layoutPos.left}",${layoutPos.top}") size=(${layoutPos.width}"×${layoutPos.height}")` : " pos=(preserve existing layout)"}
-    Text: "${s.textContent}"`;
+    font="${s.current.fontName}" size=${s.current.fontSize}pt color=${s.current.color} bold=${s.current.bold} italic=${s.current.italic} align=${s.current.alignment} fill=${s.shapeFill||"none"} border=${s.shapeBorder||"none"}${s.position ? ` pos=(${s.position.left}",${s.position.top}") size=(${s.position.width}"×${s.position.height}")` : ""}
+    → target font="${s.masterTarget?.fontName}" size=${s.masterTarget?.fontSize}pt color=${s.masterTarget?.color} align=${s.masterTarget?.alignment} fill=${s.masterTarget?.fill||"none"}${showPos ? ` pos=(${layoutPos.left}",${layoutPos.top}") size=(${layoutPos.width}"×${layoutPos.height}")` : ""}
+    text: "${s.textContent}"`;
   }).join("\n\n");
 
-  return `You are a PowerPoint formatting expert. Fix each slide shape so it exactly matches its target formatting from the slide master.
+  return `You are a PowerPoint formatting expert. Analyse these slide shapes and return fixes.
 
-━━━ THEME (from theme1.xml) ━━━
 ${themeSection}
 
-━━━ SLIDE MASTER PLACEHOLDERS (from slideMaster1.xml) ━━━
 ${masterSection}
 
-━━━ CURRENT SLIDE SHAPES ━━━
+━━━ SLIDE SHAPES ━━━
 ${slideSection}
 
-For each shape where Current ≠ Target, output a fix.
-Return ONLY a valid JSON array. No markdown, no explanation.
-Each item: { "shapeName": "<exact name>", "font": { "name": "...", "size": N, "color": "#hex", "bold": true/false, "italic": true/false }, "alignment": "left|center|right", "fill": "#hex or none", "border": "#hex or none" }
-Note: do NOT include "position" — positions are handled separately.
+RULES — return ONLY a JSON array, no markdown:
+Each item: {"shapeName":"...","font":{"name":"...","size":N,"color":"#hex","bold":true/false,"italic":true/false},"alignment":"left|center|right","fill":"#hex or none","border":"#hex or none"}
 
-FONT/COLOUR rules:
-- Fix font name, italic, bold to exactly match the target. If Current shows "(inherited)", treat it as matching — only fix if explicitly different.
-- Fix colour: if Current shows an explicit hex colour different from Target, fix it. If "(inherited)", leave it.
-- IMPORTANT: any shape where font/italic is explicitly set to something non-standard MUST be fixed.
-- FILL: If Current fill ≠ Target fill, include "fill" with the Target value (either a hex colour or "none"). If they match, omit fill entirely.
-- BORDER: If Current border ≠ Target border, include "border" with the Target value (either a hex colour or "none"). If they match, omit border entirely.
+FONT rules:
+- Set font name to the target font for that placeholder type
+- Set font size to the target size (do not include size if already correct)
+- IMPORTANT: if size differs within a shape (mixed sizes), normalise all to the target size
+- Fix bold/italic if non-standard
 
-Skip shapes that already match their target formatting.
-Slide is 10" wide × 7.5" tall.
+COLOUR rules:
+- If text colour matches a theme colour → keep it
+- If text colour is close to a theme colour (similar shade) → snap to the nearest theme colour
+- If text colour is clearly off-brand → set it to the target colour for that placeholder
+- Apply same logic to fill and border colours
 
-Skip shapes that already match their target formatting.`;
-}
+FILL/BORDER rules:
+- Include "fill" only if the fill needs to change
+- If current fill is a theme colour → keep it (omit fill from fix)
+- If current fill is near a theme colour → include fill with the snapped theme colour
+- If current fill is clearly non-template → include "fill":"none" to remove it
+- Same logic for border
 
+ALIGNMENT:
+- Set alignment to match the master target for that placeholder type
+
+Skip shapes that already match. Do not include "position" in the output.`;
 async function callClaude(pptxData, apiKey) {
   const prompt = buildPrompt(pptxData);
   console.log("=== PROMPT TO CLAUDE ===\n", prompt);
