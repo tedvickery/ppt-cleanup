@@ -549,7 +549,7 @@ async function applyFixes(slideIndex, fixes) {
     shapes.load("items");
     await ctx.sync();
 
-    for (const shape of shapes.items) shape.load(["id", "name"]);
+    for (const shape of shapes.items) shape.load(["id", "name", "left", "top", "width", "height"]);
     await ctx.sync();
 
     console.log("Shapes on slide:", shapes.items.map(s => s.name));
@@ -562,30 +562,38 @@ async function applyFixes(slideIndex, fixes) {
       console.log(`Fix for "${fix.shapeName}" → ${target ? "FOUND" : "NOT FOUND"}`);
       if (!target) continue;
 
+      // Apply position — 1 inch = 72 points in Office JS API
+      // Guard: only move if value is within slide bounds and non-zero
+      if (fix.position) {
+        const inchToPt = 72;
+        const { left, top, width, height } = fix.position;
+        if (left   !== undefined && left   > 0   && left   < 10)  { console.log(`  left: ${target.left} → ${left * inchToPt}`);  target.left   = left   * inchToPt; }
+        if (top    !== undefined && top    > 0   && top    < 7.5) { console.log(`  top: ${target.top} → ${top * inchToPt}`);    target.top    = top    * inchToPt; }
+        if (width  !== undefined && width  > 0.5 && width  <= 10) { target.width  = width  * inchToPt; }
+        if (height !== undefined && height > 0.1 && height <= 7.5){ target.height = height * inchToPt; }
+      }
+
+      // Apply font and text alignment
       if (fix.font || fix.alignment) {
         try {
-          // Load textFrame and its textRange explicitly
           const tf = target.textFrame;
           const tr = tf.textRange;
           tr.load(["text"]);
           await ctx.sync();
 
-          console.log(`  textRange loaded, text: "${tr.text?.substring(0, 30)}"`);
-
-          // Apply font to entire text range
           if (fix.font) {
-            if (fix.font.name)              tr.font.name  = fix.font.name;
-            if (fix.font.size)              tr.font.size  = fix.font.size;
-            if (fix.font.color)             tr.font.color = fix.font.color;
-            if (fix.font.bold !== undefined) tr.font.bold  = fix.font.bold;
+            if (fix.font.name)               tr.font.name  = fix.font.name;
+            if (fix.font.size)               tr.font.size  = fix.font.size;
+            if (fix.font.color)              tr.font.color = fix.font.color;
+            if (fix.font.bold !== undefined)  tr.font.bold  = fix.font.bold;
           }
 
-          // Apply alignment via paragraphFormat on the text range
           if (fix.alignment) {
             const alignMap = {
-              left: PowerPoint.ParagraphHorizontalAlignment.left,
-              center: PowerPoint.ParagraphHorizontalAlignment.center,
-              right: PowerPoint.ParagraphHorizontalAlignment.right,
+              left:    PowerPoint.ParagraphHorizontalAlignment.left,
+              center:  PowerPoint.ParagraphHorizontalAlignment.center,
+              right:   PowerPoint.ParagraphHorizontalAlignment.right,
+              justify: PowerPoint.ParagraphHorizontalAlignment.justify,
             };
             if (alignMap[fix.alignment]) {
               tr.paragraphFormat.horizontalAlignment = alignMap[fix.alignment];
@@ -593,12 +601,13 @@ async function applyFixes(slideIndex, fixes) {
           }
 
           await ctx.sync();
-          console.log(`  ✓ Applied to "${target.name}"`);
+          console.log(`  ✓ Font/alignment applied to "${target.name}"`);
         } catch (e) {
           console.log(`  Error on "${target.name}":`, e.message);
         }
       }
     }
+    await ctx.sync();
   });
 }
 
@@ -641,8 +650,10 @@ ${slideSection}
 
 For each shape where Current ≠ Target, output a fix.
 Return ONLY a valid JSON array. No markdown, no explanation.
-Each item: { "shapeName": "<exact name>", "font": { "name": "...", "size": N, "color": "#hex", "bold": true/false }, "alignment": "left|center|right" }
-Only fix font and alignment. Do NOT include any position, left, top, width or height values — these will be ignored.
+Each item: { "shapeName": "<exact name>", "font": { "name": "...", "size": N, "color": "#hex", "bold": true/false }, "alignment": "left|center|right", "position": { "left": N, "top": N, "width": N, "height": N } }
+- "alignment" = text alignment inside the shape (left/center/right)
+- "position" = shape position in inches on the slide — only include if current position differs from target by more than 0.15"
+- All position values in inches. Slide is 10" wide × 7.5" tall. Never set left/top to 0 unless the master explicitly places a shape at the edge.
 Skip shapes that already match their target.`;
 }
 
