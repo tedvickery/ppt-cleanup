@@ -552,8 +552,7 @@ async function applyFixes(slideIndex, fixes) {
     for (const shape of shapes.items) shape.load(["id", "name"]);
     await ctx.sync();
 
-    const shapeNames = shapes.items.map(s => s.name);
-    console.log("Shapes on slide:", JSON.stringify(shapeNames));
+    console.log("Shapes on slide:", shapes.items.map(s => s.name));
     console.log("Fixes from Claude:", JSON.stringify(fixes));
 
     for (const fix of fixes) {
@@ -565,26 +564,32 @@ async function applyFixes(slideIndex, fixes) {
 
       if (fix.font || fix.alignment) {
         try {
-          // In PowerPoint Online, use getTextRange() directly on the shape
-          const textRange = target.getTextRange();
-          textRange.load("text");
+          // Load textFrame and its textRange explicitly
+          const tf = target.textFrame;
+          const tr = tf.textRange;
+          tr.load(["text"]);
           await ctx.sync();
-          console.log(`  Text range loaded for "${target.name}", text: "${textRange.text?.substring(0, 30)}"`);
 
-          // Apply paragraph formatting
-          const paragraphFormat = textRange.paragraphFormat;
-          if (fix.alignment) {
-            const alignMap = { left: "Left", center: "Center", right: "Right", justify: "Justified" };
-            paragraphFormat.horizontalAlignment = alignMap[fix.alignment] || "Left";
+          console.log(`  textRange loaded, text: "${tr.text?.substring(0, 30)}"`);
+
+          // Apply font to entire text range
+          if (fix.font) {
+            if (fix.font.name)              tr.font.name  = fix.font.name;
+            if (fix.font.size)              tr.font.size  = fix.font.size;
+            if (fix.font.color)             tr.font.color = fix.font.color;
+            if (fix.font.bold !== undefined) tr.font.bold  = fix.font.bold;
           }
 
-          // Apply font
-          if (fix.font) {
-            const font = textRange.font;
-            if (fix.font.name)             font.name  = fix.font.name;
-            if (fix.font.size)             font.size  = fix.font.size;
-            if (fix.font.color)            font.color = fix.font.color;
-            if (fix.font.bold !== undefined) font.bold = fix.font.bold;
+          // Apply alignment via paragraphFormat on the text range
+          if (fix.alignment) {
+            const alignMap = {
+              left: PowerPoint.ParagraphHorizontalAlignment.left,
+              center: PowerPoint.ParagraphHorizontalAlignment.center,
+              right: PowerPoint.ParagraphHorizontalAlignment.right,
+            };
+            if (alignMap[fix.alignment]) {
+              tr.paragraphFormat.horizontalAlignment = alignMap[fix.alignment];
+            }
           }
 
           await ctx.sync();
