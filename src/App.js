@@ -354,23 +354,30 @@ function parseSlideXml(xml, theme, masterPlaceholders, layoutPositions = {}) {
     let shapeBorder = null;
     const spPr = sp.getElementsByTagNameNS("*", "spPr")[0];
     if (spPr) {
-      // Fill
-      const noFill = spPr.getElementsByTagNameNS("*", "noFill")[0];
-      if (noFill) {
+      // Only check direct children of spPr for fill (not descendants which could be border fills)
+      const directChildren = Array.from(spPr.childNodes);
+      const noFillEl = directChildren.find(n => n.localName === "noFill");
+      const solidFillEl = directChildren.find(n => n.localName === "solidFill");
+      const gradFillEl = directChildren.find(n => n.localName === "gradFill");
+
+      if (noFillEl) {
         shapeFill = "none";
-      } else {
-        const solidFill = spPr.getElementsByTagNameNS("*", "solidFill")[0];
-        if (solidFill) {
-          const srgb   = solidFill.getElementsByTagNameNS("*", "srgbClr")[0];
-          const scheme = solidFill.getElementsByTagNameNS("*", "schemeClr")[0];
-          const sys    = solidFill.getElementsByTagNameNS("*", "sysClr")[0];
-          if (srgb)    shapeFill = "#" + srgb.getAttribute("val").toUpperCase();
-          else if (sys) shapeFill = "#" + (sys.getAttribute("lastClr") || "000000").toUpperCase();
-          else if (scheme) {
-            const resolved = resolveThemeColor(scheme.getAttribute("val"), theme.colors);
-            shapeFill = resolved ? resolved.toUpperCase() : ("theme:" + scheme.getAttribute("val"));
-          }
+      } else if (solidFillEl) {
+        const srgb   = solidFillEl.getElementsByTagNameNS("*", "srgbClr")[0];
+        const scheme = solidFillEl.getElementsByTagNameNS("*", "schemeClr")[0];
+        const sys    = solidFillEl.getElementsByTagNameNS("*", "sysClr")[0];
+        if (srgb)    shapeFill = "#" + srgb.getAttribute("val").toUpperCase();
+        else if (sys) shapeFill = "#" + (sys.getAttribute("lastClr") || "000000").toUpperCase();
+        else if (scheme) {
+          const resolved = resolveThemeColor(scheme.getAttribute("val"), theme.colors);
+          shapeFill = resolved ? resolved.toUpperCase() : ("theme:" + scheme.getAttribute("val"));
         }
+      } else if (gradFillEl) {
+        // Gradient fill — get first stop colour as representative
+        const firstStop = gradFillEl.getElementsByTagNameNS("*", "gs")[0];
+        const srgb = firstStop?.getElementsByTagNameNS("*", "srgbClr")[0];
+        if (srgb) shapeFill = "#" + srgb.getAttribute("val").toUpperCase() + " (gradient)";
+        else shapeFill = "gradient";
       }
 
       // Border/outline
