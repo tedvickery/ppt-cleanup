@@ -606,6 +606,8 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
   }
 
   const slideShapes = parseSlideXml(slideXml, master.theme, master.placeholders, layoutPositions);
+  console.log("Layout positions found:", JSON.stringify(layoutPositions));
+  console.log("Slide shape positions:", slideShapes.map(s => `${s.name}: ${JSON.stringify(s.position)}`));
 
   return {
     theme: master.theme,
