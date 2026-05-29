@@ -785,10 +785,15 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
     console.log("Fixes from Claude:", JSON.stringify(fixes));
 
     for (const fix of fixes) {
-      const target = fix.shapeIndex !== undefined
-        ? shapes.items[fix.shapeIndex]
-        : shapes.items.find(s => s.name === fix.shapeName || s.id === fix.shapeId);
-      console.log(`Fix for "${fix.shapeName}" (idx:${fix.shapeIndex}) → ${target ? "FOUND" : "NOT FOUND"}`);
+      // shapeIndex refers to our pptxData.slideShapes array order
+      // Use the shape's id/name from that array to find the correct Office JS shape
+      const slideShape = fix.shapeIndex !== undefined ? fix._slideShape : null;
+      const lookupName = slideShape?.name || fix.shapeName;
+      const lookupId = slideShape?.id;
+      const target = lookupId
+        ? (shapes.items.find(s => s.id === lookupId) || shapes.items.find(s => s.name === lookupName))
+        : shapes.items.find(s => s.name === lookupName || s.id === fix.shapeId);
+      console.log(`Fix for "${lookupName}" (idx:${fix.shapeIndex}) → ${target ? `FOUND: ${target.name}` : "NOT FOUND"}`);
       if (!target) continue;
 
       // Position
@@ -922,11 +927,10 @@ Each item: {"shapeIndex":N,"font":{"name":"...","size":N,"color":"#hex","bold":t
 Use the Shape # number as shapeIndex.
 
 FONT rules:
-- ANY shape with a non-template font name MUST be fixed — no exceptions
-- "Aptos" and "Aptos Light" are the only acceptable fonts; everything else is non-template
-- Always include "size" in font fixes — use the target size for that placeholder type
+- Each shape has a "→ target" line — use EXACTLY that target font name and size, not the master placeholder defaults
+- ANY shape whose current font ≠ target font MUST be fixed
 - Set bold=false and italic=false unless the target says otherwise
-- "(inherited)" means no explicit override — still fix if font name is wrong
+- "(inherited)" for the current font still requires a fix if the target font is explicit
 
 COLOUR rules:
 - Text colour: if "(inherited)" or matches target → omit color from fix
@@ -1259,6 +1263,7 @@ export default function App() {
           shapeName: shape?.name || fix.shapeName,
           shapeFill: shape?.shapeFill || null,
           shapeBorder: shape?.shapeBorder || null,
+          _slideShape: shape || null,
         };
       });
       await applyFixes(dupIndex, enrichedFixes, pptxData.theme.colors);
