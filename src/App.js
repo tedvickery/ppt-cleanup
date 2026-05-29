@@ -846,8 +846,21 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
         } catch (e) { console.log(`  Error setting border:`, e.message); }
       }
 
-      // Font, colour, alignment
-      if (fix.font || fix.alignment) {
+      // Text colour from Claude (textColor field in simplified format)
+      if (fix.textColor) {
+        try {
+          const tf = target.textFrame;
+          const tr = tf.textRange;
+          tr.load(["text"]);
+          await ctx.sync();
+          const snapped = snapToThemeColor(fix.textColor, themeColors);
+          tr.font.color = snapped.replace("#", "");
+          await ctx.sync();
+          console.log(`  ✓ Text colour set to ${snapped} on "${target.name}"`);
+        } catch (e) { console.log(`  Error setting text colour:`, e.message); }
+      }
+
+      // Font, colour, alignment (from code-based fixes)      if (fix.font || fix.alignment) {
         try {
           const tf = target.textFrame;
           const tr = tf.textRange;
@@ -907,36 +920,19 @@ ${masterPlaceholders.map(p => `  [${p.type}] font="${p.font.name}" size=${p.font
     text: "${s.textContent}"`;
   }).join("\n\n");
 
-  return `You are a PowerPoint formatting expert. Analyse these slide shapes and return fixes.
+  return `You are a PowerPoint formatting expert. Analyse these slide shapes and return colour fixes only.
 
 ${themeSection}
-
-${masterSection}
 
 ━━━ SLIDE SHAPES ━━━
 ${slideSection}
 
-RULES — return ONLY a JSON array, no markdown:
-Each item: {"shapeIndex":N,"font":{"name":"...","size":N,"color":"#hex","bold":true/false,"italic":true/false},"alignment":"left|center|right","fill":"#hex or none","border":"#hex or none"}
-Use the Shape # number as shapeIndex.
+Return ONLY a JSON array. Each item: {"shapeIndex":N,"textColor":"#hex or none","fill":"#hex or none"}
 
-FONT rules:
-- Each shape has a "→ target" line — use EXACTLY that target font name and size, not the master placeholder defaults
-- ANY shape whose current font ≠ target font MUST be fixed
-- Set bold=false and italic=false unless the target says otherwise
-- "(inherited)" for the current font still requires a fix if the target font is explicit
-
-COLOUR rules:
-- Text colour: if "(inherited)" or matches target → omit color from fix
-- If text colour is clearly off-brand → set it to the target colour for that placeholder
-
-FILL/BORDER rules:
-- If target fill is "none" and current fill is NOT a theme colour → include "fill":"none"
-- If target fill is "none" and current fill IS a theme colour → still include "fill":"none" (the target overrides)
-- If target fill matches current fill → omit fill from fix
-- Theme colours are: #000000 #44546A #FFFFFF #E7E6E6 #55BC7E #FFC330 #BE80FF #FF8345 #FF70BF #60A2F5
-
-ALIGNMENT: set to match master target. Every shape with a non-template font MUST appear in output.`;
+RULES:
+- "textColor": only include if the current text colour is explicitly set AND differs from the target. Snap to nearest theme colour if close (within ~100 distance). Use "none" to clear.
+- "fill": only include if fill needs changing. If current fill is a theme colour → omit. If NOT a theme colour → use "none" to clear. Theme colours: ${Object.values(theme.colors).filter(Boolean).join(" ")}
+- Omit any field that doesn't need changing. Return [] if nothing to fix.`;
 }
 
 async function callClaude(pptxData, apiKey) {
@@ -1248,7 +1244,50 @@ export default function App() {
       }
 
       addLog("Applying fixes…");
-      // Enrich fixes using shapeIndex (Claude returns the index from the prompt)
+
+      // CODE-BASED font fixes — don't rely on Claude for font name/size
+      // Apply directly from masterTarget for every shape that needs it
+      const codeFontFixes = pptxData.slideShapes
+        .filter(s => s.masterTarget && s.current.fontName !== "(inherited)" &&
+          s.current.fontName !== s.masterTarget.fontName)
+        .map(s => ({
+          shapeName: s.name,
+          shapeId: s.id,
+          _slideShape: s,
+          shapeFill: s.shapeFill || null,
+          font: {
+            name: s.masterTarget.fontName,
+            size: s.masterTarget.fontSize,
+            bold: false,
+            italic: false,
+          },
+        }));
+
+      if (codeFontFixes.length > 0) {
+        addLog(`Fixing ${codeFontFixes.length} font(s) directly…`);
+        await applyFixes(dupIndex, codeFontFixes, pptxData.theme.colors);
+      }
+
+      // CODE-BASED fill fixes — clear non-theme fills directly
+      const themeColorSet = new Set(Object.values(pptxData.theme.colors).filter(Boolean).map(c => c.toUpperCase()));
+      const codeFillFixes = pptxData.slideShapes
+        .filter(s => s.shapeFill && s.shapeFill !== "none" &&
+          !themeColorSet.has(s.shapeFill.replace("#","").toUpperCase()) &&
+          snapToThemeColor(s.shapeFill, pptxData.theme.colors) === s.shapeFill) // no snap = clear
+        .map(s => ({
+          shapeName: s.name,
+          shapeId: s.id,
+          _slideShape: s,
+          shapeFill: s.shapeFill,
+          fill: "none",
+        }));
+
+      if (codeFillFixes.length > 0) {
+        addLog(`Clearing ${codeFillFixes.length} non-theme fill(s)…`);
+        await applyFixes(dupIndex, codeFillFixes, pptxData.theme.colors);
+      }
+
+      // Enrich Claude fixes using shapeIndex
       const enrichedFixes = fixes.map(fix => {
         const shape = fix.shapeIndex !== undefined
           ? pptxData.slideShapes[fix.shapeIndex]
@@ -1263,8 +1302,51 @@ export default function App() {
       });
       await applyFixes(dupIndex, enrichedFixes, pptxData.theme.colors);
 
-      // Position fixing disabled — shapes with ambiguous master targets can't be reliably repositioned
+      // Smart alignment: group shapes by similar size and align them in a column
+      // Only move shapes that share the same width (within 0.1") — these are "sibling" boxes
+      const movableShapes = pptxData.slideShapes.filter(s => s.position);
+
+      // Group by rounded width to find siblings
+      const widthGroups = {};
+      movableShapes.forEach(s => {
+        const wKey = Math.round(s.position.width * 10) / 10;
+        if (!widthGroups[wKey]) widthGroups[wKey] = [];
+        widthGroups[wKey].push(s);
+      });
+
       const positionFixes = [];
+      for (const [, group] of Object.entries(widthGroups)) {
+        if (group.length < 2) continue; // only align groups of 2+
+        // Skip if they're already aligned (left edges within 0.1")
+        const lefts = group.map(s => s.position.left);
+        const minLeft = Math.min(...lefts);
+        const maxLeft = Math.max(...lefts);
+        if (maxLeft - minLeft <= 0.1) continue; // already aligned
+
+        // Sort by top position, align all to the leftmost left edge
+        const targetLeft = minLeft;
+        const sorted = [...group].sort((a, b) => a.position.top - b.position.top);
+        const PADDING = 0.2; // gap between boxes in inches
+        let currentTop = sorted[0].position.top;
+
+        sorted.forEach((s, i) => {
+          const needsLeftAlign = Math.abs(s.position.left - targetLeft) > 0.1;
+          const needsTopAlign = i > 0 && Math.abs(s.position.top - currentTop) > 0.1;
+          if (needsLeftAlign || needsTopAlign) {
+            positionFixes.push({
+              shapeName: s.name,
+              shapeId: s.id,
+              position: {
+                left: targetLeft,
+                top: currentTop,
+                width: s.position.width,
+                height: s.position.height,
+              },
+            });
+          }
+          currentTop += s.position.height + PADDING;
+        });
+      }
 
       if (positionFixes.length > 0) {
         addLog(`Applying ${positionFixes.length} layout position fix(es)…`);
