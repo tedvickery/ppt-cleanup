@@ -549,7 +549,7 @@ async function applyFixes(slideIndex, fixes) {
     shapes.load("items");
     await ctx.sync();
 
-    for (const shape of shapes.items) shape.load(["id", "name", "textFrame"]);
+    for (const shape of shapes.items) shape.load(["id", "name"]);
     await ctx.sync();
 
     const shapeNames = shapes.items.map(s => s.name);
@@ -560,35 +560,40 @@ async function applyFixes(slideIndex, fixes) {
       const target = shapes.items.find(
         (s) => s.name === fix.shapeName || s.id === fix.shapeId
       );
-      console.log(`Fix for "${fix.shapeName}" → ${target ? "FOUND: " + target.name : "NOT FOUND"}`);
+      console.log(`Fix for "${fix.shapeName}" → ${target ? "FOUND" : "NOT FOUND"}`);
       if (!target) continue;
 
       if (fix.font || fix.alignment) {
         try {
-          const tf = target.textFrame;
-          const paragraphs = tf.paragraphs;
-          paragraphs.load("items");
+          // In PowerPoint Online, use getTextRange() directly on the shape
+          const textRange = target.getTextRange();
+          textRange.load("text");
           await ctx.sync();
+          console.log(`  Text range loaded for "${target.name}", text: "${textRange.text?.substring(0, 30)}"`);
 
-          for (const para of paragraphs.items) {
-            if (fix.alignment) para.alignment = fix.alignment;
-            const runs = para.runs;
-            runs.load("items");
-            await ctx.sync();
-            console.log(`  Applying to "${target.name}": font=${fix.font?.name} size=${fix.font?.size} color=${fix.font?.color} runs=${runs.items.length}`);
-            for (const run of runs.items) {
-              if (fix.font?.name)              run.font.name  = fix.font.name;
-              if (fix.font?.size)              run.font.size  = fix.font.size;
-              if (fix.font?.color)             run.font.color = fix.font.color;
-              if (fix.font?.bold !== undefined) run.font.bold  = fix.font.bold;
-            }
+          // Apply paragraph formatting
+          const paragraphFormat = textRange.paragraphFormat;
+          if (fix.alignment) {
+            const alignMap = { left: "Left", center: "Center", right: "Right", justify: "Justified" };
+            paragraphFormat.horizontalAlignment = alignMap[fix.alignment] || "Left";
           }
+
+          // Apply font
+          if (fix.font) {
+            const font = textRange.font;
+            if (fix.font.name)             font.name  = fix.font.name;
+            if (fix.font.size)             font.size  = fix.font.size;
+            if (fix.font.color)            font.color = fix.font.color;
+            if (fix.font.bold !== undefined) font.bold = fix.font.bold;
+          }
+
+          await ctx.sync();
+          console.log(`  ✓ Applied to "${target.name}"`);
         } catch (e) {
           console.log(`  Error on "${target.name}":`, e.message);
         }
       }
     }
-    await ctx.sync();
   });
 }
 
