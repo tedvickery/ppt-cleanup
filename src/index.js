@@ -7,15 +7,10 @@ function renderApp() {
   root.render(<React.StrictMode><App /></React.StrictMode>);
 }
 
-// If running inside Office, wait for Office.initialize
-// If running in a plain browser (testing), render immediately
-if (window.Office && window.Office.initialize !== undefined) {
-  window.Office.initialize = () => renderApp();
+// Office.onReady is the modern recommended way — works in Office Online and Desktop
+if (window.Office) {
+  window.Office.onReady(() => renderApp());
 } else {
-  // Fallback: render after a short delay to let Office.js attempt to load
-  setTimeout(() => {
-    if (document.getElementById("root").childElementCount === 0) {
-      renderApp();
-    }
-  }, 2000);
+  // Plain browser fallback for testing
+  renderApp();
 }
