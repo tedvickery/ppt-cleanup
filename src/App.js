@@ -310,6 +310,11 @@ function parseSlideXml(xml, theme, masterPlaceholders, layoutPositions = {}) {
   const shapes = [];
 
   const spEls = doc.getElementsByTagNameNS("*", "sp");
+  console.log("All sp elements in slide:", Array.from(spEls).map(sp => {
+    const cNvPr = sp.getElementsByTagNameNS("*", "cNvPr")[0];
+    const ph = sp.getElementsByTagNameNS("*", "ph")[0];
+    return `${cNvPr?.getAttribute("name")} [ph=${ph ? "yes" : "no"}]`;
+  }));
   for (const sp of spEls) {
     const nvSpPr = sp.getElementsByTagNameNS("*", "nvSpPr")[0];
     const cNvPr  = nvSpPr?.getElementsByTagNameNS("*", "cNvPr")[0];
