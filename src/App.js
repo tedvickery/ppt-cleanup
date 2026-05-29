@@ -785,8 +785,10 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
     console.log("Fixes from Claude:", JSON.stringify(fixes));
 
     for (const fix of fixes) {
-      const target = shapes.items.find(s => s.name === fix.shapeName || s.id === fix.shapeId);
-      console.log(`Fix for "${fix.shapeName}" → ${target ? "FOUND" : "NOT FOUND"}`);
+      const target = fix.shapeIndex !== undefined
+        ? shapes.items[fix.shapeIndex]
+        : shapes.items.find(s => s.name === fix.shapeName || s.id === fix.shapeId);
+      console.log(`Fix for "${fix.shapeName}" (idx:${fix.shapeIndex}) → ${target ? "FOUND" : "NOT FOUND"}`);
       if (!target) continue;
 
       // Position
@@ -897,10 +899,10 @@ ${masterPlaceholders.map(p => `  [${p.type}] font="${p.font.name}" size=${p.font
   const phTypeCounts = {};
   slideShapes.forEach(s => { phTypeCounts[s.phType] = (phTypeCounts[s.phType] || 0) + 1; });
 
-  const slideSection = slideShapes.map(s => {
+  const slideSection = slideShapes.map((s, i) => {
     const layoutPos = s.masterTarget?.position;
     const showPos = layoutPos && phTypeCounts[s.phType] === 1;
-    return `  Shape: "${s.name}" [${s.phType}]
+    return `  Shape #${i} "${s.name}" [${s.phType}]
     font="${s.current.fontName}" size=${s.current.fontSize}pt color=${s.current.color} bold=${s.current.bold} italic=${s.current.italic} align=${s.current.alignment} fill=${s.shapeFill||"none"} border=${s.shapeBorder||"none"}${s.position ? ` pos=(${s.position.left}",${s.position.top}") size=(${s.position.width}"×${s.position.height}")` : ""}
     → target font="${s.masterTarget?.fontName}" size=${s.masterTarget?.fontSize}pt color=${s.masterTarget?.color} align=${s.masterTarget?.alignment} fill=${s.masterTarget?.fill||"none"}${showPos ? ` pos=(${layoutPos.left}",${layoutPos.top}") size=(${layoutPos.width}"×${layoutPos.height}")` : ""}
     text: "${s.textContent}"`;
@@ -916,7 +918,8 @@ ${masterSection}
 ${slideSection}
 
 RULES — return ONLY a JSON array, no markdown:
-Each item: {"shapeName":"...","font":{"name":"...","size":N,"color":"#hex","bold":true/false,"italic":true/false},"alignment":"left|center|right","fill":"#hex or none","border":"#hex or none"}
+Each item: {"shapeIndex":N,"font":{"name":"...","size":N,"color":"#hex","bold":true/false,"italic":true/false},"alignment":"left|center|right","fill":"#hex or none","border":"#hex or none"}
+Use the Shape # number as shapeIndex.
 
 FONT rules:
 - ANY shape with a non-template font name MUST be fixed — no exceptions
@@ -928,17 +931,13 @@ FONT rules:
 COLOUR rules:
 - Text colour: if "(inherited)" or matches target → omit color from fix
 - If text colour is clearly off-brand → set it to the target colour for that placeholder
-- Do NOT snap text colours — only use exact target colours
 
 FILL/BORDER rules:
 - If current fill is an exact theme colour → omit fill from fix (keep it)
 - If current fill is NOT a theme colour → include "fill":"none" to remove it
 - Theme colours are: #000000 #44546A #FFFFFF #E7E6E6 #55BC7E #FFC330 #BE80FF #FF8345 #FF70BF #60A2F5
-- Same logic for border
 
-ALIGNMENT: set to match master target
-
-Every shape with a non-template font MUST appear in the output. Do not skip them.`;
+ALIGNMENT: set to match master target. Every shape with a non-template font MUST appear in output.`;`;
 }
 
 async function callClaude(pptxData, apiKey) {
@@ -1250,23 +1249,17 @@ export default function App() {
       }
 
       addLog("Applying fixes…");
-      // Enrich fixes with shapeFill/shapeBorder — match by name+font when names are duplicated
+      // Enrich fixes using shapeIndex (Claude returns the index from the prompt)
       const enrichedFixes = fixes.map(fix => {
-        // Try to find a shape matching both name and the font being fixed
-        let shape = pptxData.slideShapes.find(s =>
-          s.name === fix.shapeName &&
-          fix.font?.name &&
-          s.current.fontName !== fix.font.name && // shape currently has wrong font
-          s.current.fontName !== "(inherited)"
-        );
-        // Fallback: first unused shape with that name
-        if (!shape) {
-          const used = enrichedFixes ? enrichedFixes.map(f => f._matchedShape).filter(Boolean) : [];
-          shape = pptxData.slideShapes.find(s => s.name === fix.shapeName && !used.includes(s));
-        }
-        if (!shape) shape = pptxData.slideShapes.find(s => s.name === fix.shapeName);
-        const result = { ...fix, shapeFill: shape?.shapeFill || null, shapeBorder: shape?.shapeBorder || null, _matchedShape: shape };
-        return result;
+        const shape = fix.shapeIndex !== undefined
+          ? pptxData.slideShapes[fix.shapeIndex]
+          : pptxData.slideShapes.find(s => s.name === fix.shapeName);
+        return {
+          ...fix,
+          shapeName: shape?.name || fix.shapeName,
+          shapeFill: shape?.shapeFill || null,
+          shapeBorder: shape?.shapeBorder || null,
+        };
       });
       await applyFixes(dupIndex, enrichedFixes, pptxData.theme.colors);
 
