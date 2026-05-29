@@ -899,9 +899,11 @@ ${masterPlaceholders.map(p => `  [${p.type}] font="${p.font.name}" size=${p.font
   const slideSection = slideShapes.map((s, i) => {
     const layoutPos = s.masterTarget?.position;
     const showPos = layoutPos && phTypeCounts[s.phType] === 1;
+    const fontChanged = s.current.fontName !== "(inherited)" && s.current.fontName !== s.masterTarget?.fontName;
+    const needsFontFix = fontChanged ? ` ← MUST FIX: change to "${s.masterTarget?.fontName}" size=${s.masterTarget?.fontSize}pt` : "";
     return `  Shape #${i} "${s.name}" [${s.phType}]
     font="${s.current.fontName}" size=${s.current.fontSize}pt color=${s.current.color} bold=${s.current.bold} italic=${s.current.italic} align=${s.current.alignment} fill=${s.shapeFill||"none"} border=${s.shapeBorder||"none"}${s.position ? ` pos=(${s.position.left}",${s.position.top}") size=(${s.position.width}"×${s.position.height}")` : ""}
-    → target font="${s.masterTarget?.fontName}" size=${s.masterTarget?.fontSize}pt color=${s.masterTarget?.color} align=${s.masterTarget?.alignment} fill=${s.masterTarget?.fill||"none"}${showPos ? ` pos=(${layoutPos.left}",${layoutPos.top}") size=(${layoutPos.width}"×${layoutPos.height}")` : ""}
+    → TARGET: font="${s.masterTarget?.fontName}" size=${s.masterTarget?.fontSize}pt color=${s.masterTarget?.color} align=${s.masterTarget?.alignment} fill=${s.masterTarget?.fill||"none"}${needsFontFix}
     text: "${s.textContent}"`;
   }).join("\n\n");
 
@@ -1261,28 +1263,8 @@ export default function App() {
       });
       await applyFixes(dupIndex, enrichedFixes, pptxData.theme.colors);
 
-      // Apply layout positions — skip shapes that share target position with others (can't tell apart)
-      const targetPosCounts = {};
-      pptxData.slideShapes.forEach(s => {
-        if (s.masterTarget?.position) {
-          const key = `${s.masterTarget.position.left},${s.masterTarget.position.top}`;
-          targetPosCounts[key] = (targetPosCounts[key] || 0) + 1;
-        }
-      });
-      const positionFixes = pptxData.slideShapes
-        .filter(s => s.masterTarget?.position && s.position)
-        .filter(s => {
-          // Skip if multiple shapes share this target position
-          const key = `${s.masterTarget.position.left},${s.masterTarget.position.top}`;
-          if (targetPosCounts[key] > 1) return false;
-          const t = s.masterTarget.position;
-          const c = s.position;
-          return Math.abs(t.left - c.left) > 0.15 ||
-                 Math.abs(t.top - c.top) > 0.15 ||
-                 Math.abs(t.width - c.width) > 0.15 ||
-                 Math.abs(t.height - c.height) > 0.15;
-        })
-        .map(s => ({ shapeName: s.name, shapeId: s.id, position: s.masterTarget.position }));
+      // Position fixing disabled — shapes with ambiguous master targets can't be reliably repositioned
+      const positionFixes = [];
 
       if (positionFixes.length > 0) {
         addLog(`Applying ${positionFixes.length} layout position fix(es)…`);
