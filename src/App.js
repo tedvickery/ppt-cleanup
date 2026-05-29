@@ -745,7 +745,7 @@ function colourDistance(hex1, hex2) {
 }
 
 // Snap a hex colour to the nearest theme colour if within threshold (max ~80 on 0-765 scale)
-function snapToThemeColor(hex, themeColors, threshold = 80) {
+function snapToThemeColor(hex, themeColors, threshold = 100) {
   if (!hex || hex === "none" || hex.startsWith("theme:")) return hex;
   let nearest = null, nearestDist = Infinity;
   for (const [, themeHex] of Object.entries(themeColors)) {
@@ -1269,25 +1269,37 @@ export default function App() {
       }
 
       addLog("Applying fixes…");
-      // Enrich fixes with shapeFill so applyFixes can decide whether to clear
+      // Enrich fixes with shapeFill/shapeBorder by matching on index (shapes can share names)
+      let shapeMatchIndex = {};
       const enrichedFixes = fixes.map(fix => {
-        const shape = pptxData.slideShapes.find(s => s.name === fix.shapeName);
+        const idx = shapeMatchIndex[fix.shapeName] || 0;
+        shapeMatchIndex[fix.shapeName] = idx + 1;
+        const matchingShapes = pptxData.slideShapes.filter(s => s.name === fix.shapeName);
+        const shape = matchingShapes[idx] || matchingShapes[0];
         return { ...fix, shapeFill: shape?.shapeFill || null, shapeBorder: shape?.shapeBorder || null };
       });
       await applyFixes(dupIndex, enrichedFixes, pptxData.theme.colors);
 
-      // Apply layout positions directly — don't rely on Claude for this
-      // Each shape has an exact target position from the layout XML
+      // Apply layout positions directly — index-based to handle duplicate shape names
+      let posMatchIndex = {};
       const positionFixes = pptxData.slideShapes
         .filter(s => s.masterTarget?.position && s.position)
         .filter(s => {
           const t = s.masterTarget.position;
           const c = s.position;
-          // Only move if difference > 0.15" in any dimension
           return Math.abs(t.left - c.left) > 0.15 ||
                  Math.abs(t.top - c.top) > 0.15 ||
                  Math.abs(t.width - c.width) > 0.15 ||
                  Math.abs(t.height - c.height) > 0.15;
+        })
+        // Only fix position for shapes whose phIdx is unique — avoid stacking duplicates
+        .filter((s, _, arr) => {
+          const sameTarget = arr.filter(x => 
+            x.masterTarget.position.left === s.masterTarget.position.left &&
+            x.masterTarget.position.top === s.masterTarget.position.top
+          );
+          const idx = sameTarget.indexOf(s);
+          return idx === 0; // Only move the first shape with this target position
         })
         .map(s => ({
           shapeName: s.name,
