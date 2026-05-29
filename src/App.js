@@ -809,20 +809,12 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
       // Fill — keep theme colours, snap near-theme, clear non-theme
       if (fix.fill !== undefined && fix.fill !== null) {
         try {
-          if (fix.fill === "none" && fix.shapeFill && fix.shapeFill !== "none") {
-            const isExactTheme = Object.values(themeColors).some(c => c && c.toUpperCase() === fix.shapeFill.toUpperCase());
-            const snapped = snapToThemeColor(fix.shapeFill, themeColors);
-            const didSnap = snapped !== fix.shapeFill;
-            if (isExactTheme) {
-              console.log(`  Keeping exact theme fill (${fix.shapeFill})`);
-            } else if (didSnap) {
-              target.fill.setSolidColor(snapped.replace("#", ""));
-              console.log(`  ✓ Fill snapped ${fix.shapeFill} → ${snapped}`);
-            } else {
+          if (fix.fill === "none") {
+            if (fix.shapeFill && fix.shapeFill !== "none") {
               target.fill.clear();
-              console.log(`  ✓ Non-theme fill cleared (was ${fix.shapeFill})`);
+              console.log(`  ✓ Fill cleared (was ${fix.shapeFill})`);
             }
-          } else if (fix.fill && fix.fill !== "none") {
+          } else if (fix.fill.startsWith("#")) {
             const snapped = snapToThemeColor(fix.fill, themeColors);
             target.fill.setSolidColor(snapped.replace("#", ""));
             console.log(`  ✓ Fill set to ${snapped}`);
@@ -937,8 +929,9 @@ COLOUR rules:
 - If text colour is clearly off-brand → set it to the target colour for that placeholder
 
 FILL/BORDER rules:
-- If current fill is an exact theme colour → omit fill from fix (keep it)
-- If current fill is NOT a theme colour → include "fill":"none" to remove it
+- If target fill is "none" and current fill is NOT a theme colour → include "fill":"none"
+- If target fill is "none" and current fill IS a theme colour → still include "fill":"none" (the target overrides)
+- If target fill matches current fill → omit fill from fix
 - Theme colours are: #000000 #44546A #FFFFFF #E7E6E6 #55BC7E #FFC330 #BE80FF #FF8345 #FF70BF #60A2F5
 
 ALIGNMENT: set to match master target. Every shape with a non-template font MUST appear in output.`;
