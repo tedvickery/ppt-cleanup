@@ -635,12 +635,22 @@ ${Object.entries(theme.colors).filter(([,v])=>v).map(([k,v])=>`  ${k}: ${v}`).jo
     `  [${p.type}] font="${p.font.name}" size=${p.font.size}pt color=${p.font.color} bold=${p.font.bold} align=${p.alignment}${p.position ? ` pos=(${p.position.left}",${p.position.top}") size=(${p.position.width}"×${p.position.height}")` : ""}`
   ).join("\n");
 
-  const slideSection = slideShapes.map(s =>
-    `  Shape: "${s.name}" [${s.phType}]
+  // Count how many slide shapes map to each master placeholder type
+  const phTypeCounts = {};
+  slideShapes.forEach(s => {
+    phTypeCounts[s.phType] = (phTypeCounts[s.phType] || 0) + 1;
+  });
+
+  const slideSection = slideShapes.map(s => {
+    // Only show target position if this shape type is unique on the slide
+    // If multiple shapes share the same placeholder type, showing the same
+    // target position for all would cause Claude to stack them
+    const showTargetPos = phTypeCounts[s.phType] === 1 && s.masterTarget?.position;
+    return `  Shape: "${s.name}" [${s.phType}]
     Current → font="${s.current.fontName}" size=${s.current.fontSize}pt color=${s.current.color} bold=${s.current.bold} align=${s.current.alignment}${s.position ? ` pos=(${s.position.left}",${s.position.top}") size=(${s.position.width}"×${s.position.height}")` : ""}
-    Target  → font="${s.masterTarget?.fontName}" size=${s.masterTarget?.fontSize}pt color=${s.masterTarget?.color} bold=${s.masterTarget?.bold} align=${s.masterTarget?.alignment}${s.masterTarget?.position ? ` pos=(${s.masterTarget.position.left}",${s.masterTarget.position.top}") size=(${s.masterTarget.position.width}"×${s.masterTarget.position.height}")` : ""}
-    Text: "${s.textContent}"`
-  ).join("\n\n");
+    Target  → font="${s.masterTarget?.fontName}" size=${s.masterTarget?.fontSize}pt color=${s.masterTarget?.color} bold=${s.masterTarget?.bold} align=${s.masterTarget?.alignment}${showTargetPos ? ` pos=(${s.masterTarget.position.left}",${s.masterTarget.position.top}") size=(${s.masterTarget.position.width}"×${s.masterTarget.position.height}")` : " pos=(preserve existing layout)"}
+    Text: "${s.textContent}"`;
+  }).join("\n\n");
 
   return `You are a PowerPoint formatting expert. Fix each slide shape so it exactly matches its target formatting from the slide master.
 
@@ -661,13 +671,31 @@ FONT/COLOUR rules:
 - Fix font name, size, colour, bold to exactly match the target
 - Fix text alignment (left/center/right) to match the target
 
-POSITION rules — apply design judgment, not robotic template copying:
-- Only move a shape if it looks clearly wrong: overlapping another shape, too close to the slide edge (<0.2"), or obviously misplaced (e.g. title at the bottom, content in the header area)
-- If a shape is reasonably placed and not overlapping anything, leave its position alone even if it differs from the master
-- Never stack multiple shapes on top of each other — ensure each shape has its own clear space
-- Maintain consistent left margins across shapes of the same type
-- Slide is 10" wide × 7.5" tall. All values in inches.
-- Only include "position" in the fix if the shape genuinely needs to move
+POSITION/LAYOUT rules — apply design judgment like a professional designer:
+
+WHEN TO MOVE:
+- Shape is overlapping another shape → separate them
+- Shape is partially or fully off-slide → move it back in with 0.3" margin
+- Title shape is not in the top area of the slide → move it up
+- Shape is within 0.1" of a slide edge (not intentionally flush) → add 0.3" margin
+
+SIZING:
+- If 2+ shapes clearly form a column or row and should be the same width/height, normalise them to match (use the largest as reference)
+- If shapes form a two-column layout, ensure both columns have equal width
+- If a shape's width extends beyond the slide (>10"), clip it to 9.4" with 0.3" margins each side
+
+SPACING:
+- If 2+ shapes are stacked vertically and clearly form a group, ensure consistent vertical gaps between them (use the smallest existing gap as reference)
+- If 2+ shapes are side by side horizontally, ensure consistent horizontal gaps
+- Align left edges of shapes in the same column (snap to nearest 0.1")
+- Align top edges of shapes in the same row (snap to nearest 0.1")
+
+PRESERVE:
+- If Target shows "preserve existing layout" and the shape looks fine → omit position entirely
+- Never move a shape that is already well-placed just to match the master coordinates
+- When in doubt, omit position from the fix
+
+Slide is 10" wide × 7.5" tall. All position values in inches.
 
 Skip shapes that already match their target formatting.`;
 }
