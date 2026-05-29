@@ -549,7 +549,7 @@ async function applyFixes(slideIndex, fixes) {
     shapes.load("items");
     await ctx.sync();
 
-    for (const shape of shapes.items) shape.load(["id", "name", "left", "top", "width", "height"]);
+    for (const shape of shapes.items) shape.load(["id", "name", "textFrame"]);
     await ctx.sync();
 
     const shapeNames = shapes.items.map(s => s.name);
