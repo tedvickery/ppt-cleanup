@@ -309,8 +309,10 @@ function parseSlideXml(xml, theme, masterPlaceholders, layoutPositions = {}) {
       height: emuToInches(ext.getAttribute("cy")),
     } : (layoutPositions[`${phType}:${phIdx}`] || layoutPositions[`body:0`] || null);
     let shapeFill = null;
+    let shapeBorder = null;
     const spPr = sp.getElementsByTagNameNS("*", "spPr")[0];
     if (spPr) {
+      // Fill
       const noFill = spPr.getElementsByTagNameNS("*", "noFill")[0];
       if (noFill) {
         shapeFill = "none";
@@ -320,9 +322,34 @@ function parseSlideXml(xml, theme, masterPlaceholders, layoutPositions = {}) {
           const srgb   = solidFill.getElementsByTagNameNS("*", "srgbClr")[0];
           const scheme = solidFill.getElementsByTagNameNS("*", "schemeClr")[0];
           const sys    = solidFill.getElementsByTagNameNS("*", "sysClr")[0];
-          if (srgb)    shapeFill = "#" + srgb.getAttribute("val");
-          else if (sys) shapeFill = "#" + (sys.getAttribute("lastClr") || "000000");
-          else if (scheme) shapeFill = "theme:" + scheme.getAttribute("val");
+          if (srgb)    shapeFill = "#" + srgb.getAttribute("val").toUpperCase();
+          else if (sys) shapeFill = "#" + (sys.getAttribute("lastClr") || "000000").toUpperCase();
+          else if (scheme) {
+            const resolved = resolveThemeColor(scheme.getAttribute("val"), theme.colors);
+            shapeFill = resolved ? resolved.toUpperCase() : ("theme:" + scheme.getAttribute("val"));
+          }
+        }
+      }
+
+      // Border/outline
+      const ln = spPr.getElementsByTagNameNS("*", "ln")[0];
+      if (ln) {
+        const lnNoFill = ln.getElementsByTagNameNS("*", "noFill")[0];
+        if (lnNoFill) {
+          shapeBorder = "none";
+        } else {
+          const lnSolidFill = ln.getElementsByTagNameNS("*", "solidFill")[0];
+          if (lnSolidFill) {
+            const srgb   = lnSolidFill.getElementsByTagNameNS("*", "srgbClr")[0];
+            const scheme = lnSolidFill.getElementsByTagNameNS("*", "schemeClr")[0];
+            const sys    = lnSolidFill.getElementsByTagNameNS("*", "sysClr")[0];
+            if (srgb)    shapeBorder = "#" + srgb.getAttribute("val").toUpperCase();
+            else if (sys) shapeBorder = "#" + (sys.getAttribute("lastClr") || "000000").toUpperCase();
+            else if (scheme) {
+              const resolved = resolveThemeColor(scheme.getAttribute("val"), theme.colors);
+              shapeBorder = resolved ? resolved.toUpperCase() : ("theme:" + scheme.getAttribute("val"));
+            }
+          }
         }
       }
     }
@@ -435,6 +462,7 @@ function parseSlideXml(xml, theme, masterPlaceholders, layoutPositions = {}) {
       phIdx,
       position,
       shapeFill,
+      shapeBorder,
       textContent: textContent.substring(0, 100),
       current: {
         fontName: fontName || "(inherited)",
@@ -650,7 +678,7 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
   const themeColorValues = new Set(
     Object.values(themeColors)
       .filter(Boolean)
-      .map(v => v.toLowerCase().replace("#", ""))
+      .map(v => v.toUpperCase().replace("#", ""))
   );
 
   return PowerPoint.run(async (ctx) => {
@@ -690,7 +718,7 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
       // Only clear fill if it's a non-theme colour
       // Never clear fills that are theme colours or already none
       if (fix.fill === "none" && fix.shapeFill && fix.shapeFill !== "none") {
-        const fillHex = fix.shapeFill.replace("#", "").toLowerCase();
+        const fillHex = fix.shapeFill.replace("#", "").toUpperCase();
         const isThemeColor = themeColorValues.has(fillHex);
         if (!isThemeColor) {
           try {
@@ -701,6 +729,23 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
           }
         } else {
           console.log(`  Keeping theme fill on "${target.name}" (${fix.shapeFill})`);
+        }
+      }
+
+      // Remove non-theme border if instructed
+      if (fix.border === "none" && fix.shapeBorder && fix.shapeBorder !== "none") {
+        const borderHex = fix.shapeBorder.replace("#", "").toUpperCase();
+        const isThemeColor = themeColorValues.has(borderHex);
+        if (!isThemeColor) {
+          try {
+            // Set line to no fill to remove border
+            target.lineFormat.visible = false;
+            console.log(`  ✓ Non-theme border cleared on "${target.name}" (was ${fix.shapeBorder})`);
+          } catch (e) {
+            console.log(`  Error clearing border on "${target.name}":`, e.message);
+          }
+        } else {
+          console.log(`  Keeping theme border on "${target.name}" (${fix.shapeBorder})`);
         }
       }
 
@@ -776,8 +821,8 @@ ${Object.entries(theme.colors).filter(([,v])=>v).map(([k,v])=>`  ${k}: ${v}`).jo
     const showTargetPos = layoutPos != null;
 
     return `  Shape: "${s.name}" [${s.phType}]
-    Current → font="${s.current.fontName}" size=${s.current.fontSize}pt color=${s.current.color} bold=${s.current.bold} italic=${s.current.italic} align=${s.current.alignment} fill=${s.shapeFill || "none"}${s.position ? ` pos=(${s.position.left}",${s.position.top}") size=(${s.position.width}"×${s.position.height}")` : ""}
-    Target  → font="${s.masterTarget?.fontName}" size=${s.masterTarget?.fontSize}pt color=${s.masterTarget?.color} bold=${s.masterTarget?.bold} italic=false align=${s.masterTarget?.alignment} fill=none${showTargetPos ? ` pos=(${layoutPos.left}",${layoutPos.top}") size=(${layoutPos.width}"×${layoutPos.height}")` : " pos=(preserve existing layout)"}
+    Current → font="${s.current.fontName}" size=${s.current.fontSize}pt color=${s.current.color} bold=${s.current.bold} italic=${s.current.italic} align=${s.current.alignment} fill=${s.shapeFill || "none"} border=${s.shapeBorder || "none"}${s.position ? ` pos=(${s.position.left}",${s.position.top}") size=(${s.position.width}"×${s.position.height}")` : ""}
+    Target  → font="${s.masterTarget?.fontName}" size=${s.masterTarget?.fontSize}pt color=${s.masterTarget?.color} bold=${s.masterTarget?.bold} italic=false align=${s.masterTarget?.alignment} fill=none border=none${showTargetPos ? ` pos=(${layoutPos.left}",${layoutPos.top}") size=(${layoutPos.width}"×${layoutPos.height}")` : " pos=(preserve existing layout)"}
     Text: "${s.textContent}"`;
   }).join("\n\n");
 
@@ -794,14 +839,15 @@ ${slideSection}
 
 For each shape where Current ≠ Target, output a fix.
 Return ONLY a valid JSON array. No markdown, no explanation.
-Each item: { "shapeName": "<exact name>", "font": { "name": "...", "size": N, "color": "#hex", "bold": true/false, "italic": true/false }, "alignment": "left|center|right", "fill": "none" }
+Each item: { "shapeName": "<exact name>", "font": { "name": "...", "size": N, "color": "#hex", "bold": true/false, "italic": true/false }, "alignment": "left|center|right", "fill": "none", "border": "none" }
 Note: do NOT include "position" — positions are handled separately.
 
 FONT/COLOUR rules:
 - Fix font name, italic, bold to exactly match the target. If Current shows "(inherited)", treat it as matching — only fix if explicitly different.
 - Fix colour: if Current shows an explicit hex colour different from Target, fix it. If "(inherited)", leave it.
 - IMPORTANT: any shape where font/italic is explicitly set to something non-standard MUST be fixed.
-- FILL: ONLY include "fill": "none" if Current fill shows a hex colour that does NOT appear in the theme colours listed above. If fill is already "none", leave it alone.
+- FILL: ONLY include "fill": "none" if Current fill shows a hex colour that does NOT appear in the theme colours listed above. If fill is already "none" or matches a theme colour, leave it alone.
+- BORDER: ONLY include "border": "none" if Current border shows a hex colour that does NOT appear in the theme colours listed above. If border is already "none" or matches a theme colour, leave it alone.
 
 Skip shapes that already match their target formatting.
 Slide is 10" wide × 7.5" tall.
@@ -1121,7 +1167,7 @@ export default function App() {
       // Enrich fixes with shapeFill so applyFixes can decide whether to clear
       const enrichedFixes = fixes.map(fix => {
         const shape = pptxData.slideShapes.find(s => s.name === fix.shapeName);
-        return { ...fix, shapeFill: shape?.shapeFill || null };
+        return { ...fix, shapeFill: shape?.shapeFill || null, shapeBorder: shape?.shapeBorder || null };
       });
       await applyFixes(dupIndex, enrichedFixes, pptxData.theme.colors);
 
