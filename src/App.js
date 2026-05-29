@@ -322,11 +322,27 @@ function parseSlideXml(xml, theme, masterPlaceholders) {
 
     if (!textContent.trim() && runs.length === 0) continue;
 
-    // Get font from first run's rPr
-    const firstRun = txBody.getElementsByTagNameNS("*", "r")[0];
+    // Get font from runs — scan all runs to detect explicit colours
+    const allRuns = Array.from(txBody.getElementsByTagNameNS("*", "r"));
+    const firstRun = allRuns[0];
     const rPr = firstRun?.getElementsByTagNameNS("*", "rPr")[0];
 
     let fontName = null, fontSize = null, color = null, bold = null;
+
+    // Scan all runs for explicit colour overrides (catches orange, red etc applied manually)
+    for (const run of allRuns) {
+      const rp = run.getElementsByTagNameNS("*", "rPr")[0];
+      if (!rp) continue;
+      const solidFill = rp.getElementsByTagNameNS("*", "solidFill")[0];
+      if (solidFill) {
+        const srgb   = solidFill.getElementsByTagNameNS("*", "srgbClr")[0];
+        const scheme = solidFill.getElementsByTagNameNS("*", "schemeClr")[0];
+        const sys    = solidFill.getElementsByTagNameNS("*", "sysClr")[0];
+        if (srgb)        { color = "#" + srgb.getAttribute("val"); break; }
+        else if (sys)    { color = "#" + (sys.getAttribute("lastClr") || "000000"); break; }
+        else if (scheme) { color = resolveThemeColor(scheme.getAttribute("val"), theme.colors); break; }
+      }
+    }
 
     if (rPr) {
       // Font name
@@ -339,17 +355,6 @@ function parseSlideXml(xml, theme, masterPlaceholders) {
       // Size
       const sz = rPr.getAttribute("sz");
       if (sz) fontSize = parseInt(sz, 10) / 100;
-
-      // Colour
-      const solidFill = rPr.getElementsByTagNameNS("*", "solidFill")[0];
-      if (solidFill) {
-        const srgb   = solidFill.getElementsByTagNameNS("*", "srgbClr")[0];
-        const scheme = solidFill.getElementsByTagNameNS("*", "schemeClr")[0];
-        const sys    = solidFill.getElementsByTagNameNS("*", "sysClr")[0];
-        if (srgb)    color = "#" + srgb.getAttribute("val");
-        else if (sys) color = "#" + (sys.getAttribute("lastClr") || "000000");
-        else if (scheme) color = resolveThemeColor(scheme.getAttribute("val"), theme.colors);
-      }
 
       // Bold
       const b = rPr.getAttribute("b");
@@ -651,10 +656,20 @@ ${slideSection}
 For each shape where Current ≠ Target, output a fix.
 Return ONLY a valid JSON array. No markdown, no explanation.
 Each item: { "shapeName": "<exact name>", "font": { "name": "...", "size": N, "color": "#hex", "bold": true/false }, "alignment": "left|center|right", "position": { "left": N, "top": N, "width": N, "height": N } }
-- "alignment" = text alignment inside the shape (left/center/right)
-- "position" = shape position in inches on the slide — only include if current position differs from target by more than 0.15"
-- All position values in inches. Slide is 10" wide × 7.5" tall. Never set left/top to 0 unless the master explicitly places a shape at the edge.
-Skip shapes that already match their target.`;
+
+FONT/COLOUR rules:
+- Fix font name, size, colour, bold to exactly match the target
+- Fix text alignment (left/center/right) to match the target
+
+POSITION rules — apply design judgment, not robotic template copying:
+- Only move a shape if it looks clearly wrong: overlapping another shape, too close to the slide edge (<0.2"), or obviously misplaced (e.g. title at the bottom, content in the header area)
+- If a shape is reasonably placed and not overlapping anything, leave its position alone even if it differs from the master
+- Never stack multiple shapes on top of each other — ensure each shape has its own clear space
+- Maintain consistent left margins across shapes of the same type
+- Slide is 10" wide × 7.5" tall. All values in inches.
+- Only include "position" in the fix if the shape genuinely needs to move
+
+Skip shapes that already match their target formatting.`;
 }
 
 async function callClaude(pptxData, apiKey) {
