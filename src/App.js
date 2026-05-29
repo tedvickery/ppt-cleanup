@@ -632,8 +632,8 @@ ${Object.entries(theme.colors).filter(([,v])=>v).map(([k,v])=>`  ${k}: ${v}`).jo
 
   const slideSection = slideShapes.map(s =>
     `  Shape: "${s.name}" [${s.phType}]
-    Current → font="${s.current.fontName}" size=${s.current.fontSize}pt color=${s.current.color} bold=${s.current.bold} align=${s.current.alignment}
-    Target  → font="${s.masterTarget?.fontName}" size=${s.masterTarget?.fontSize}pt color=${s.masterTarget?.color} bold=${s.masterTarget?.bold} align=${s.masterTarget?.alignment}
+    Current → font="${s.current.fontName}" size=${s.current.fontSize}pt color=${s.current.color} bold=${s.current.bold} align=${s.current.alignment}${s.position ? ` pos=(${s.position.left}",${s.position.top}") size=(${s.position.width}"×${s.position.height}")` : ""}
+    Target  → font="${s.masterTarget?.fontName}" size=${s.masterTarget?.fontSize}pt color=${s.masterTarget?.color} bold=${s.masterTarget?.bold} align=${s.masterTarget?.alignment}${s.masterTarget?.position ? ` pos=(${s.masterTarget.position.left}",${s.masterTarget.position.top}") size=(${s.masterTarget.position.width}"×${s.masterTarget.position.height}")` : ""}
     Text: "${s.textContent}"`
   ).join("\n\n");
 
@@ -658,6 +658,8 @@ Skip shapes that already match their target.`;
 }
 
 async function callClaude(pptxData, apiKey) {
+  const prompt = buildPrompt(pptxData);
+  console.log("=== PROMPT TO CLAUDE ===\n", prompt);
   const response = await fetch("/api/claude", {
     method: "POST",
     headers: {
@@ -668,7 +670,7 @@ async function callClaude(pptxData, apiKey) {
       model: "claude-sonnet-4-20250514",
       max_tokens: 1000,
       system: "You are a PowerPoint formatting assistant. Return ONLY valid JSON arrays. No markdown fences, no explanation, no preamble.",
-      messages: [{ role: "user", content: buildPrompt(pptxData) }],
+      messages: [{ role: "user", content: prompt }],
     }),
   });
 
