@@ -745,7 +745,7 @@ function colourDistance(hex1, hex2) {
 }
 
 // Snap a hex colour to the nearest theme colour if within threshold (max ~80 on 0-765 scale)
-function snapToThemeColor(hex, themeColors, threshold = 100) {
+function snapToThemeColor(hex, themeColors, threshold = 80) {
   if (!hex || hex === "none" || hex.startsWith("theme:")) return hex;
   let nearest = null, nearestDist = Infinity;
   for (const [, themeHex] of Object.entries(themeColors)) {
@@ -919,28 +919,26 @@ RULES — return ONLY a JSON array, no markdown:
 Each item: {"shapeName":"...","font":{"name":"...","size":N,"color":"#hex","bold":true/false,"italic":true/false},"alignment":"left|center|right","fill":"#hex or none","border":"#hex or none"}
 
 FONT rules:
-- Set font name to the target font for that placeholder type
-- Set font size to the target size (do not include size if already correct)
-- IMPORTANT: if size differs within a shape (mixed sizes), normalise all to the target size
-- Fix bold/italic if non-standard
+- ANY shape with a non-template font name MUST be fixed — no exceptions
+- "Aptos" and "Aptos Light" are the only acceptable fonts; everything else is non-template
+- Always include "size" in font fixes — use the target size for that placeholder type
+- Set bold=false and italic=false unless the target says otherwise
+- "(inherited)" means no explicit override — still fix if font name is wrong
 
 COLOUR rules:
-- If text colour matches a theme colour → keep it
-- If text colour is close to a theme colour (similar shade) → snap to the nearest theme colour
+- Text colour: if "(inherited)" or matches target → omit color from fix
 - If text colour is clearly off-brand → set it to the target colour for that placeholder
-- Apply same logic to fill and border colours
+- Do NOT snap text colours — only use exact target colours
 
 FILL/BORDER rules:
-- Include "fill" only if the fill needs to change
-- If current fill is a theme colour → keep it (omit fill from fix)
-- If current fill is near a theme colour → include fill with the snapped theme colour
-- If current fill is clearly non-template → include "fill":"none" to remove it
+- If current fill is an exact theme colour → omit fill from fix (keep it)
+- If current fill is NOT a theme colour → include "fill":"none" to remove it
+- Theme colours are: #000000 #44546A #FFFFFF #E7E6E6 #55BC7E #FFC330 #BE80FF #FF8345 #FF70BF #60A2F5
 - Same logic for border
 
-ALIGNMENT:
-- Set alignment to match the master target for that placeholder type
+ALIGNMENT: set to match master target
 
-Skip shapes that already match. Do not include "position" in the output.`;
+Every shape with a non-template font MUST appear in the output. Do not skip them.`;
 }
 
 async function callClaude(pptxData, apiKey) {
@@ -1252,14 +1250,23 @@ export default function App() {
       }
 
       addLog("Applying fixes…");
-      // Enrich fixes with shapeFill/shapeBorder by matching on index (shapes can share names)
-      let shapeMatchIndex = {};
+      // Enrich fixes with shapeFill/shapeBorder — match by name+font when names are duplicated
       const enrichedFixes = fixes.map(fix => {
-        const idx = shapeMatchIndex[fix.shapeName] || 0;
-        shapeMatchIndex[fix.shapeName] = idx + 1;
-        const matchingShapes = pptxData.slideShapes.filter(s => s.name === fix.shapeName);
-        const shape = matchingShapes[idx] || matchingShapes[0];
-        return { ...fix, shapeFill: shape?.shapeFill || null, shapeBorder: shape?.shapeBorder || null };
+        // Try to find a shape matching both name and the font being fixed
+        let shape = pptxData.slideShapes.find(s =>
+          s.name === fix.shapeName &&
+          fix.font?.name &&
+          s.current.fontName !== fix.font.name && // shape currently has wrong font
+          s.current.fontName !== "(inherited)"
+        );
+        // Fallback: first unused shape with that name
+        if (!shape) {
+          const used = enrichedFixes ? enrichedFixes.map(f => f._matchedShape).filter(Boolean) : [];
+          shape = pptxData.slideShapes.find(s => s.name === fix.shapeName && !used.includes(s));
+        }
+        if (!shape) shape = pptxData.slideShapes.find(s => s.name === fix.shapeName);
+        const result = { ...fix, shapeFill: shape?.shapeFill || null, shapeBorder: shape?.shapeBorder || null, _matchedShape: shape };
+        return result;
       });
       await applyFixes(dupIndex, enrichedFixes, pptxData.theme.colors);
 
