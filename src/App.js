@@ -1312,7 +1312,32 @@ async function callClaudeRaw(prompt, apiKey) {
         totalFixes += fontFixes.length;
       }
 
-      // ─── GOAL 2: Normalise mixed font sizes within text boxes ───────────────
+      // ─── TITLE POSITION: always snap title shape to master position ──────────
+      const titleShape = pptxData.slideShapes.find(s => s.phType === "title" || s.phType === "ctrTitle");
+      const titleMaster = pptxData.masterPlaceholders.find(p => p.type === "title" || p.type === "ctrTitle");
+      const layoutTitlePos = pptxData.layoutPositions?.["title:0"];
+      const targetTitlePos = layoutTitlePos || titleMaster?.position;
+
+      if (titleShape && targetTitlePos) {
+        const cur = titleShape.position;
+        const needsMove = cur && (
+          Math.abs(cur.left - targetTitlePos.left) > 0.05 ||
+          Math.abs(cur.top - targetTitlePos.top) > 0.05 ||
+          Math.abs(cur.width - targetTitlePos.width) > 0.05 ||
+          Math.abs(cur.height - targetTitlePos.height) > 0.05
+        );
+        if (needsMove) {
+          addLog(`Snapping title to master position…`);
+          await applyFixes(dupIndex, [{
+            shapeName: titleShape.name,
+            shapeId: titleShape.id,
+            _slideShape: titleShape,
+            shapeFill: titleShape.shapeFill || null,
+            position: targetTitlePos,
+          }], themeColors);
+          totalFixes++;
+        }
+      }
       await PowerPoint.run(async (ctx) => {
         const slides = ctx.presentation.slides;
         slides.load("items");
@@ -1374,6 +1399,21 @@ async function callClaudeRaw(prompt, apiKey) {
             : pptxData.slideShapes.find(s => s.name === fix.shapeName);
           return { ...fix, shapeName: shape?.name, shapeId: shape?.id, _slideShape: shape || null, shapeFill: shape?.shapeFill || null };
         });
+
+        // Detect and fix overlaps: sort by top, push down any shape that overlaps the previous
+        const MIN_GAP = 0.15;
+        const withPos = enrichedLayoutFixes
+          .filter(f => f.position)
+          .sort((a, b) => a.position.top - b.position.top);
+        for (let i = 1; i < withPos.length; i++) {
+          const prev = withPos[i - 1].position;
+          const cur = withPos[i].position;
+          const minTop = prev.top + prev.height + MIN_GAP;
+          if (cur.top < minTop) {
+            withPos[i].position = { ...cur, top: minTop };
+          }
+        }
+
         await applyFixes(dupIndex, enrichedLayoutFixes, themeColors);
         totalFixes += layoutFixes.length;
       }
