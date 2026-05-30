@@ -1223,26 +1223,25 @@ export default function App() {
 
 function buildLayoutPrompt(pptxData) {
   const shapes = pptxData.slideShapes.map((s, i) =>
-    `  #${i} "${s.name}" pos=(${s.position?.left}",${s.position?.top}") size=(${s.position?.width}"×${s.position?.height}") text="${s.textContent?.slice(0,40)}"`
+    `  #${i} "${s.name}" pos=(${s.position?.left}",${s.position?.top}") size=(${s.position?.width}"×${s.position?.height}") text="${s.textContent?.slice(0,50)}"`
   ).join("\n");
 
   return `You are a PowerPoint layout expert. The slide is 10"×7.5".
-These are the current text box positions:
 
+Current text box positions:
 ${shapes}
 
-Identify any text boxes that look misaligned or unevenly spaced — e.g. boxes that should share the same left edge but don't, or boxes that are the same size but have inconsistent gaps between them.
+Your job: suggest position and size adjustments so the slide looks clean and professional.
+- Text boxes must not overlap each other
+- All text boxes must fit within the slide (left+width ≤ 10, top+height ≤ 7.5)
+- Maintain reasonable spacing between boxes (at least 0.15" gap)
+- You can move and resize boxes freely to achieve a good layout
+- Prefer keeping boxes roughly where they are unless they're clearly misplaced or off-slide
 
-Return ONLY a JSON array of position fixes. Each item:
+Return ONLY a JSON array. Each item:
 {"shapeIndex":N,"position":{"left":X,"top":Y,"width":W,"height":H}}
 
-Rules:
-- You can adjust left, top, width and height to improve layout
-- Only move/resize shapes that are clearly misaligned or overlapping
-- Keep all changes within 20% of the original value for each dimension
-- Keep shapes within the slide (left 0-10", top 0-7.5")
-- Preserve the relative vertical order of shapes
-- Return [] if layout looks acceptable`;
+Return [] if the layout already looks good.`;
 }
 
 async function callClaudeRaw(prompt, apiKey) {
@@ -1372,11 +1371,9 @@ async function callClaudeRaw(prompt, apiKey) {
         }
       });
 
-      // ─── GOAL 3: Ask Claude to fix text colours, fills, and alignment ───────
+      // ─── GOAL 3: Ask Claude to fix colours and layout ───────────────────────
       addLog("Asking Claude for colour & layout fixes…");
       const fixes = await callClaude(pptxData, apiKey);
-      addLog(`${fixes.length} colour/layout fix${fixes.length !== 1 ? "es" : ""} identified`);
-
       if (fixes.length > 0) {
         const enrichedFixes = fixes.map(fix => {
           const shape = fix.shapeIndex !== undefined
@@ -1388,108 +1385,27 @@ async function callClaudeRaw(prompt, apiKey) {
         totalFixes += fixes.length;
       }
 
-      // ─── GOAL 3b: Position alignment via Claude ─────────────────────────────
-      // Build a layout prompt asking Claude to suggest position fixes
+      // ─── GOAL 3b: Layout alignment — let Claude decide, we just clamp ────────
       const layoutPrompt = buildLayoutPrompt(pptxData);
       addLog("Asking Claude for layout alignment…");
       const layoutFixes = await callClaudeRaw(layoutPrompt, apiKey);
       if (layoutFixes.length > 0) {
         addLog(`${layoutFixes.length} layout fix${layoutFixes.length !== 1 ? "es" : ""}`);
-        // Enrich layout fixes with shape data so applyFixes can find them by id
+        const SLIDE_W = 10, SLIDE_H = 7.5;
         const enrichedLayoutFixes = layoutFixes.map(fix => {
           const shape = fix.shapeIndex !== undefined
             ? pptxData.slideShapes[fix.shapeIndex]
             : pptxData.slideShapes.find(s => s.name === fix.shapeName);
-          return { ...fix, shapeName: shape?.name, shapeId: shape?.id, _slideShape: shape || null, shapeFill: shape?.shapeFill || null };
-        });
-
-        // Clamp all positions to stay within slide bounds
-        const SLIDE_W = 10;
-        const SLIDE_H = 7.5;
-        const MIN_GAP = 0.15;
-        const MIN_HEIGHT = 0.3;
-
-        // Build a map of ALL current shape positions (will be updated as we move things)
-        const allPositions = pptxData.slideShapes
-          .filter(s => s.position)
-          .map(s => ({ id: s.id, name: s.name, ...s.position }));
-
-        const withPos = enrichedLayoutFixes
-          .filter(f => f.position)
-          .map(f => {
-            const orig = f._slideShape?.position;
-            const pos = { ...f.position };
-            if (orig) {
-              // Cap movement to 20% of original dimensions
-              const maxMoveX = orig.width * 0.2;
-              const maxMoveY = orig.height * 0.2;
-              pos.left = Math.max(orig.left - maxMoveX, Math.min(orig.left + maxMoveX, pos.left));
-              pos.top  = Math.max(orig.top  - maxMoveY, Math.min(orig.top  + maxMoveY, pos.top));
-              // Cap resize to 20% of original dimensions
-              const maxW = orig.width * 1.2;
-              const minW = orig.width * 0.8;
-              const maxH = orig.height * 1.2;
-              const minH = orig.height * 0.8;
-              pos.width  = Math.max(minW, Math.min(maxW, pos.width  || orig.width));
-              pos.height = Math.max(minH, Math.min(maxH, pos.height || orig.height));
-            }
-            // Clamp to slide bounds
-            if (pos.left < 0) pos.left = 0;
-            if (pos.left + pos.width > SLIDE_W) pos.left = Math.max(0, SLIDE_W - pos.width);
-            if (pos.top < 0) pos.top = 0;
-            if (pos.top + pos.height > SLIDE_H) pos.top = Math.max(0, SLIDE_H - pos.height);
-            return { ...f, position: pos };
-          });
-
-        // For each shape being moved, check it won't overlap any other shape
-        for (const fix of withPos) {
-          const shapeId = fix.shapeId || fix._slideShape?.id;
-          let pos = { ...fix.position };
-
-          // Get all other shapes' positions — use proposed new position from withPos if available
-          const others = allPositions
-            .filter(p => p.id !== shapeId)
-            .map(p => {
-              const inFlight = withPos.find(f => (f.shapeId || f._slideShape?.id) === p.id);
-              return inFlight ? { ...p, ...inFlight.position } : p;
-            });
-
-          // Try to find a non-overlapping position — push down if needed
-          let changed = true;
-          let iterations = 0;
-          while (changed && iterations < 20) {
-            changed = false;
-            iterations++;
-            // Sort others by their bottom edge so we push past the lowest overlapping shape
-            const overlapping = others.filter(other => {
-              const overlapsX = pos.left < other.left + other.width - 0.05 && pos.left + pos.width > other.left + 0.05;
-              const overlapsY = pos.top < other.top + other.height - 0.05 && pos.top + pos.height > other.top + 0.05;
-              return overlapsX && overlapsY;
-            });
-            if (overlapping.length > 0) {
-              // Push below the lowest overlapping shape's bottom edge
-              const lowestBottom = Math.max(...overlapping.map(o => o.top + o.height));
-              const newTop = lowestBottom + MIN_GAP;
-              if (newTop + pos.height <= SLIDE_H) {
-                pos.top = newTop;
-                changed = true;
-                console.log(`  Overlap resolved: moved "${fix.shapeName}" to top=${pos.top.toFixed(2)}`);
-              } else {
-                // No room — shrink to fit remaining space
-                pos.top = Math.min(pos.top, SLIDE_H - MIN_HEIGHT - MIN_GAP);
-                pos.height = Math.max(MIN_HEIGHT, SLIDE_H - pos.top - MIN_GAP);
-                console.log(`  Overlap: shrunk "${fix.shapeName}" to height=${pos.height.toFixed(2)}`);
-              }
-            }
+          const pos = fix.position ? { ...fix.position } : null;
+          if (pos) {
+            // Just clamp to slide bounds — trust Claude on positioning
+            if (!pos.width)  pos.width  = shape?.position?.width  || 5;
+            if (!pos.height) pos.height = shape?.position?.height || 1;
+            pos.left = Math.max(0, Math.min(pos.left, SLIDE_W - pos.width));
+            pos.top  = Math.max(0, Math.min(pos.top,  SLIDE_H - pos.height));
           }
-
-          fix.position = pos;
-          // Update allPositions so subsequent fixes account for this move
-          const idx = allPositions.findIndex(p => p.id === shapeId);
-          if (idx >= 0) allPositions[idx] = { ...allPositions[idx], ...pos };
-          else allPositions.push({ id: shapeId, name: fix.shapeName, ...pos });
-        }
-
+          return { ...fix, position: pos, shapeName: shape?.name, shapeId: shape?.id, _slideShape: shape || null, shapeFill: shape?.shapeFill || null };
+        });
         await applyFixes(dupIndex, enrichedLayoutFixes, themeColors);
         totalFixes += layoutFixes.length;
       }
