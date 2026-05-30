@@ -1450,33 +1450,58 @@ async function callClaudeRaw(prompt, apiKey) {
           position: targetTitlePos,
         }], themeColors);
 
-        // Push any shapes that now overlap the title below it
-        const titleBottom = targetTitlePos.top + targetTitlePos.height + 0.15;
-        // Use final positions — either from layout fixes or original
-        const finalPositions = pptxData.slideShapes.map(s => {
-          const layoutFix = enrichedLayoutFixes?.find(f => f.shapeId === s.id || f.shapeName === s.name);
-          return { ...s, position: layoutFix?.position || s.position };
-        });
-        const overlapFixes = finalPositions
-          .filter(s => s.id !== titleShape.id && s.position)
-          .filter(s => {
-            const overlapsX = s.position.left < targetTitlePos.left + targetTitlePos.width - 0.05 &&
-                              s.position.left + s.position.width > targetTitlePos.left + 0.05;
-            const overlapsY = s.position.top < targetTitlePos.top + targetTitlePos.height &&
-                              s.position.top + s.position.height > targetTitlePos.top;
-            return overlapsX && overlapsY;
-          })
-          .map(s => ({
-            shapeName: s.name, shapeId: s.id, _slideShape: s, shapeFill: s.shapeFill || null,
-            position: { ...s.position, top: titleBottom },
-          }));
-        if (overlapFixes.length > 0) {
-          addLog(`Adjusting ${overlapFixes.length} shape(s) below title…`);
-          await applyFixes(dupIndex, overlapFixes, themeColors);
-        }
       }
 
-      addLog(`✓ Done — ${totalFixes} fix${totalFixes !== 1 ? "es" : ""} applied`);
+      // ─── FINAL: ensure no text boxes overlap each other ─────────────────────
+      if (targetTitlePos) {
+        const SLIDE_H = 7.5;
+        const GAP = 0.15;
+        const ignoreTypes = new Set(["sldNum", "ftr"]);
+
+        // Build current positions (use layout fix positions where available)
+        const finalShapes = pptxData.slideShapes
+          .filter(s => s.position && !ignoreTypes.has(s.phType))
+          .map(s => {
+            const layoutFix = enrichedLayoutFixes?.find(f => f.shapeId === s.id || f.shapeName === s.name);
+            return { id: s.id, name: s.name, shapeFill: s.shapeFill, _slideShape: s,
+                     pos: { ...(layoutFix?.position || s.position) } };
+          });
+
+        // Check every pair — if they overlap, push the lower one down
+        let changed = true;
+        for (let iter = 0; iter < 10 && changed; iter++) {
+          changed = false;
+          for (let i = 0; i < finalShapes.length; i++) {
+            for (let j = i + 1; j < finalShapes.length; j++) {
+              const a = finalShapes[i].pos, b = finalShapes[j].pos;
+              const overX = a.left < b.left + b.width - 0.05 && a.left + a.width > b.left + 0.05;
+              const overY = a.top  < b.top  + b.height - 0.05 && a.top  + a.height > b.top  + 0.05;
+              if (overX && overY) {
+                // Push whichever is lower downward
+                const lower = a.top >= b.top ? finalShapes[i] : finalShapes[j];
+                const upper = a.top >= b.top ? finalShapes[j] : finalShapes[i];
+                lower.pos.top = upper.pos.top + upper.pos.height + GAP;
+                if (lower.pos.top + lower.pos.height > SLIDE_H)
+                  lower.pos.height = Math.max(0.3, SLIDE_H - lower.pos.top - GAP);
+                changed = true;
+              }
+            }
+          }
+        }
+
+        // Apply any position changes
+        const overlapFixes2 = finalShapes.filter(s => {
+          const orig = enrichedLayoutFixes?.find(f => f.shapeId === s.id)?.position || s._slideShape.position;
+          return orig && (Math.abs(s.pos.top - orig.top) > 0.01 || Math.abs(s.pos.height - orig.height) > 0.01);
+        }).map(s => ({
+          shapeName: s.name, shapeId: s.id, _slideShape: s._slideShape,
+          shapeFill: s.shapeFill || null, position: s.pos,
+        }));
+        if (overlapFixes2.length > 0) {
+          addLog(`Final overlap fix: adjusting ${overlapFixes2.length} shape(s)…`);
+          await applyFixes(dupIndex, overlapFixes2, themeColors);
+        }
+      }
       setFixCount(totalFixes);
       setStatus("done");
     } catch (err) {
