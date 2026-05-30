@@ -960,7 +960,15 @@ async function callClaude(pptxData, apiKey) {
 
   const data = await response.json();
   const raw = data.content?.find((b) => b.type === "text")?.text || "[]";
-  return JSON.parse(raw.replace(/```json|```/g, "").trim());
+  const cleaned = raw.replace(/```json|```/g, "").trim();
+  const match = cleaned.match(/\[[\s\S]*\]/);
+  if (!match) return [];
+  try {
+    return JSON.parse(match[0]);
+  } catch (e) {
+    console.warn("Claude JSON parse failed:", e.message);
+    return [];
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1242,6 +1250,7 @@ async function callClaudeRaw(prompt, apiKey) {
     body: JSON.stringify({
       model: "claude-sonnet-4-20250514",
       max_tokens: 1000,
+      system: "You are a JSON API. You must respond with ONLY a valid JSON array and nothing else. No explanation, no markdown, no preamble.",
       messages: [{ role: "user", content: prompt }],
     }),
   });
@@ -1251,7 +1260,16 @@ async function callClaudeRaw(prompt, apiKey) {
   }
   const data = await response.json();
   const raw = data.content?.find(b => b.type === "text")?.text || "[]";
-  return JSON.parse(raw.replace(/```json|```/g, "").trim());
+  const cleaned = raw.replace(/```json|```/g, "").trim();
+  // Extract JSON array if there's any preamble text
+  const match = cleaned.match(/\[[\s\S]*\]/);
+  if (!match) return [];
+  try {
+    return JSON.parse(match[0]);
+  } catch (e) {
+    console.warn("Layout JSON parse failed:", e.message);
+    return [];
+  }
 }
 
 // Phase 2: run cleanup with a chosen master
