@@ -1409,13 +1409,14 @@ async function callClaudeRaw(prompt, apiKey) {
       }
 
       // ─── GOAL 3b: Layout alignment — let Claude decide, we just clamp ────────
+      let enrichedLayoutFixes = [];
       const layoutPrompt = buildLayoutPrompt(pptxData);
       addLog("Asking Claude for layout alignment…");
       const layoutFixes = await callClaudeRaw(layoutPrompt, apiKey);
       if (layoutFixes.length > 0) {
         addLog(`${layoutFixes.length} layout fix${layoutFixes.length !== 1 ? "es" : ""}`);
         const SLIDE_W = 10, SLIDE_H = 7.5;
-        const enrichedLayoutFixes = layoutFixes.map(fix => {
+        enrichedLayoutFixes = layoutFixes.map(fix => {
           const shape = fix.shapeIndex !== undefined
             ? pptxData.slideShapes[fix.shapeIndex]
             : pptxData.slideShapes.find(s => s.name === fix.shapeName);
@@ -1446,7 +1447,12 @@ async function callClaudeRaw(prompt, apiKey) {
 
         // Push any shapes that now overlap the title below it
         const titleBottom = targetTitlePos.top + targetTitlePos.height + 0.15;
-        const overlapFixes = pptxData.slideShapes
+        // Use final positions — either from layout fixes or original
+        const finalPositions = pptxData.slideShapes.map(s => {
+          const layoutFix = enrichedLayoutFixes?.find(f => f.shapeId === s.id || f.shapeName === s.name);
+          return { ...s, position: layoutFix?.position || s.position };
+        });
+        const overlapFixes = finalPositions
           .filter(s => s.id !== titleShape.id && s.position)
           .filter(s => {
             const overlapsX = s.position.left < targetTitlePos.left + targetTitlePos.width - 0.05 &&
