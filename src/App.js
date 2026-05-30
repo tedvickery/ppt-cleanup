@@ -1400,18 +1400,63 @@ async function callClaudeRaw(prompt, apiKey) {
           return { ...fix, shapeName: shape?.name, shapeId: shape?.id, _slideShape: shape || null, shapeFill: shape?.shapeFill || null };
         });
 
-        // Detect and fix overlaps: sort by top, push down any shape that overlaps the previous
+        // Clamp all positions to stay within slide bounds
+        const SLIDE_W = 10;
+        const SLIDE_H = 7.5;
         const MIN_GAP = 0.15;
+        const MIN_HEIGHT = 0.3;
+
+        // Build a map of ALL current shape positions (will be updated as we move things)
+        const allPositions = pptxData.slideShapes
+          .filter(s => s.position)
+          .map(s => ({ id: s.id, name: s.name, ...s.position }));
+
         const withPos = enrichedLayoutFixes
           .filter(f => f.position)
-          .sort((a, b) => a.position.top - b.position.top);
-        for (let i = 1; i < withPos.length; i++) {
-          const prev = withPos[i - 1].position;
-          const cur = withPos[i].position;
-          const minTop = prev.top + prev.height + MIN_GAP;
-          if (cur.top < minTop) {
-            withPos[i].position = { ...cur, top: minTop };
+          .map(f => {
+            const pos = { ...f.position };
+            if (pos.left < 0) pos.left = 0;
+            if (pos.left + pos.width > SLIDE_W) pos.width = SLIDE_W - pos.left;
+            if (pos.top < 0) pos.top = 0;
+            if (pos.top + pos.height > SLIDE_H) pos.height = SLIDE_H - pos.top;
+            return { ...f, position: pos };
+          });
+
+        // For each shape being moved, check it won't overlap any other shape
+        for (const fix of withPos) {
+          const shapeId = fix.shapeId || fix._slideShape?.id;
+          let pos = { ...fix.position };
+
+          // Get all other shapes' current positions (excluding this shape)
+          const others = allPositions.filter(p => p.id !== shapeId);
+
+          // Check for overlaps and push down if needed
+          let changed = true;
+          let iterations = 0;
+          while (changed && iterations < 10) {
+            changed = false;
+            iterations++;
+            for (const other of others) {
+              const overlapsX = pos.left < other.left + other.width && pos.left + pos.width > other.left;
+              const overlapsY = pos.top < other.top + other.height && pos.top + pos.height > other.top;
+              if (overlapsX && overlapsY) {
+                // Push this shape below the other
+                const newTop = other.top + other.height + MIN_GAP;
+                if (newTop + pos.height <= SLIDE_H) {
+                  pos.top = newTop;
+                  changed = true;
+                } else {
+                  // No room below — shrink height to fit
+                  pos.height = Math.max(MIN_HEIGHT, SLIDE_H - pos.top - MIN_GAP);
+                }
+              }
+            }
           }
+
+          fix.position = pos;
+          // Update the allPositions map so subsequent fixes account for this move
+          const idx = allPositions.findIndex(p => p.id === shapeId);
+          if (idx >= 0) allPositions[idx] = { ...allPositions[idx], ...pos };
         }
 
         await applyFixes(dupIndex, enrichedLayoutFixes, themeColors);
