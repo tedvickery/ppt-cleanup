@@ -1438,11 +1438,12 @@ Return a JSON array. For each shape that needs fixing, include any of:
 
 Rules:
 - Text colours must be theme colours only: ${Object.values(pptxData.theme.colors).filter(v=>v).join(" ")}
-- Clear fills that are not theme colours
+- For fills that are not theme colours, either clear the fill or snap to a theme colour based on look and feel
 - Content boxes must not go above top=${titleBottom}" or overlap each other
 - All shapes must fit within the slide (left+width ≤ 10, top+height ≤ 7.5)
 - Align left edges to ${leftMargin}" where sensible
 - CRITICAL: fix all overlap issues listed above — shapes must not overlap
+- Set up the slide to read well and look good based on the theme — you can be creative with colours, layout and style, but stay within the template's design language
 - Return [] if nothing needs fixing
 
 Each item: {"shapeIndex":N, "textColor":"#hex", "fill":"#hex or none", "position":{...}}`;
