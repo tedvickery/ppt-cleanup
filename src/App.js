@@ -1242,26 +1242,31 @@ export default function App() {
   }]);
 
 function buildLayoutPrompt(pptxData) {
-  const shapes = pptxData.slideShapes.map((s, i) =>
+  // Exclude title shapes — their position is enforced separately from master
+  const nonTitleShapes = pptxData.slideShapes.filter(s => s.phType !== "title" && s.phType !== "ctrTitle");
+  const titleShape = pptxData.slideShapes.find(s => s.phType === "title" || s.phType === "ctrTitle");
+  const titleBottom = titleShape && titleShape.position
+    ? (titleShape.masterTarget?.position?.top || titleShape.position.top) +
+      (titleShape.masterTarget?.position?.height || titleShape.position.height) + 0.15
+    : 1.5;
+
+  const shapes = nonTitleShapes.map((s, i) =>
     `  #${i} "${s.name}" pos=(${s.position?.left}",${s.position?.top}") size=(${s.position?.width}"×${s.position?.height}") text="${s.textContent?.slice(0,50)}"`
   ).join("\n");
 
   return `You are a PowerPoint layout expert. The slide is 10"×7.5".
+The title occupies the top of the slide — content boxes must not go above ${titleBottom.toFixed(2)}".
 
-Current text box positions:
-${shapes}
+Current content box positions (title excluded):
+${shapes || "  (no content boxes)"}
 
-Your job: suggest position and size adjustments so the slide looks clean and professional.
-- Text boxes must not overlap each other
-- All text boxes must fit within the slide (left+width ≤ 10, top+height ≤ 7.5)
-- Maintain reasonable spacing between boxes (at least 0.15" gap)
-- You can move and resize boxes freely to achieve a good layout
-- Prefer keeping boxes roughly where they are unless they're clearly misplaced or off-slide
+Suggest position/size adjustments so boxes look clean and don't overlap each other or the title area.
+All boxes must stay within the slide and below top=${titleBottom.toFixed(2)}".
 
 Return ONLY a JSON array. Each item:
 {"shapeIndex":N,"position":{"left":X,"top":Y,"width":W,"height":H}}
 
-Return [] if the layout already looks good.`;
+Return [] if layout already looks good.`;
 }
 
 async function callClaudeRaw(prompt, apiKey) {
@@ -1417,8 +1422,10 @@ async function callClaudeRaw(prompt, apiKey) {
         addLog(`${layoutFixes.length} layout fix${layoutFixes.length !== 1 ? "es" : ""}`);
         const SLIDE_W = 10, SLIDE_H = 7.5;
         enrichedLayoutFixes = layoutFixes.map(fix => {
+          // shapeIndex in layout prompt refers to nonTitleShapes array
+          const nonTitleShapes = pptxData.slideShapes.filter(s => s.phType !== "title" && s.phType !== "ctrTitle");
           const shape = fix.shapeIndex !== undefined
-            ? pptxData.slideShapes[fix.shapeIndex]
+            ? nonTitleShapes[fix.shapeIndex]
             : pptxData.slideShapes.find(s => s.name === fix.shapeName);
           const pos = fix.position ? { ...fix.position } : null;
           if (pos) {
