@@ -1296,16 +1296,19 @@ async function callClaudeRaw(prompt, apiKey) {
       // Apply master font/colour to ALL shapes — inherited = use master default
       const fontFixes = pptxData.slideShapes
         .filter(s => s.masterTarget)
-        .map(s => ({
-          shapeName: s.name, shapeId: s.id, _slideShape: s, shapeFill: s.shapeFill || null,
-          font: {
-            name: s.masterTarget.fontName,
-            size: s.masterTarget.fontSize,
-            bold: false,
-            italic: false,
-            color: s.masterTarget.color,
-          },
-        }));
+        .map(s => {
+          const wrongFont = s.current.fontName !== "(inherited)" && s.current.fontName !== s.masterTarget.fontName;
+          return {
+            shapeName: s.name, shapeId: s.id, _slideShape: s, shapeFill: s.shapeFill || null,
+            font: {
+              // Only force font name/size if it's explicitly wrong — don't override inherited (already correct from master)
+              ...(wrongFont ? { name: s.masterTarget.fontName, size: s.masterTarget.fontSize } : {}),
+              bold: false,
+              italic: false,
+              color: s.masterTarget.color,
+            },
+          };
+        });
 
       if (fontFixes.length > 0) {
         addLog(`Fixing ${fontFixes.length} font(s)…`);
@@ -1408,6 +1411,18 @@ async function callClaudeRaw(prompt, apiKey) {
         });
         await applyFixes(dupIndex, enrichedLayoutFixes, themeColors);
         totalFixes += layoutFixes.length;
+      }
+
+      // ─── TITLE FINAL: re-snap title to master after Claude's layout pass ────
+      // Claude sometimes moves the title — always enforce master position last
+      if (titleShape && targetTitlePos) {
+        await applyFixes(dupIndex, [{
+          shapeName: titleShape.name,
+          shapeId: titleShape.id,
+          _slideShape: titleShape,
+          shapeFill: titleShape.shapeFill || null,
+          position: targetTitlePos,
+        }], themeColors);
       }
 
       addLog(`✓ Done — ${totalFixes} fix${totalFixes !== 1 ? "es" : ""} applied`);
