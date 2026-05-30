@@ -1433,28 +1433,39 @@ async function callClaudeRaw(prompt, apiKey) {
           const shapeId = fix.shapeId || fix._slideShape?.id;
           let pos = { ...fix.position };
 
-          // Get all other shapes' current positions (excluding this shape)
-          const others = allPositions.filter(p => p.id !== shapeId);
+          // Get all other shapes' positions — use proposed new position from withPos if available
+          const others = allPositions
+            .filter(p => p.id !== shapeId)
+            .map(p => {
+              const inFlight = withPos.find(f => (f.shapeId || f._slideShape?.id) === p.id);
+              return inFlight ? { ...p, ...inFlight.position } : p;
+            });
 
           // Try to find a non-overlapping position — push down if needed
           let changed = true;
           let iterations = 0;
-          while (changed && iterations < 10) {
+          while (changed && iterations < 20) {
             changed = false;
             iterations++;
-            for (const other of others) {
+            // Sort others by their bottom edge so we push past the lowest overlapping shape
+            const overlapping = others.filter(other => {
               const overlapsX = pos.left < other.left + other.width - 0.05 && pos.left + pos.width > other.left + 0.05;
               const overlapsY = pos.top < other.top + other.height - 0.05 && pos.top + pos.height > other.top + 0.05;
-              if (overlapsX && overlapsY) {
-                const newTop = other.top + other.height + MIN_GAP;
-                if (newTop + pos.height <= SLIDE_H) {
-                  pos.top = newTop;
-                  changed = true;
-                } else {
-                  // No room to push down — shrink height instead
-                  pos.height = Math.max(MIN_HEIGHT, SLIDE_H - pos.top - MIN_GAP);
-                }
+              return overlapsX && overlapsY;
+            });
+            if (overlapping.length > 0) {
+              // Push below the lowest overlapping shape's bottom edge
+              const lowestBottom = Math.max(...overlapping.map(o => o.top + o.height));
+              const newTop = lowestBottom + MIN_GAP;
+              if (newTop + pos.height <= SLIDE_H) {
+                pos.top = newTop;
+                changed = true;
                 console.log(`  Overlap resolved: moved "${fix.shapeName}" to top=${pos.top.toFixed(2)}`);
+              } else {
+                // No room — shrink to fit remaining space
+                pos.top = Math.min(pos.top, SLIDE_H - MIN_HEIGHT - MIN_GAP);
+                pos.height = Math.max(MIN_HEIGHT, SLIDE_H - pos.top - MIN_GAP);
+                console.log(`  Overlap: shrunk "${fix.shapeName}" to height=${pos.height.toFixed(2)}`);
               }
             }
           }
