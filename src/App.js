@@ -1242,26 +1242,31 @@ export default function App() {
   }]);
 
 function buildLayoutPrompt(pptxData) {
-  // Exclude title shapes — their position is enforced separately from master
   const nonTitleShapes = pptxData.slideShapes.filter(s => s.phType !== "title" && s.phType !== "ctrTitle");
   const titleShape = pptxData.slideShapes.find(s => s.phType === "title" || s.phType === "ctrTitle");
-  const titleBottom = titleShape && titleShape.position
-    ? (titleShape.masterTarget?.position?.top || titleShape.position.top) +
-      (titleShape.masterTarget?.position?.height || titleShape.position.height) + 0.15
-    : 1.5;
+  const targetTitlePos = pptxData.layoutPositions?.["title:0"] ||
+    pptxData.masterPlaceholders?.find(p => p.type === "title")?.position ||
+    titleShape?.position;
+
+  const titleBottom = targetTitlePos ? (targetTitlePos.top + targetTitlePos.height + 0.15).toFixed(2) : "1.50";
+  const leftMargin  = targetTitlePos ? targetTitlePos.left.toFixed(2) : "0.50";
+  const rightEdge   = targetTitlePos ? (targetTitlePos.left + targetTitlePos.width).toFixed(2) : "9.50";
 
   const shapes = nonTitleShapes.map((s, i) =>
     `  #${i} "${s.name}" pos=(${s.position?.left}",${s.position?.top}") size=(${s.position?.width}"×${s.position?.height}") text="${s.textContent?.slice(0,50)}"`
   ).join("\n");
 
   return `You are a PowerPoint layout expert. The slide is 10"×7.5".
-The title occupies the top of the slide — content boxes must not go above ${titleBottom.toFixed(2)}".
+The title defines the slide margins — content boxes must align within these bounds:
+- Left margin: ${leftMargin}" (align content box left edges to this)
+- Right edge: ${rightEdge}" (content boxes must not exceed this)
+- Top of content area: ${titleBottom}" (nothing above this line)
+- Bottom limit: 7.3"
 
-Current content box positions (title excluded):
+Current content box positions:
 ${shapes || "  (no content boxes)"}
 
-Suggest position/size adjustments so boxes look clean and don't overlap each other or the title area.
-All boxes must stay within the slide and below top=${titleBottom.toFixed(2)}".
+Adjust positions/sizes so boxes are neatly aligned, don't overlap, and respect the margins above.
 
 Return ONLY a JSON array. Each item:
 {"shapeIndex":N,"position":{"left":X,"top":Y,"width":W,"height":H}}
