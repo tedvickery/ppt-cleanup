@@ -1358,11 +1358,12 @@ async function callClaudeRaw(prompt, apiKey) {
             const tr = officeShape.textFrame.textRange;
             tr.font.load("size");
             await ctx.sync();
-            // If the overall range has a mixed/null size, normalise it
-            if (tr.font.size === null || (tr.font.size && tr.font.size !== targetSize)) {
+            // Only normalise if font.size is null — meaning mixed sizes within the box
+            // Don't touch boxes with a consistent size (even if different from master)
+            if (tr.font.size === null) {
               tr.font.size = targetSize;
               await ctx.sync();
-              addLog(`Normalised font size in "${slideShape.name}" → ${targetSize}pt`);
+              addLog(`Normalised mixed font sizes in "${slideShape.name}" → ${targetSize}pt`);
               totalFixes++;
             }
           } catch (e) { /* shape has no text */ }
@@ -1414,11 +1415,16 @@ async function callClaudeRaw(prompt, apiKey) {
         const withPos = enrichedLayoutFixes
           .filter(f => f.position)
           .map(f => {
+            const orig = f._slideShape?.position;
             const pos = { ...f.position };
+            // Restore original width/height — Claude often gets these wrong
+            if (orig) { pos.width = orig.width; pos.height = orig.height; }
+            // Clamp left so right edge stays on slide
             if (pos.left < 0) pos.left = 0;
-            if (pos.left + pos.width > SLIDE_W) pos.width = SLIDE_W - pos.left;
+            if (pos.left + pos.width > SLIDE_W) pos.left = Math.max(0, SLIDE_W - pos.width);
+            // Clamp top
             if (pos.top < 0) pos.top = 0;
-            if (pos.top + pos.height > SLIDE_H) pos.height = SLIDE_H - pos.top;
+            if (pos.top + pos.height > SLIDE_H) pos.top = Math.max(0, SLIDE_H - pos.height);
             return { ...f, position: pos };
           });
 
@@ -1430,33 +1436,34 @@ async function callClaudeRaw(prompt, apiKey) {
           // Get all other shapes' current positions (excluding this shape)
           const others = allPositions.filter(p => p.id !== shapeId);
 
-          // Check for overlaps and push down if needed
+          // Try to find a non-overlapping position — push down if needed
           let changed = true;
           let iterations = 0;
           while (changed && iterations < 10) {
             changed = false;
             iterations++;
             for (const other of others) {
-              const overlapsX = pos.left < other.left + other.width && pos.left + pos.width > other.left;
-              const overlapsY = pos.top < other.top + other.height && pos.top + pos.height > other.top;
+              const overlapsX = pos.left < other.left + other.width - 0.05 && pos.left + pos.width > other.left + 0.05;
+              const overlapsY = pos.top < other.top + other.height - 0.05 && pos.top + pos.height > other.top + 0.05;
               if (overlapsX && overlapsY) {
-                // Push this shape below the other
                 const newTop = other.top + other.height + MIN_GAP;
                 if (newTop + pos.height <= SLIDE_H) {
                   pos.top = newTop;
                   changed = true;
                 } else {
-                  // No room below — shrink height to fit
+                  // No room to push down — shrink height instead
                   pos.height = Math.max(MIN_HEIGHT, SLIDE_H - pos.top - MIN_GAP);
                 }
+                console.log(`  Overlap resolved: moved "${fix.shapeName}" to top=${pos.top.toFixed(2)}`);
               }
             }
           }
 
           fix.position = pos;
-          // Update the allPositions map so subsequent fixes account for this move
+          // Update allPositions so subsequent fixes account for this move
           const idx = allPositions.findIndex(p => p.id === shapeId);
           if (idx >= 0) allPositions[idx] = { ...allPositions[idx], ...pos };
+          else allPositions.push({ id: shapeId, name: fix.shapeName, ...pos });
         }
 
         await applyFixes(dupIndex, enrichedLayoutFixes, themeColors);
