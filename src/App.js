@@ -860,7 +860,8 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
         } catch (e) { console.log(`  Error setting text colour:`, e.message); }
       }
 
-      // Font, colour, alignment (from code-based fixes)      if (fix.font || fix.alignment) {
+      // Font, colour, alignment (from code-based fixes)
+      if (fix.font || fix.alignment) {
         try {
           const tf = target.textFrame;
           const tr = tf.textRange;
