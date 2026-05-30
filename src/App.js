@@ -1457,51 +1457,6 @@ Each item: {"shapeIndex":N, "textColor":"#hex", "fill":"#hex or none", "position
         }], themeColors);
       }
 
-      // ─── FINAL: pairwise overlap check ──────────────────────────────────────
-      {
-        const SLIDE_H = 7.5, GAP = 0.15;
-        const ignoreTypes = new Set(["sldNum", "ftr"]);
-        const finalShapes = pptxData.slideShapes
-          .filter(s => s.position && !ignoreTypes.has(s.phType))
-          .map(s => {
-            const fix = enrichedLayoutFixes?.find(f => f.shapeId === s.id || f.shapeName === s.name);
-            const isTitleShape = s.phType === "title" || s.phType === "ctrTitle";
-            return { id: s.id, name: s.name, shapeFill: s.shapeFill, _slideShape: s, isTitle: isTitleShape,
-                     pos: isTitleShape && targetTitlePos ? { ...targetTitlePos } : { ...(fix?.position || s.position) } };
-          });
-        let changed = true;
-        for (let iter = 0; iter < 10 && changed; iter++) {
-          changed = false;
-          for (let i = 0; i < finalShapes.length; i++) {
-            for (let j = i + 1; j < finalShapes.length; j++) {
-              const a = finalShapes[i], b = finalShapes[j];
-              const overX = a.pos.left < b.pos.left + b.pos.width - 0.05 && a.pos.left + a.pos.width > b.pos.left + 0.05;
-              const overY = a.pos.top  < b.pos.top  + b.pos.height - 0.05 && a.pos.top  + a.pos.height > b.pos.top  + 0.05;
-              if (overX && overY) {
-                // Never move the title — push the other shape
-                const mover = a.isTitle ? b : (b.isTitle ? a : (a.pos.top >= b.pos.top ? a : b));
-                const anchor = mover === a ? b : a;
-                mover.pos.top = anchor.pos.top + anchor.pos.height + GAP;
-                if (mover.pos.top + mover.pos.height > SLIDE_H)
-                  mover.pos.height = Math.max(0.3, SLIDE_H - mover.pos.top - GAP);
-                changed = true;
-              }
-            }
-          }
-        }
-        const overlapFixes = finalShapes.filter(s => {
-          const orig = s._slideShape.position;
-          return orig && (Math.abs(s.pos.top - orig.top) > 0.02 || Math.abs(s.pos.height - orig.height) > 0.02);
-        }).filter(s => !s.isTitle) // title position already enforced above
-          .map(s => ({
-            shapeName: s.name, shapeId: s.id, _slideShape: s._slideShape,
-            shapeFill: s.shapeFill || null, position: s.pos,
-          }));
-        if (overlapFixes.length > 0) {
-          addLog(`Resolving ${overlapFixes.length} overlap(s)…`);
-          await applyFixes(dupIndex, overlapFixes, themeColors);
-        }
-      }
       setFixCount(totalFixes);
       setStatus("done");
     } catch (err) {
