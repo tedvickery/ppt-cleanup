@@ -994,7 +994,7 @@ function ApiKeyScreen({ onSave }) {
     <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", background: "#f8f9fb", minHeight: "100vh", display: "flex", flexDirection: "column", maxWidth: 340, margin: "0 auto" }}>
       <div style={{ background: "#111111", padding: "18px 16px 14px", color: "#fff" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>✦</div>
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}> </div>
           <div>
             <div style={{ fontWeight: 700, fontSize: 15 }}>Plz fix thx</div>
             <div style={{ fontSize: 10, opacity: 0.75 }}>Setup — one time only</div>
@@ -1492,10 +1492,10 @@ async function callClaudeRaw(prompt, apiKey) {
       {/* Header */}
       <div style={{ background: "#111111", padding: "18px 16px 14px", color: "#fff" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>✦</div>
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}> </div>
           <div>
             <div style={{ fontWeight: 700, fontSize: 15 }}>Plz fix thx</div>
-            <div style={{ fontSize: 10, opacity: 0.75 }}>AI · Reads live from .pptx XML</div>
+            <div style={{ fontSize: 10, opacity: 0.75 }}>Fixes your slides</div>
           </div>
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 10, opacity: 0.7 }}>
@@ -1530,10 +1530,7 @@ async function callClaudeRaw(prompt, apiKey) {
           <div style={{ background: "#fff", borderRadius: 10, border: "1px solid #e5e7eb", padding: "12px 14px" }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>What cleanup does</div>
             {[
-              ["⧉", "Duplicates the slide — original stays untouched"],
-              ["◎", "Reads theme + master directly from the .pptx XML"],
-              ["Aa", "Works on any file you open — no setup needed"],
-              ["✦", "Reformats every shape to exactly match the master"],
+              ["✓", "Fixes fonts and formatting"],
             ].map(([icon, text]) => (
               <div key={text} style={{ display: "flex", gap: 8, marginBottom: 5, alignItems: "flex-start" }}>
                 <span style={{ fontSize: 11, color: "#111111", flexShrink: 0, width: 16, textAlign: "center" }}>{icon}</span>
@@ -1552,7 +1549,7 @@ async function callClaudeRaw(prompt, apiKey) {
               <span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.3)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block" }} />
               Working…
             </>
-          ) : status === "done" ? "✓ Done — clean another?" : "✦ Cleanup Slide"}
+          ) : status === "done" ? "✓ Done — clean another?" : "Plz fix thx"}
         </button>
         )}
 
