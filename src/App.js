@@ -11,7 +11,7 @@ function getFileBytes() {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       reject(new Error("File read timed out — try again"));
-    }, 30000);
+    }, 90000);
 
     Office.context.document.getFileAsync(
       Office.FileType.Compressed,
@@ -1443,6 +1443,26 @@ async function callClaudeRaw(prompt, apiKey) {
           shapeFill: titleShape.shapeFill || null,
           position: targetTitlePos,
         }], themeColors);
+
+        // Push any shapes that now overlap the title below it
+        const titleBottom = targetTitlePos.top + targetTitlePos.height + 0.15;
+        const overlapFixes = pptxData.slideShapes
+          .filter(s => s.id !== titleShape.id && s.position)
+          .filter(s => {
+            const overlapsX = s.position.left < targetTitlePos.left + targetTitlePos.width - 0.05 &&
+                              s.position.left + s.position.width > targetTitlePos.left + 0.05;
+            const overlapsY = s.position.top < targetTitlePos.top + targetTitlePos.height &&
+                              s.position.top + s.position.height > targetTitlePos.top;
+            return overlapsX && overlapsY;
+          })
+          .map(s => ({
+            shapeName: s.name, shapeId: s.id, _slideShape: s, shapeFill: s.shapeFill || null,
+            position: { ...s.position, top: titleBottom },
+          }));
+        if (overlapFixes.length > 0) {
+          addLog(`Adjusting ${overlapFixes.length} shape(s) below title…`);
+          await applyFixes(dupIndex, overlapFixes, themeColors);
+        }
       }
 
       addLog(`✓ Done — ${totalFixes} fix${totalFixes !== 1 ? "es" : ""} applied`);
