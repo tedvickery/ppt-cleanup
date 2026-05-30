@@ -1213,160 +1213,167 @@ export default function App() {
     msg,
   }]);
 
-  // Phase 2: run cleanup with a chosen master
+function buildLayoutPrompt(pptxData) {
+  const shapes = pptxData.slideShapes.map((s, i) =>
+    `  #${i} "${s.name}" pos=(${s.position?.left}",${s.position?.top}") size=(${s.position?.width}"×${s.position?.height}") text="${s.textContent?.slice(0,40)}"`
+  ).join("\n");
+
+  return `You are a PowerPoint layout expert. The slide is 10"×7.5".
+These are the current text box positions:
+
+${shapes}
+
+Identify any text boxes that look misaligned or unevenly spaced — e.g. boxes that should share the same left edge but don't, or boxes that are the same size but have inconsistent gaps between them.
+
+Return ONLY a JSON array of position fixes. Each item:
+{"shapeIndex":N,"position":{"left":X,"top":Y,"width":W,"height":H}}
+
+Rules:
+- Only move shapes that are clearly misaligned (left edge differs by more than 0.2" from a sibling)
+- Keep shapes within the slide (left 0-10", top 0-7.5")
+- Preserve the relative vertical order of shapes
+- Return [] if layout looks acceptable`;
+}
+
+async function callClaudeRaw(prompt, apiKey) {
+  const response = await fetch("/api/claude", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 1000,
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(err.error?.message || `API error ${response.status}`);
+  }
+  const data = await response.json();
+  const raw = data.content?.find(b => b.type === "text")?.text || "[]";
+  return JSON.parse(raw.replace(/```json|```/g, "").trim());
+}
+
+// Phase 2: run cleanup with a chosen master
   const runCleanupWithMaster = async (zip, masters, chosenMasterIndex, slideIndex) => {
     setShowMasterPicker(false);
     setStatus("running");
 
     try {
       addLog(`Using master: "${masters.find(m => m.index === chosenMasterIndex)?.name || chosenMasterIndex}"`);
-      addLog("Reading slide shapes from XML…");
+      addLog("Reading slide XML…");
       const pptxData = await readSlideWithMaster(zip, masters, chosenMasterIndex, slideIndex);
       setDetectedTheme(pptxData.theme);
       setDetectedMaster(pptxData.masterPlaceholders);
-      addLog(`Theme: "${pptxData.theme.fonts.heading}" / "${pptxData.theme.fonts.body}"`);
-      addLog(`${pptxData.masterPlaceholders.length} placeholders · ${pptxData.slideShapes.length} slide shapes`);
 
       addLog("Duplicating slide…");
       const dupIndex = await duplicateSlide(slideIndex);
-      addLog(dupIndex === slideIndex
-        ? "⚠ Running on original slide — use Ctrl+Z to undo if needed"
-        : `Duplicate created at position ${dupIndex}`);
+      addLog(dupIndex === slideIndex ? "⚠ Running on original — use Ctrl+Z to undo" : `Duplicate at position ${dupIndex}`);
 
-      addLog("Sending to Claude for analysis…");
+      const themeColors = pptxData.theme.colors;
+      let totalFixes = 0;
+
+      // ─── GOAL 1: Fix fonts to match template ───────────────────────────────
+      // Read font name and size from masterTarget and apply directly in code
+      const fontFixes = pptxData.slideShapes
+        .filter(s => s.masterTarget)
+        .filter(s => {
+          const wrongFont = s.current.fontName !== "(inherited)" && s.current.fontName !== s.masterTarget.fontName;
+          const wrongBold = s.current.bold === true && s.masterTarget.bold === false;
+          const wrongItalic = s.current.italic === true;
+          return wrongFont || wrongBold || wrongItalic;
+        })
+        .map(s => ({
+          shapeName: s.name, shapeId: s.id, _slideShape: s, shapeFill: s.shapeFill || null,
+          font: { name: s.masterTarget.fontName, size: s.masterTarget.fontSize, bold: false, italic: false },
+        }));
+
+      if (fontFixes.length > 0) {
+        addLog(`Fixing ${fontFixes.length} font(s)…`);
+        await applyFixes(dupIndex, fontFixes, themeColors);
+        totalFixes += fontFixes.length;
+      }
+
+      // ─── GOAL 2: Normalise mixed font sizes within text boxes ───────────────
+      // Use Office JS to read paragraphs and normalise to masterTarget size
+      await PowerPoint.run(async (ctx) => {
+        const slides = ctx.presentation.slides;
+        slides.load("items");
+        await ctx.sync();
+        const slide = slides.items[dupIndex - 1];
+        const shapes = slide.shapes;
+        shapes.load("items");
+        await ctx.sync();
+        for (const shape of shapes.items) {
+          shape.load(["name"]);
+        }
+        await ctx.sync();
+
+        for (const slideShape of pptxData.slideShapes) {
+          if (!slideShape.masterTarget?.fontSize) continue;
+          const officeShape = shapes.items.find(s => s.id === slideShape.id || s.name === slideShape.name);
+          if (!officeShape) continue;
+          try {
+            const tf = officeShape.textFrame;
+            tf.load("paragraphs");
+            await ctx.sync();
+            tf.paragraphs.load("items");
+            await ctx.sync();
+            let needsNorm = false;
+            const sizes = [];
+            for (const para of tf.paragraphs.items) {
+              para.load("runs");
+              await ctx.sync();
+              para.runs.load("items");
+              await ctx.sync();
+              for (const run of para.runs.items) {
+                run.font.load("size");
+                await ctx.sync();
+                if (run.font.size && run.font.size !== slideShape.masterTarget.fontSize) {
+                  sizes.push(run.font.size);
+                  needsNorm = true;
+                }
+              }
+            }
+            if (needsNorm) {
+              addLog(`Normalising font sizes in "${slideShape.name}" (found: ${[...new Set(sizes)].join(",")}pt → ${slideShape.masterTarget.fontSize}pt)`);
+              officeShape.textFrame.textRange.font.size = slideShape.masterTarget.fontSize;
+              await ctx.sync();
+              totalFixes++;
+            }
+          } catch (e) { /* skip shapes without text */ }
+        }
+      });
+
+      // ─── GOAL 3: Ask Claude to fix text colours, fills, and alignment ───────
+      addLog("Asking Claude for colour & layout fixes…");
       const fixes = await callClaude(pptxData, apiKey);
-      addLog(`${fixes.length} fix${fixes.length !== 1 ? "es" : ""} identified`);
+      addLog(`${fixes.length} colour/layout fix${fixes.length !== 1 ? "es" : ""} identified`);
 
-      if (fixes.length === 0) {
-        addLog("✓ Slide already matches master theme");
-        setFixCount(0);
-        setStatus("done");
-        return;
-      }
-
-      addLog("Applying fixes…");
-
-      // CODE-BASED font fixes — don't rely on Claude for font name/size
-      // Apply directly from masterTarget for every shape that needs it
-      const codeFontFixes = pptxData.slideShapes
-        .filter(s => s.masterTarget && s.current.fontName !== "(inherited)" &&
-          s.current.fontName !== s.masterTarget.fontName)
-        .map(s => ({
-          shapeName: s.name,
-          shapeId: s.id,
-          _slideShape: s,
-          shapeFill: s.shapeFill || null,
-          font: {
-            name: s.masterTarget.fontName,
-            size: s.masterTarget.fontSize,
-            bold: false,
-            italic: false,
-          },
-        }));
-
-      if (codeFontFixes.length > 0) {
-        addLog(`Fixing ${codeFontFixes.length} font(s) directly…`);
-        await applyFixes(dupIndex, codeFontFixes, pptxData.theme.colors);
-      }
-
-      // CODE-BASED fill fixes — clear non-theme fills directly
-      const themeColorSet = new Set(Object.values(pptxData.theme.colors).filter(Boolean).map(c => c.toUpperCase()));
-      const codeFillFixes = pptxData.slideShapes
-        .filter(s => s.shapeFill && s.shapeFill !== "none" &&
-          !themeColorSet.has(s.shapeFill.replace("#","").toUpperCase()) &&
-          snapToThemeColor(s.shapeFill, pptxData.theme.colors) === s.shapeFill) // no snap = clear
-        .map(s => ({
-          shapeName: s.name,
-          shapeId: s.id,
-          _slideShape: s,
-          shapeFill: s.shapeFill,
-          fill: "none",
-        }));
-
-      if (codeFillFixes.length > 0) {
-        addLog(`Clearing ${codeFillFixes.length} non-theme fill(s)…`);
-        await applyFixes(dupIndex, codeFillFixes, pptxData.theme.colors);
-      }
-
-      // Enrich Claude fixes using shapeIndex
-      const enrichedFixes = fixes.map(fix => {
-        const shape = fix.shapeIndex !== undefined
-          ? pptxData.slideShapes[fix.shapeIndex]
-          : pptxData.slideShapes.find(s => s.name === fix.shapeName);
-        return {
-          ...fix,
-          shapeName: shape?.name || fix.shapeName,
-          shapeFill: shape?.shapeFill || null,
-          shapeBorder: shape?.shapeBorder || null,
-          _slideShape: shape || null,
-        };
-      });
-      await applyFixes(dupIndex, enrichedFixes, pptxData.theme.colors);
-
-      // Smart alignment: find groups of same-width shapes and align their left edges,
-      // then space them evenly without moving them off-slide
-      const SLIDE_HEIGHT = 7.5;
-      const PADDING = 0.15;
-      const movableShapes = pptxData.slideShapes.filter(s => s.position);
-
-      // Group by rounded width to find siblings (same-width = same type of box)
-      const widthGroups = {};
-      movableShapes.forEach(s => {
-        const wKey = Math.round(s.position.width * 10) / 10;
-        if (!widthGroups[wKey]) widthGroups[wKey] = [];
-        widthGroups[wKey].push(s);
-      });
-
-      const positionFixes = [];
-      for (const [, group] of Object.entries(widthGroups)) {
-        if (group.length < 2) continue;
-
-        const lefts = group.map(s => s.position.left);
-        const minLeft = Math.min(...lefts);
-        const maxLeft = Math.max(...lefts);
-        const alreadyAligned = maxLeft - minLeft <= 0.1;
-
-        // Sort by current top position
-        const sorted = [...group].sort((a, b) => a.position.top - b.position.top);
-        const totalHeight = sorted.reduce((sum, s) => sum + s.position.height, 0)
-          + PADDING * (sorted.length - 1);
-        const topAnchor = sorted[0].position.top; // keep topmost shape in place
-        const targetLeft = minLeft; // align all to the leftmost
-
-        let currentTop = topAnchor;
-        sorted.forEach((s, i) => {
-          const needsLeft = !alreadyAligned && Math.abs(s.position.left - targetLeft) > 0.05;
-          const expectedTop = currentTop;
-          const needsTop = i > 0 && Math.abs(s.position.top - expectedTop) > 0.1;
-
-          // Don't push shapes off the bottom of the slide
-          if (currentTop + s.position.height > SLIDE_HEIGHT - 0.1) {
-            currentTop += s.position.height + PADDING;
-            return;
-          }
-
-          if (needsLeft || needsTop) {
-            positionFixes.push({
-              shapeName: s.name,
-              shapeId: s.id,
-              position: {
-                left: needsLeft ? targetLeft : s.position.left,
-                top: needsTop ? expectedTop : s.position.top,
-                width: s.position.width,
-                height: s.position.height,
-              },
-            });
-          }
-          currentTop += s.position.height + PADDING;
+      if (fixes.length > 0) {
+        const enrichedFixes = fixes.map(fix => {
+          const shape = fix.shapeIndex !== undefined
+            ? pptxData.slideShapes[fix.shapeIndex]
+            : pptxData.slideShapes.find(s => s.name === fix.shapeName);
+          return { ...fix, shapeName: shape?.name || fix.shapeName, shapeFill: shape?.shapeFill || null, shapeBorder: shape?.shapeBorder || null, _slideShape: shape || null };
         });
+        await applyFixes(dupIndex, enrichedFixes, themeColors);
+        totalFixes += fixes.length;
       }
 
-      if (positionFixes.length > 0) {
-        addLog(`Applying ${positionFixes.length} layout position fix(es)…`);
-        await applyFixes(dupIndex, positionFixes, pptxData.theme.colors);
+      // ─── GOAL 3b: Position alignment via Claude ─────────────────────────────
+      // Build a layout prompt asking Claude to suggest position fixes
+      const layoutPrompt = buildLayoutPrompt(pptxData);
+      addLog("Asking Claude for layout alignment…");
+      const layoutFixes = await callClaudeRaw(layoutPrompt, apiKey);
+      if (layoutFixes.length > 0) {
+        addLog(`${layoutFixes.length} layout fix${layoutFixes.length !== 1 ? "es" : ""}`);
+        await applyFixes(dupIndex, layoutFixes, themeColors);
+        totalFixes += layoutFixes.length;
       }
-      addLog(`✓ Done — ${fixes.length} shape${fixes.length !== 1 ? "s" : ""} reformatted`);
-      setFixCount(fixes.length);
+
+      addLog(`✓ Done — ${totalFixes} fix${totalFixes !== 1 ? "es" : ""} applied`);
+      setFixCount(totalFixes);
       setStatus("done");
     } catch (err) {
       setError(err.message);
