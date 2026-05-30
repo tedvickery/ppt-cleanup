@@ -1317,7 +1317,25 @@ async function callClaudeRaw(prompt, apiKey) {
       const themeColors = pptxData.theme.colors;
       let totalFixes = 0;
 
-      // ─── GOAL 1: Fix fonts to match template ───────────────────────────────
+      // ─── STEP 1: Snap title to master position FIRST ────────────────────────
+      const titleShape = pptxData.slideShapes.find(s => s.phType === "title" || s.phType === "ctrTitle");
+      const titleMaster = pptxData.masterPlaceholders.find(p => p.type === "title" || p.type === "ctrTitle");
+      const layoutTitlePos = pptxData.layoutPositions?.["title:0"];
+      const targetTitlePos = layoutTitlePos || titleMaster?.position;
+
+      if (titleShape && targetTitlePos) {
+        addLog("Snapping title to master position…");
+        await applyFixes(dupIndex, [{
+          shapeName: titleShape.name,
+          shapeId: titleShape.id,
+          _slideShape: titleShape,
+          shapeFill: titleShape.shapeFill || null,
+          position: targetTitlePos,
+        }], themeColors);
+        totalFixes++;
+      }
+
+      // ─── STEP 2: Fix fonts to match template ────────────────────────────────
       // Apply master font/colour to ALL shapes — inherited = use master default
       const fontFixes = pptxData.slideShapes
         .filter(s => s.masterTarget)
@@ -1341,32 +1359,7 @@ async function callClaudeRaw(prompt, apiKey) {
         totalFixes += fontFixes.length;
       }
 
-      // ─── TITLE POSITION: always snap title shape to master position ──────────
-      const titleShape = pptxData.slideShapes.find(s => s.phType === "title" || s.phType === "ctrTitle");
-      const titleMaster = pptxData.masterPlaceholders.find(p => p.type === "title" || p.type === "ctrTitle");
-      const layoutTitlePos = pptxData.layoutPositions?.["title:0"];
-      const targetTitlePos = layoutTitlePos || titleMaster?.position;
-
-      if (titleShape && targetTitlePos) {
-        const cur = titleShape.position;
-        const needsMove = cur && (
-          Math.abs(cur.left - targetTitlePos.left) > 0.05 ||
-          Math.abs(cur.top - targetTitlePos.top) > 0.05 ||
-          Math.abs(cur.width - targetTitlePos.width) > 0.05 ||
-          Math.abs(cur.height - targetTitlePos.height) > 0.05
-        );
-        if (needsMove) {
-          addLog(`Snapping title to master position…`);
-          await applyFixes(dupIndex, [{
-            shapeName: titleShape.name,
-            shapeId: titleShape.id,
-            _slideShape: titleShape,
-            shapeFill: titleShape.shapeFill || null,
-            position: targetTitlePos,
-          }], themeColors);
-          totalFixes++;
-        }
-      }
+      // ─── STEP 3: Normalise mixed font sizes ─────────────────────────────────
       await PowerPoint.run(async (ctx) => {
         const slides = ctx.presentation.slides;
         slides.load("items");
