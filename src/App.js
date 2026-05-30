@@ -846,8 +846,8 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
         } catch (e) { console.log(`  Error setting border:`, e.message); }
       }
 
-      // Text colour from Claude (textColor field in simplified format)
-      if (fix.textColor) {
+      // Text colour from Claude (textColor field)
+      if (fix.textColor && fix.textColor !== "none") {
         try {
           const tf = target.textFrame;
           const tr = tf.textRange;
@@ -1293,18 +1293,18 @@ async function callClaudeRaw(prompt, apiKey) {
       let totalFixes = 0;
 
       // ─── GOAL 1: Fix fonts to match template ───────────────────────────────
-      // Read font name and size from masterTarget and apply directly in code
+      // Apply master font/colour to ALL shapes — inherited = use master default
       const fontFixes = pptxData.slideShapes
         .filter(s => s.masterTarget)
-        .filter(s => {
-          const wrongFont = s.current.fontName !== "(inherited)" && s.current.fontName !== s.masterTarget.fontName;
-          const wrongBold = s.current.bold === true && s.masterTarget.bold === false;
-          const wrongItalic = s.current.italic === true;
-          return wrongFont || wrongBold || wrongItalic;
-        })
         .map(s => ({
           shapeName: s.name, shapeId: s.id, _slideShape: s, shapeFill: s.shapeFill || null,
-          font: { name: s.masterTarget.fontName, size: s.masterTarget.fontSize, bold: false, italic: false },
+          font: {
+            name: s.masterTarget.fontName,
+            size: s.masterTarget.fontSize,
+            bold: false,
+            italic: false,
+            color: s.masterTarget.color,
+          },
         }));
 
       if (fontFixes.length > 0) {
