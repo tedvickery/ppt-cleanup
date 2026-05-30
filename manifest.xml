@@ -7,7 +7,7 @@
   xsi:type="TaskPaneApp">
 
   <Id>a1b2c3d4-e5f6-7890-abcd-ef1234567890</Id>
-  <Version>1.0.0.0</Version>
+  <Version>1.0.0.1</Version>
   <ProviderName>Plz fix thx</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
 
@@ -79,8 +79,8 @@
         <bt:Url id="Taskpane.Url" DefaultValue="https://YOUR-VERCEL-URL.vercel.app" />
       </bt:Urls>
       <bt:ShortStrings>
-        <bt:String id="CommandsGroup.Label" DefaultValue="AI Tools" />
-        <bt:String id="TaskpaneButton.Label" DefaultValue="Cleanup Slide" />
+        <bt:String id="CommandsGroup.Label" DefaultValue="Formatting" />
+        <bt:String id="TaskpaneButton.Label" DefaultValue="Plz fix thx" />
       </bt:ShortStrings>
       <bt:LongStrings>
         <bt:String id="TaskpaneButton.Tooltip" DefaultValue="AI-powered slide cleanup — syncs fonts, colours and layout to your master theme." />
