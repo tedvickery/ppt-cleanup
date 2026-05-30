@@ -1237,7 +1237,9 @@ Return ONLY a JSON array of position fixes. Each item:
 {"shapeIndex":N,"position":{"left":X,"top":Y,"width":W,"height":H}}
 
 Rules:
-- Only move shapes that are clearly misaligned (left edge differs by more than 0.2" from a sibling)
+- You can adjust left, top, width and height to improve layout
+- Only move/resize shapes that are clearly misaligned or overlapping
+- Keep all changes within 20% of the original value for each dimension
 - Keep shapes within the slide (left 0-10", top 0-7.5")
 - Preserve the relative vertical order of shapes
 - Return [] if layout looks acceptable`;
@@ -1417,12 +1419,23 @@ async function callClaudeRaw(prompt, apiKey) {
           .map(f => {
             const orig = f._slideShape?.position;
             const pos = { ...f.position };
-            // Restore original width/height — Claude often gets these wrong
-            if (orig) { pos.width = orig.width; pos.height = orig.height; }
-            // Clamp left so right edge stays on slide
+            if (orig) {
+              // Cap movement to 20% of original dimensions
+              const maxMoveX = orig.width * 0.2;
+              const maxMoveY = orig.height * 0.2;
+              pos.left = Math.max(orig.left - maxMoveX, Math.min(orig.left + maxMoveX, pos.left));
+              pos.top  = Math.max(orig.top  - maxMoveY, Math.min(orig.top  + maxMoveY, pos.top));
+              // Cap resize to 20% of original dimensions
+              const maxW = orig.width * 1.2;
+              const minW = orig.width * 0.8;
+              const maxH = orig.height * 1.2;
+              const minH = orig.height * 0.8;
+              pos.width  = Math.max(minW, Math.min(maxW, pos.width  || orig.width));
+              pos.height = Math.max(minH, Math.min(maxH, pos.height || orig.height));
+            }
+            // Clamp to slide bounds
             if (pos.left < 0) pos.left = 0;
             if (pos.left + pos.width > SLIDE_W) pos.left = Math.max(0, SLIDE_W - pos.width);
-            // Clamp top
             if (pos.top < 0) pos.top = 0;
             if (pos.top + pos.height > SLIDE_H) pos.top = Math.max(0, SLIDE_H - pos.height);
             return { ...f, position: pos };
