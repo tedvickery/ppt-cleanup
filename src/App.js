@@ -1313,7 +1313,6 @@ async function callClaudeRaw(prompt, apiKey) {
       }
 
       // ─── GOAL 2: Normalise mixed font sizes within text boxes ───────────────
-      // Use Office JS to read paragraphs and normalise to masterTarget size
       await PowerPoint.run(async (ctx) => {
         const slides = ctx.presentation.slides;
         slides.load("items");
@@ -1322,44 +1321,26 @@ async function callClaudeRaw(prompt, apiKey) {
         const shapes = slide.shapes;
         shapes.load("items");
         await ctx.sync();
-        for (const shape of shapes.items) {
-          shape.load(["name"]);
-        }
+        for (const shape of shapes.items) shape.load(["id", "name"]);
         await ctx.sync();
 
         for (const slideShape of pptxData.slideShapes) {
           if (!slideShape.masterTarget?.fontSize) continue;
+          const targetSize = slideShape.masterTarget.fontSize;
           const officeShape = shapes.items.find(s => s.id === slideShape.id || s.name === slideShape.name);
           if (!officeShape) continue;
           try {
-            const tf = officeShape.textFrame;
-            tf.load("paragraphs");
+            const tr = officeShape.textFrame.textRange;
+            tr.font.load("size");
             await ctx.sync();
-            tf.paragraphs.load("items");
-            await ctx.sync();
-            let needsNorm = false;
-            const sizes = [];
-            for (const para of tf.paragraphs.items) {
-              para.load("runs");
+            // If the overall range has a mixed/null size, normalise it
+            if (tr.font.size === null || (tr.font.size && tr.font.size !== targetSize)) {
+              tr.font.size = targetSize;
               await ctx.sync();
-              para.runs.load("items");
-              await ctx.sync();
-              for (const run of para.runs.items) {
-                run.font.load("size");
-                await ctx.sync();
-                if (run.font.size && run.font.size !== slideShape.masterTarget.fontSize) {
-                  sizes.push(run.font.size);
-                  needsNorm = true;
-                }
-              }
-            }
-            if (needsNorm) {
-              addLog(`Normalising font sizes in "${slideShape.name}" (found: ${[...new Set(sizes)].join(",")}pt → ${slideShape.masterTarget.fontSize}pt)`);
-              officeShape.textFrame.textRange.font.size = slideShape.masterTarget.fontSize;
-              await ctx.sync();
+              addLog(`Normalised font size in "${slideShape.name}" → ${targetSize}pt`);
               totalFixes++;
             }
-          } catch (e) { /* skip shapes without text */ }
+          } catch (e) { /* shape has no text */ }
         }
       });
 
@@ -1386,7 +1367,14 @@ async function callClaudeRaw(prompt, apiKey) {
       const layoutFixes = await callClaudeRaw(layoutPrompt, apiKey);
       if (layoutFixes.length > 0) {
         addLog(`${layoutFixes.length} layout fix${layoutFixes.length !== 1 ? "es" : ""}`);
-        await applyFixes(dupIndex, layoutFixes, themeColors);
+        // Enrich layout fixes with shape data so applyFixes can find them by id
+        const enrichedLayoutFixes = layoutFixes.map(fix => {
+          const shape = fix.shapeIndex !== undefined
+            ? pptxData.slideShapes[fix.shapeIndex]
+            : pptxData.slideShapes.find(s => s.name === fix.shapeName);
+          return { ...fix, shapeName: shape?.name, shapeId: shape?.id, _slideShape: shape || null, shapeFill: shape?.shapeFill || null };
+        });
+        await applyFixes(dupIndex, enrichedLayoutFixes, themeColors);
         totalFixes += layoutFixes.length;
       }
 
