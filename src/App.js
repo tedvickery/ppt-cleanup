@@ -1396,8 +1396,9 @@ async function callClaudeRaw(prompt, apiKey) {
       const leftMargin  = targetTitlePos ? targetTitlePos.left.toFixed(2) : "0.50";
       const rightEdge   = targetTitlePos ? (targetTitlePos.left + targetTitlePos.width).toFixed(2) : "9.50";
       const titleBottom = targetTitlePos ? (targetTitlePos.top + targetTitlePos.height + 0.15).toFixed(2) : "1.50";
+      const themeColorList = Object.values(pptxData.theme.colors).filter(v => v).join("  ");
 
-      // Detect overlaps to tell Claude about
+      // Detect overlaps and off-slide shapes
       const overlapWarnings = [];
       for (let i = 0; i < nonTitleShapes.length; i++) {
         for (let j = i + 1; j < nonTitleShapes.length; j++) {
@@ -1405,48 +1406,45 @@ async function callClaudeRaw(prompt, apiKey) {
           if (!a || !b) continue;
           const overX = a.left < b.left + b.width && a.left + a.width > b.left;
           const overY = a.top  < b.top  + b.height && a.top  + a.height > b.top;
-          if (overX && overY) overlapWarnings.push(`⚠ #${i} and #${j} overlap — must fix`);
+          if (overX && overY) overlapWarnings.push(`⚠ #${i} "${nonTitleShapes[i].name}" and #${j} "${nonTitleShapes[j].name}" overlap`);
         }
-      }
-      // Also warn about any shape whose right edge exceeds the slide
-      nonTitleShapes.forEach((s, i) => {
+        const s = nonTitleShapes[i];
         if (s.position && s.position.left + s.position.width > 10.1)
-          overlapWarnings.push(`⚠ #${i} extends off the right edge of the slide — must fix`);
-      });
+          overlapWarnings.push(`⚠ #${i} "${s.name}" extends off the right edge of the slide`);
+      }
 
-      const aiPrompt = `You are a PowerPoint formatting expert. Clean up this slide to match the master theme.
+      const aiPrompt = `You are a PowerPoint formatting expert. Fix this slide's colours and layout to match the master theme.
 
 ━━━ MASTER THEME ━━━
 Heading font: "${pptxData.theme.fonts?.heading}"   Body font: "${pptxData.theme.fonts?.body}"
-Colours: ${Object.entries(pptxData.theme.colors).filter(([,v])=>v).map(([k,v])=>`${k}=${v}`).join("  ")}
+Theme colours: ${themeColorList}
 
 ━━━ SLIDE LAYOUT ━━━
-Slide: 10"×7.5"   Left margin: ${leftMargin}"   Right edge: ${rightEdge}"   Content starts: ${titleBottom}" from top
+Slide: 10"×7.5"   Left margin: ${leftMargin}"   Right edge: ${rightEdge}"   Content area: top=${titleBottom}" to bottom=7.3"
 
-━━━ SHAPES TO STYLE ━━━
-${nonTitleShapes.map((s, i) => `#${i} "${s.name}" [${s.phType}] pos=(${s.position?.left}",${s.position?.top}") size=(${s.position?.width}"×${s.position?.height}") fill=${s.shapeFill||"none"}
-    text: "${s.textContent?.slice(0,80)}"
-    current: font=${s.current.fontName} color=${s.current.color} fill=${s.shapeFill||"none"}
-    target:  font=${s.masterTarget?.fontName} color=${s.masterTarget?.color}`).join("\n\n")}
+━━━ SHAPES ━━━
+${nonTitleShapes.map((s, i) => `#${i} "${s.name}" [${s.phType}] pos=(${s.position?.left?.toFixed(2)}",${s.position?.top?.toFixed(2)}") size=(${s.position?.width?.toFixed(2)}"×${s.position?.height?.toFixed(2)}") fill=${s.shapeFill||"none"} border=${s.shapeBorder||"none"}
+    text: "${s.textContent?.slice(0,120)}"
+    font: ${s.current.fontName}  color: ${s.current.color}`).join("\n\n")}
 
-${overlapWarnings.length > 0 ? `━━━ ISSUES TO FIX ━━━\n${overlapWarnings.join("\n")}\n` : ""}
-━━━ YOUR TASK ━━━
-Return a JSON array. For each shape that needs fixing, include any of:
-- textColor: "#hex" to fix text colour (must contrast well against fill)
-- fill: "#hex" or "none" to fix background fill (clear non-theme fills)
-- position: {left, top, width, height} to fix layout (align to margins, no overlaps, stay within slide)
+${overlapWarnings.length > 0 ? `━━━ PROBLEMS DETECTED ━━━\n${overlapWarnings.join("\n")}\n` : ""}
+━━━ RULES ━━━
+1. COLOURS — for each shape, fix textColor, fill, and border only if they don't already match a theme colour. Snap to the nearest/most appropriate theme colour. Consider look and feel — e.g. a dark fill might suit an accent box, light fill a content box.
 
-Rules:
-- Text colours must be theme colours only: ${Object.values(pptxData.theme.colors).filter(v=>v).join(" ")}
-- For fills that are not theme colours, either clear the fill or snap to a theme colour based on look and feel
-- Content boxes must not go above top=${titleBottom}" or overlap each other
-- All shapes must fit within the slide (left+width ≤ 10, top+height ≤ 7.5)
-- Align left edges to ${leftMargin}" where sensible
-- CRITICAL: fix all overlap issues listed above — shapes must not overlap
-- Set up the slide to read well and look good based on the theme — you can be creative with colours, layout and style, but stay within the template's design language
-- Return [] if nothing needs fixing
+2. LAYOUT — only suggest position/size changes when:
+   - Shapes are clearly meant to be aligned (same column or row) but have slightly different left/top edges — snap them to match
+   - Shapes are clearly meant to be equally spaced (a row or column of boxes) but spacing is uneven — equalise the gaps
+   - A shape overlaps another or extends off the slide — fix it
+   - Do NOT reposition shapes that look intentionally placed
 
-Each item: {"shapeIndex":N, "textColor":"#hex", "fill":"#hex or none", "position":{...}}`;
+3. CONSTRAINTS
+   - All colours must be from theme: ${themeColorList}
+   - No shape may go above top=${titleBottom}" or outside the slide
+   - Shapes must not overlap each other
+   - Preserve the slide's overall look and feel
+
+Return ONLY a JSON array. Each item: {"shapeIndex":N, "textColor":"#hex", "fill":"#hex or none", "border":"#hex or none", "position":{left,top,width,height}}
+Omit any field that doesn't need changing. Return [] if nothing needs fixing.`;
 
       let enrichedLayoutFixes = [];
       const aiResponse = await callClaudeRaw(aiPrompt, apiKey);
