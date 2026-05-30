@@ -992,11 +992,11 @@ function ApiKeyScreen({ onSave }) {
 
   return (
     <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", background: "#f8f9fb", minHeight: "100vh", display: "flex", flexDirection: "column", maxWidth: 340, margin: "0 auto" }}>
-      <div style={{ background: "linear-gradient(135deg,#1F5C9E,#2E86C1)", padding: "18px 16px 14px", color: "#fff" }}>
+      <div style={{ background: "#111111", padding: "18px 16px 14px", color: "#fff" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>✦</div>
           <div>
-            <div style={{ fontWeight: 700, fontSize: 15 }}>Slide Cleanup</div>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>Plz fix thx</div>
             <div style={{ fontSize: 10, opacity: 0.75 }}>Setup — one time only</div>
           </div>
         </div>
@@ -1006,7 +1006,7 @@ function ApiKeyScreen({ onSave }) {
           <div style={{ fontSize: 13, fontWeight: 700, color: "#111827", marginBottom: 6 }}>Enter your Anthropic API key</div>
           <div style={{ fontSize: 11, color: "#6b7280", lineHeight: 1.5, marginBottom: 14 }}>
             Saved only on your computer. Get yours free at{" "}
-            <span style={{ color: "#1F5C9E", textDecoration: "underline", cursor: "pointer" }}
+            <span style={{ color: "#111111", textDecoration: "underline", cursor: "pointer" }}
               onClick={() => window.open("https://console.anthropic.com/settings/keys", "_blank")}>
               console.anthropic.com
             </span>
@@ -1026,7 +1026,7 @@ function ApiKeyScreen({ onSave }) {
           </div>
           {err && <div style={{ fontSize: 11, color: "#dc2626", marginBottom: 8 }}>{err}</div>}
           <button onClick={handleSave} disabled={!val.trim()}
-            style={{ width: "100%", padding: "11px 0", background: "#1F5C9E", color: "#fff", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: val.trim() ? "pointer" : "not-allowed", opacity: val.trim() ? 1 : 0.5 }}>
+            style={{ width: "100%", padding: "11px 0", background: "#111111", color: "#fff", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: val.trim() ? "pointer" : "not-allowed", opacity: val.trim() ? 1 : 0.5 }}>
             Save & continue →
           </button>
         </div>
@@ -1105,7 +1105,7 @@ function MasterPicker({ masters, onSelect }) {
               style={{
                 padding: "10px 12px",
                 borderRadius: 8,
-                border: `2px solid ${isChosen ? "#1F5C9E" : "#e5e7eb"}`,
+                border: `2px solid ${isChosen ? "#111111" : "#e5e7eb"}`,
                 background: isChosen ? "#eff6ff" : "#fafafa",
                 cursor: "pointer",
                 transition: "all 0.15s ease",
@@ -1114,8 +1114,8 @@ function MasterPicker({ masters, onSelect }) {
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
                 <div style={{
                   width: 16, height: 16, borderRadius: "50%",
-                  border: `2px solid ${isChosen ? "#1F5C9E" : "#d1d5db"}`,
-                  background: isChosen ? "#1F5C9E" : "#fff",
+                  border: `2px solid ${isChosen ? "#111111" : "#d1d5db"}`,
+                  background: isChosen ? "#111111" : "#fff",
                   flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
                 }}>
                   {isChosen && <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#fff" }} />}
@@ -1158,7 +1158,7 @@ function MasterPicker({ masters, onSelect }) {
       <button
         onClick={() => onSelect(chosen)}
         style={{
-          width: "100%", padding: "11px 0", background: "#1F5C9E", color: "#fff",
+          width: "100%", padding: "11px 0", background: "#111111", color: "#fff",
           border: "none", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer",
         }}
       >
@@ -1206,7 +1206,7 @@ export default function App() {
 
   if (showSettings) return (
     <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", background: "#f8f9fb", minHeight: "100vh", maxWidth: 340, margin: "0 auto" }}>
-      <div style={{ background: "linear-gradient(135deg,#1F5C9E,#2E86C1)", padding: "14px 16px", color: "#fff", display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{ background: "#111111", padding: "14px 16px", color: "#fff", display: "flex", alignItems: "center", gap: 10 }}>
         <button onClick={() => setShowSettings(false)} style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "#fff", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 12 }}>← Back</button>
         <span style={{ fontWeight: 700, fontSize: 14 }}>API Key Settings</span>
       </div>
@@ -1490,11 +1490,11 @@ async function callClaudeRaw(prompt, apiKey) {
       `}</style>
 
       {/* Header */}
-      <div style={{ background: "linear-gradient(135deg,#1F5C9E,#2E86C1)", padding: "18px 16px 14px", color: "#fff" }}>
+      <div style={{ background: "#111111", padding: "18px 16px 14px", color: "#fff" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>✦</div>
           <div>
-            <div style={{ fontWeight: 700, fontSize: 15 }}>Slide Cleanup</div>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>Plz fix thx</div>
             <div style={{ fontSize: 10, opacity: 0.75 }}>AI · Reads live from .pptx XML</div>
           </div>
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
@@ -1536,7 +1536,7 @@ async function callClaudeRaw(prompt, apiKey) {
               ["✦", "Reformats every shape to exactly match the master"],
             ].map(([icon, text]) => (
               <div key={text} style={{ display: "flex", gap: 8, marginBottom: 5, alignItems: "flex-start" }}>
-                <span style={{ fontSize: 11, color: "#1F5C9E", flexShrink: 0, width: 16, textAlign: "center" }}>{icon}</span>
+                <span style={{ fontSize: 11, color: "#111111", flexShrink: 0, width: 16, textAlign: "center" }}>{icon}</span>
                 <span style={{ fontSize: 11, color: "#374151", lineHeight: 1.4 }}>{text}</span>
               </div>
             ))}
@@ -1546,7 +1546,7 @@ async function callClaudeRaw(prompt, apiKey) {
         {/* Button — hidden while picker is showing */}
         {!showMasterPicker && (
         <button className="btn" onClick={handleCleanup} disabled={isRunning}
-          style={{ width: "100%", padding: "14px 0", background: status === "done" ? "#15803d" : "#1F5C9E", color: "#fff", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.2s ease", boxShadow: "0 4px 14px rgba(31,92,158,0.28)" }}>
+          style={{ width: "100%", padding: "14px 0", background: status === "done" ? "#15803d" : "#111111", color: "#fff", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.2s ease", boxShadow: "0 4px 14px rgba(0,0,0,0.28)" }}>
           {isRunning ? (
             <>
               <span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.3)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block" }} />
