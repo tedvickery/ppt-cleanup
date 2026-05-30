@@ -1397,6 +1397,23 @@ async function callClaudeRaw(prompt, apiKey) {
       const rightEdge   = targetTitlePos ? (targetTitlePos.left + targetTitlePos.width).toFixed(2) : "9.50";
       const titleBottom = targetTitlePos ? (targetTitlePos.top + targetTitlePos.height + 0.15).toFixed(2) : "1.50";
 
+      // Detect overlaps to tell Claude about
+      const overlapWarnings = [];
+      for (let i = 0; i < nonTitleShapes.length; i++) {
+        for (let j = i + 1; j < nonTitleShapes.length; j++) {
+          const a = nonTitleShapes[i].position, b = nonTitleShapes[j].position;
+          if (!a || !b) continue;
+          const overX = a.left < b.left + b.width && a.left + a.width > b.left;
+          const overY = a.top  < b.top  + b.height && a.top  + a.height > b.top;
+          if (overX && overY) overlapWarnings.push(`⚠ #${i} and #${j} overlap — must fix`);
+        }
+      }
+      // Also warn about any shape whose right edge exceeds the slide
+      nonTitleShapes.forEach((s, i) => {
+        if (s.position && s.position.left + s.position.width > 10.1)
+          overlapWarnings.push(`⚠ #${i} extends off the right edge of the slide — must fix`);
+      });
+
       const aiPrompt = `You are a PowerPoint formatting expert. Clean up this slide to match the master theme.
 
 ━━━ MASTER THEME ━━━
@@ -1412,6 +1429,7 @@ ${nonTitleShapes.map((s, i) => `#${i} "${s.name}" [${s.phType}] pos=(${s.positio
     current: font=${s.current.fontName} color=${s.current.color} fill=${s.shapeFill||"none"}
     target:  font=${s.masterTarget?.fontName} color=${s.masterTarget?.color}`).join("\n\n")}
 
+${overlapWarnings.length > 0 ? `━━━ ISSUES TO FIX ━━━\n${overlapWarnings.join("\n")}\n` : ""}
 ━━━ YOUR TASK ━━━
 Return a JSON array. For each shape that needs fixing, include any of:
 - textColor: "#hex" to fix text colour (must contrast well against fill)
@@ -1422,7 +1440,9 @@ Rules:
 - Text colours must be theme colours only: ${Object.values(pptxData.theme.colors).filter(v=>v).join(" ")}
 - Clear fills that are not theme colours
 - Content boxes must not go above top=${titleBottom}" or overlap each other
+- All shapes must fit within the slide (left+width ≤ 10, top+height ≤ 7.5)
 - Align left edges to ${leftMargin}" where sensible
+- CRITICAL: fix all overlap issues listed above — shapes must not overlap
 - Return [] if nothing needs fixing
 
 Each item: {"shapeIndex":N, "textColor":"#hex", "fill":"#hex or none", "position":{...}}`;
@@ -1457,7 +1477,48 @@ Each item: {"shapeIndex":N, "textColor":"#hex", "fill":"#hex or none", "position
         }], themeColors);
       }
 
-      setFixCount(totalFixes);
+      // ─── SAFETY NET: fix any remaining overlaps after Claude's pass ──────────
+      await PowerPoint.run(async (ctx) => {
+        const slides = ctx.presentation.slides;
+        slides.load("items");
+        await ctx.sync();
+        const slide = slides.items[dupIndex - 1];
+        const shapes = slide.shapes;
+        shapes.load("items");
+        await ctx.sync();
+        for (const s of shapes.items) s.load(["id", "name", "left", "top", "width", "height", "type"]);
+        await ctx.sync();
+
+        // Collect actual current positions from Office (post-Claude)
+        const live = shapes.items
+          .filter(s => s.type === PowerPoint.ShapeType.textBox || s.type === undefined || [1,14,17].includes(s.type))
+          .map(s => ({ id: s.id, name: s.name, shape: s,
+            left: s.left / 72, top: s.top / 72, width: s.width / 72, height: s.height / 72 }))
+          .filter(s => s.width > 0.1 && s.height > 0.1);
+
+        let changed = true;
+        for (let iter = 0; iter < 8 && changed; iter++) {
+          changed = false;
+          for (let i = 0; i < live.length; i++) {
+            for (let j = i + 1; j < live.length; j++) {
+              const a = live[i], b = live[j];
+              const overX = a.left < b.left + b.width - 0.05 && a.left + a.width > b.left + 0.05;
+              const overY = a.top  < b.top  + b.height - 0.05 && a.top  + a.height > b.top  + 0.05;
+              if (!overX || !overY) continue;
+              // Push the lower shape down by the overlap amount
+              const lower = a.top >= b.top ? a : b;
+              const upper = a.top >= b.top ? b : a;
+              const newTop = upper.top + upper.height + 0.1;
+              if (newTop + lower.height <= 7.5) {
+                lower.top = newTop;
+                lower.shape.top = newTop * 72;
+                changed = true;
+              }
+            }
+          }
+        }
+        await ctx.sync();
+      });
       setStatus("done");
     } catch (err) {
       setError(err.message);
