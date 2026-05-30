@@ -1303,11 +1303,13 @@ export default function App() {
       });
       await applyFixes(dupIndex, enrichedFixes, pptxData.theme.colors);
 
-      // Smart alignment: group shapes by similar size and align them in a column
-      // Only move shapes that share the same width (within 0.1") — these are "sibling" boxes
+      // Smart alignment: find groups of same-width shapes and align their left edges,
+      // then space them evenly without moving them off-slide
+      const SLIDE_HEIGHT = 7.5;
+      const PADDING = 0.15;
       const movableShapes = pptxData.slideShapes.filter(s => s.position);
 
-      // Group by rounded width to find siblings
+      // Group by rounded width to find siblings (same-width = same type of box)
       const widthGroups = {};
       movableShapes.forEach(s => {
         const wKey = Math.round(s.position.width * 10) / 10;
@@ -1317,29 +1319,39 @@ export default function App() {
 
       const positionFixes = [];
       for (const [, group] of Object.entries(widthGroups)) {
-        if (group.length < 2) continue; // only align groups of 2+
-        // Skip if they're already aligned (left edges within 0.1")
+        if (group.length < 2) continue;
+
         const lefts = group.map(s => s.position.left);
         const minLeft = Math.min(...lefts);
         const maxLeft = Math.max(...lefts);
-        if (maxLeft - minLeft <= 0.1) continue; // already aligned
+        const alreadyAligned = maxLeft - minLeft <= 0.1;
 
-        // Sort by top position, align all to the leftmost left edge
-        const targetLeft = minLeft;
+        // Sort by current top position
         const sorted = [...group].sort((a, b) => a.position.top - b.position.top);
-        const PADDING = 0.2; // gap between boxes in inches
-        let currentTop = sorted[0].position.top;
+        const totalHeight = sorted.reduce((sum, s) => sum + s.position.height, 0)
+          + PADDING * (sorted.length - 1);
+        const topAnchor = sorted[0].position.top; // keep topmost shape in place
+        const targetLeft = minLeft; // align all to the leftmost
 
+        let currentTop = topAnchor;
         sorted.forEach((s, i) => {
-          const needsLeftAlign = Math.abs(s.position.left - targetLeft) > 0.1;
-          const needsTopAlign = i > 0 && Math.abs(s.position.top - currentTop) > 0.1;
-          if (needsLeftAlign || needsTopAlign) {
+          const needsLeft = !alreadyAligned && Math.abs(s.position.left - targetLeft) > 0.05;
+          const expectedTop = currentTop;
+          const needsTop = i > 0 && Math.abs(s.position.top - expectedTop) > 0.1;
+
+          // Don't push shapes off the bottom of the slide
+          if (currentTop + s.position.height > SLIDE_HEIGHT - 0.1) {
+            currentTop += s.position.height + PADDING;
+            return;
+          }
+
+          if (needsLeft || needsTop) {
             positionFixes.push({
               shapeName: s.name,
               shapeId: s.id,
               position: {
-                left: targetLeft,
-                top: currentTop,
+                left: needsLeft ? targetLeft : s.position.left,
+                top: needsTop ? expectedTop : s.position.top,
                 width: s.position.width,
                 height: s.position.height,
               },
