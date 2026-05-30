@@ -745,6 +745,15 @@ function colourDistance(hex1, hex2) {
 }
 
 // Snap a hex colour to the nearest theme colour if within threshold (max ~80 on 0-765 scale)
+function hexLuminance(hex) {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.slice(0,2),16)/255;
+  const g = parseInt(h.slice(2,4),16)/255;
+  const b = parseInt(h.slice(4,6),16)/255;
+  const toLinear = c => c <= 0.03928 ? c/12.92 : Math.pow((c+0.055)/1.055, 2.4);
+  return 0.2126*toLinear(r) + 0.7152*toLinear(g) + 0.0722*toLinear(b);
+}
+
 function snapToThemeColor(hex, themeColors, threshold = 80) {
   if (!hex || hex === "none" || hex.startsWith("theme:")) return hex;
   let nearest = null, nearestDist = Infinity;
@@ -872,8 +881,19 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
             if (fix.font.name)  tr.font.name = fix.font.name;
             if (fix.font.size)  tr.font.size = fix.font.size;
             if (fix.font.color) {
-              const snapped = snapToThemeColor(fix.font.color, themeColors);
-              tr.font.color = snapped.replace("#", "");
+              let textColor = snapToThemeColor(fix.font.color, themeColors);
+              // Check contrast against fill — if fill is dark, use white text; if light, use dark text
+              const fill = fix.shapeFill;
+              if (fill && fill !== "none") {
+                const fillLum = hexLuminance(fill);
+                const textLum = hexLuminance(textColor);
+                const contrast = (Math.max(fillLum, textLum) + 0.05) / (Math.min(fillLum, textLum) + 0.05);
+                if (contrast < 3) {
+                  // Poor contrast — flip to white or dark based on fill brightness
+                  textColor = fillLum > 0.179 ? "#000000" : "#FFFFFF";
+                }
+              }
+              tr.font.color = textColor.replace("#", "");
             }
             if (fix.font.bold    !== undefined) tr.font.bold   = fix.font.bold;
             if (fix.font.italic  !== undefined) tr.font.italic = fix.font.italic;
