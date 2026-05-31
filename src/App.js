@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import JSZip from "jszip";
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -739,6 +739,31 @@ export default function App() {
   const [detectedTheme, setDetectedTheme] = useState(null);
   const [detectedMaster, setDetectedMaster] = useState([]);
 
+  // Cached file data — loaded once in background, reused for every Fix click
+  const [fileReady, setFileReady]   = useState(false);
+  const [fileError, setFileError]   = useState(null);
+  const cachedZip     = useRef(null);
+  const cachedMasters = useRef(null);
+
+  // Load the file in the background as soon as the add-in opens
+  useEffect(() => {
+    let cancelled = false;
+    async function loadFile() {
+      try {
+        const { zip, masters } = await readPptxFile();
+        if (cancelled) return;
+        cachedZip.current     = zip;
+        cachedMasters.current = masters;
+        setFileReady(true);
+      } catch (e) {
+        if (cancelled) return;
+        setFileError(e.message);
+      }
+    }
+    loadFile();
+    return () => { cancelled = true; };
+  }, []);
+
   const addLog = (msg) => setLog(l => [...l, {
     time: new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }),
     msg,
@@ -757,16 +782,23 @@ export default function App() {
       const slideIndex = await getSelectedSlideIndex();
       addLog(`Slide ${slideIndex} selected`);
 
-      addLog("Reading .pptx file…");
-      const { zip, masters } = await readPptxFile();
-      addLog(`Found ${masters.length} master${masters.length !== 1 ? "s" : ""}`);
+      // Use cached file data if available, otherwise read now
+      let zip, masters;
+      if (cachedZip.current && cachedMasters.current) {
+        zip     = cachedZip.current;
+        masters = cachedMasters.current;
+        addLog(`Using cached template: "${masters[0]?.name}"`);
+      } else {
+        addLog("Reading .pptx file…");
+        ({ zip, masters } = await readPptxFile());
+        cachedZip.current     = zip;
+        cachedMasters.current = masters;
+        addLog(`Found ${masters.length} master${masters.length !== 1 ? "s" : ""}`);
+        if (masters.length > 1) addLog(`(${masters.length - 1} imported master${masters.length > 2 ? "s" : ""} ignored)`);
+      }
+
       if (masters.length === 0) throw new Error("No slide masters found in this file");
-
       const primaryMaster = masters[0];
-      addLog(`Using template: "${primaryMaster.name}"`);
-      if (masters.length > 1) addLog(`(${masters.length - 1} imported master${masters.length > 2 ? "s" : ""} ignored)`);
-
-      addLog("Reading slide XML…");
       const pptxData = await readSlideWithMaster(zip, masters, primaryMaster.index, slideIndex);
       setDetectedTheme(pptxData.theme);
       setDetectedMaster(pptxData.masterPlaceholders);
@@ -1200,6 +1232,28 @@ export default function App() {
       </div>
 
       <div style={{ flex: 1, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+
+        {/* File loading status */}
+        {!fileReady && !fileError && (
+          <div style={{ background: "#fff", borderRadius: 8, border: "1px solid #e5e7eb", padding: "10px 14px", fontSize: 11, color: "#6b7280", display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ width: 10, height: 10, border: "2px solid #d1d5db", borderTop: "2px solid #6b7280", borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block", flexShrink: 0 }} />
+            Loading template in background…
+          </div>
+        )}
+        {fileReady && status === "idle" && (
+          <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "8px 12px", fontSize: 11, color: "#166534", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span>✓ Template ready: <strong>{cachedMasters.current?.[0]?.name}</strong></span>
+            <button onClick={async () => { setFileReady(false); setFileError(null); try { const { zip, masters } = await readPptxFile(); cachedZip.current = zip; cachedMasters.current = masters; setFileReady(true); } catch (e) { setFileError(e.message); } }}
+              style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#15803d", textDecoration: "underline", padding: 0 }}>↺ Reload</button>
+          </div>
+        )}
+        {fileError && (
+          <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "8px 12px", fontSize: 11, color: "#991b1b", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span>⚠ {fileError}</span>
+            <button onClick={async () => { setFileReady(false); setFileError(null); try { const { zip, masters } = await readPptxFile(); cachedZip.current = zip; cachedMasters.current = masters; setFileReady(true); } catch (e) { setFileError(e.message); } }}
+              style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#991b1b", textDecoration: "underline", padding: 0 }}>↺ Retry</button>
+          </div>
+        )}
 
         {detectedTheme && <ThemeCard theme={detectedTheme} masterPlaceholders={detectedMaster} />}
 
