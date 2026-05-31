@@ -497,9 +497,10 @@ function parseSlideXml(xml, theme, masterPlaceholders, layoutPositions = {}) {
     else if (algn === "r") alignment = "right";
 
     // Find matching master placeholder for inherited values
+    // For body shapes, always use body master (never title master)
     const masterPh = masterPlaceholders.find(
-      (p) => p.type === phType || (phType === "body" && p.idx === phIdx)
-    ) || masterPlaceholders.find((p) => p.type === "body");
+      (p) => p.type === phType
+    ) || (phType === "body" ? masterPlaceholders.find((p) => p.type === "body") : null);
 
     // Use layout position (per phIdx) as the target position — more accurate than master
     const layoutTargetPos = layoutPositions[`${phType}:${phIdx}`] || layoutPositions[`${phType}:0`] || masterPh?.position || null;
@@ -1465,8 +1466,10 @@ Return [] if nothing needs fixing.`;
             if (needsFontFix) {
               console.log(`Font fix: shape ${ss.id} "${ss.name}" font ${ss.current.fontName} → ${ss.masterTarget.fontName}`);
               tr.font.name = ss.masterTarget.fontName;
-            }
-            if (needsSizeFix) {
+              // Always set size alongside font name to avoid inheriting wrong size
+              const targetSize = isTitle ? ss.masterTarget.fontSize : (normalisedSize || ss.masterTarget.fontSize);
+              tr.font.size = targetSize;
+            } else if (needsSizeFix) {
               const targetSize = isTitle ? ss.masterTarget.fontSize : (normalisedSize || ss.masterTarget.fontSize);
               console.log(`Size fix: shape ${ss.id} "${ss.name}" size ${ss.current.fontSize} → ${targetSize}`);
               tr.font.size = targetSize;
