@@ -290,6 +290,37 @@ function parseMasterXml(xml, theme) {
       }
     }
 
+    // Paragraph formatting from lstStyle levels
+    const paraFormat = {};
+    if (lstStyle) {
+      for (let lvl = 1; lvl <= 9; lvl++) {
+        const pPrEl = lstStyle.getElementsByTagNameNS("*", `lvl${lvl}pPr`)[0];
+        if (!pPrEl) continue;
+        const spcBef = pPrEl.getElementsByTagNameNS("*", "spcBef")[0];
+        const spcAft = pPrEl.getElementsByTagNameNS("*", "spcAft")[0];
+        const spcLin = pPrEl.getElementsByTagNameNS("*", "lnSpc")[0];
+        const buNone = pPrEl.getElementsByTagNameNS("*", "buNone")[0];
+        const buChar = pPrEl.getElementsByTagNameNS("*", "buChar")[0];
+        const buFont = pPrEl.getElementsByTagNameNS("*", "buFont")[0];
+        const buAutoNum = pPrEl.getElementsByTagNameNS("*", "buAutoNum")[0];
+        paraFormat[lvl] = {
+          indent: pPrEl.getAttribute("indent") ? parseInt(pPrEl.getAttribute("indent")) : null,
+          marL:   pPrEl.getAttribute("marL")   ? parseInt(pPrEl.getAttribute("marL"))   : null,
+          spcBef: spcBef?.getElementsByTagNameNS("*", "spcPts")[0]?.getAttribute("val")
+                    ? parseInt(spcBef.getElementsByTagNameNS("*", "spcPts")[0].getAttribute("val")) / 100
+                    : null,
+          spcAft: spcAft?.getElementsByTagNameNS("*", "spcPts")[0]?.getAttribute("val")
+                    ? parseInt(spcAft.getElementsByTagNameNS("*", "spcPts")[0].getAttribute("val")) / 100
+                    : null,
+          spcLin: spcLin?.getElementsByTagNameNS("*", "spcPct")[0]?.getAttribute("val")
+                    ? parseInt(spcLin.getElementsByTagNameNS("*", "spcPct")[0].getAttribute("val")) / 1000
+                    : null,
+          bullet: buNone ? "none" : buChar ? buChar.getAttribute("char") : buAutoNum ? "autonumber" : null,
+          bulletFont: buFont?.getAttribute("typeface") || null,
+        };
+      }
+    }
+
     placeholders.push({
       type: phType,
       idx: phIdx,
@@ -297,6 +328,7 @@ function parseMasterXml(xml, theme) {
       alignment,
       position,
       fill: masterFill,
+      paraFormat,
     });
   }
 
@@ -530,6 +562,7 @@ function parseSlideXml(xml, theme, masterPlaceholders, layoutPositions = {}) {
         alignment: masterPh.alignment,
         position: layoutTargetPos,
         fill: masterPh.fill || "none",
+        paraFormat: masterPh.paraFormat || {},
       } : null,
     });
   }
@@ -1497,7 +1530,35 @@ async function callClaudeRaw(prompt, apiKey) {
           } catch (e) { /* shape may not support autosize */ }
         }
 
-        // Normalise font sizes within groups of similarly-sized shapes (within 10% of each other)
+        // Apply master paragraph formatting — bullets, spacing, indents
+        for (const ss of pptxData.slideShapes) {
+          if (!ss.masterTarget?.paraFormat) continue;
+          const pf = ss.masterTarget.paraFormat;
+          if (!Object.keys(pf).length) continue;
+          const os = shapes.items.find(s => String(s.id) === String(ss.id))
+                  || shapes.items.find(s => s.name === ss.name);
+          if (!os) continue;
+          try {
+            const paras = os.textFrame.paragraphs;
+            paras.load("items");
+            await ctx.sync();
+            for (const para of paras.items) {
+              para.load("level");
+              await ctx.sync();
+              const lvl = (para.level || 0) + 1;
+              const fmt = pf[lvl] || pf[1];
+              if (!fmt) continue;
+              const pFmt = para.paragraphFormat;
+              pFmt.load(["spaceAfter", "spaceBefore", "leftIndent"]);
+              await ctx.sync();
+              if (fmt.spcBef !== null) pFmt.spaceBefore = fmt.spcBef;
+              if (fmt.spcAft !== null) pFmt.spaceAfter  = fmt.spcAft;
+              if (fmt.marL   !== null) pFmt.leftIndent  = fmt.marL / 914400 * 72; // EMU to pt
+              await ctx.sync();
+            }
+            totalFixes++;
+          } catch (e) { /* shape may not support paragraph format */ }
+        }
         const textShapes = pptxData.slideShapes.filter(ss =>
           ss.phType !== "title" && ss.phType !== "ctrTitle" &&
           ss.position && typeof ss.current.fontSize === "number"
@@ -1555,22 +1616,30 @@ async function callClaudeRaw(prompt, apiKey) {
             tr.font.load("color");
             await ctx.sync();
 
-            const cur = ss.current.color;
-            if (!cur || cur === "(inherited)") continue;
+            // Use live colour from Office JS — more reliable than XML parse
+            const liveColor = tr.font.color ? `#${tr.font.color}` : null;
+            const cur = liveColor || ss.current.color;
+            if (!cur || cur === "(inherited)" || cur === "#null" || cur === "#") continue;
 
             // Check if already a theme colour
-            const isThemeColor = themeColorList.some(c => c.toLowerCase() === cur.toLowerCase());
+            const isThemeColor = themeColorList.some(c => c && cur && c.toLowerCase() === cur.toLowerCase());
             if (isThemeColor) continue;
 
-            const snapped = snapToThemeColor(cur, themeColors);
-            if (snapped.toLowerCase() === cur.toLowerCase()) continue;
+            // Also check master target colour — if it matches, skip
+            if (ss.masterTarget?.color && ss.masterTarget.color !== "(inherited)" &&
+                cur.toLowerCase() === ss.masterTarget.color.toLowerCase()) continue;
 
-            // Check contrast against fill
-            let textColor = snapped;
+            // Always apply the first theme colour
+            const firstThemeColor = themeColorList[0];
+            if (!firstThemeColor) continue;
+            if (cur.toLowerCase() === firstThemeColor.toLowerCase()) continue;
+
+            // Check contrast against fill — if poor, use black or white instead
+            let textColor = firstThemeColor;
             const fill = ss.shapeFill;
             if (fill && fill !== "none" && !fill.startsWith("theme:")) {
               const fillLum = hexLuminance(fill);
-              const textLum = hexLuminance(snapped);
+              const textLum = hexLuminance(firstThemeColor);
               const contrast = (Math.max(fillLum, textLum) + 0.05) / (Math.min(fillLum, textLum) + 0.05);
               if (contrast < 3) textColor = fillLum > 0.179 ? "#000000" : "#FFFFFF";
             }
