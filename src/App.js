@@ -1331,12 +1331,11 @@ async function callClaudeRaw(prompt, apiKey) {
 
       if (titleShape && targetTitlePos) {
         const cur = titleShape.position;
-        const posNeedsfix = cur && (
-          Math.abs(cur.left - targetTitlePos.left) > 0.05 ||
-          Math.abs(cur.top  - targetTitlePos.top)  > 0.05 ||
-          Math.abs(cur.width  - targetTitlePos.width)  > 0.05 ||
-          Math.abs(cur.height - targetTitlePos.height) > 0.05
-        );
+        const posNeedsfix = !cur ||
+          Math.abs(cur.left - targetTitlePos.left) > 0.01 ||
+          Math.abs(cur.top  - targetTitlePos.top)  > 0.01 ||
+          Math.abs(cur.width  - targetTitlePos.width)  > 0.01 ||
+          Math.abs(cur.height - targetTitlePos.height) > 0.01;
         const fontNeedsFix = titleShape.current.fontName !== "(inherited)" &&
           titleShape.current.fontName !== titleShape.masterTarget?.fontName;
         if (posNeedsfix || fontNeedsFix) {
@@ -1466,18 +1465,29 @@ async function callClaudeRaw(prompt, apiKey) {
       const alignPrompt = `You are fixing alignment on a PowerPoint slide. The slide is 10"×7.5".
 Title occupies: left=${leftMargin}" right=${rightEdge}" — content must stay below top=${titleBottom}"
 
-SHAPES (do not move unless clearly needed):
-${nonTitleShapes.map((s, i) => `#${i} "${s.name}" pos=(${s.position.left.toFixed(2)}",${s.position.top.toFixed(2)}") size=(${s.position.width.toFixed(2)}"×${s.position.height.toFixed(2)}")`).join("\n")}
+FIXED (do not move — title is locked to master):
+${titleShape && targetTitlePos ? `  TITLE "${titleShape.name}" pos=(${targetTitlePos.left.toFixed(2)}",${targetTitlePos.top.toFixed(2)}") size=(${targetTitlePos.width.toFixed(2)}"×${targetTitlePos.height.toFixed(2)}")` : "  (no title)"}
+
+SHAPES (adjust only when clearly needed — shapeIndex refers to this list):
+${nonTitleShapes.map((s, i) => {
+  const charsPerLine = Math.floor((s.position.width * 96) / ((s.current.fontSize || s.masterTarget?.fontSize || 12) * 0.6));
+  const lines = Math.ceil((s.textContent?.length || 0) / Math.max(charsPerLine, 1));
+  const lineHeight = (s.current.fontSize || s.masterTarget?.fontSize || 12) * 1.4 / 72;
+  const estHeight = lines * lineHeight;
+  const overflow = estHeight > s.position.height + 0.1;
+  return `#${i} "${s.name}" pos=(${s.position.left.toFixed(2)}",${s.position.top.toFixed(2)}") size=(${s.position.width.toFixed(2)}"×${s.position.height.toFixed(2)}") fontSize=${s.current.fontSize||'inherited'}pt${overflow ? ` ⚠ TEXT MAY OVERFLOW (est. ${estHeight.toFixed(2)}" needed, ${s.position.height.toFixed(2)}" available — shrink font or increase height)` : ''}`;
+}).join("\n")}
 
 ${problems.length > 0 ? `PROBLEMS TO FIX:\n${problems.map(p => `- ${p}`).join("\n")}\n` : ""}
 RULES — only suggest position changes when:
 - Two or more shapes share the same intended row/column but their edges differ by a small amount (< 0.3") — snap them to match
 - A row/column of similar shapes has uneven gaps — equalise
 - A shape overlaps another, goes off-slide, or is above top=${titleBottom}" — fix it
+- If text overflows (marked ⚠), either reduce fontSize or increase box height to fit — prefer font reduction for small overflows, height increase for large ones
 - Do NOT move shapes that look intentionally placed
 
-Return ONLY a JSON array: [{"shapeIndex":N,"position":{"left":X,"top":Y,"width":W,"height":H}}]
-Return [] if no alignment fixes needed.`;
+Return ONLY a JSON array: [{"shapeIndex":N,"position":{"left":X,"top":Y,"width":W,"height":H},"fontSize":N}]
+Omit position if unchanged, omit fontSize if unchanged. Return [] if no fixes needed.`;
 
       const alignFixes = await callClaudeRaw(alignPrompt, apiKey);
       if (alignFixes.length > 0) {
@@ -1490,7 +1500,8 @@ Return [] if no alignment fixes needed.`;
           if (!pos.width)  pos.width  = shape.position.width;
           if (!pos.height) pos.height = shape.position.height;
           return { shapeName: shape.name, shapeId: shape.id, _slideShape: shape,
-                   shapeFill: shape.shapeFill || null, position: pos };
+                   shapeFill: shape.shapeFill || null, position: pos,
+                   ...(fix.fontSize ? { font: { size: fix.fontSize } } : {}) };
         }).filter(Boolean);
         await applyFixes(dupIndex, enriched, themeColors);
         totalFixes += enriched.length;
