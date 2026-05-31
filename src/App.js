@@ -732,7 +732,8 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
     const masterRelsDoc = parseXml(masterRelsXml);
     const masterRels = masterRelsDoc.getElementsByTagNameNS("*", "Relationship");
 
-    // Collect title positions from ALL layouts to find the most common one
+    // Non-title positions: take from first layout
+    // Title position: use the master placeholder directly (most authoritative)
     const titlePositions = [];
 
     for (const rel of masterRels) {
@@ -767,26 +768,23 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
           height: emuToInches(ext.getAttribute("cy")),
         };
         const key = `${phType}:${phIdx}`;
-        // Non-title positions: only take from first layout
         if (isFirstLayout && phType !== "title" && phType !== "ctrTitle") {
           layoutPositions[key] = pos;
         }
-        if (phType === "title" || phType === "ctrTitle") {
-          layoutTitlePos = pos;
-        }
-        // Mark if this layout has a content/body area
-        if (phType === "body" || phType === "obj" || phIdx === "1") {
-          hasBody = true;
-        }
+        if (phType === "title" || phType === "ctrTitle") layoutTitlePos = pos;
+        if (phType === "body" || phType === "obj" || phIdx === "1") hasBody = true;
       }
-      // Only count title position if this layout also has a body (i.e. a content slide)
-      if (layoutTitlePos && hasBody) {
-        titlePositions.push(layoutTitlePos);
-      }
+      if (layoutTitlePos && hasBody) titlePositions.push(layoutTitlePos);
     }
 
-    // Pick most common title position (round to 2dp to group near-identical values)
-    if (titlePositions.length > 0) {
+    // Title position: use master placeholder directly (most authoritative source)
+    // Fall back to most common layout title position if master doesn't have one
+    const masterTitlePh = masters.find(m => m.index === 1)?.placeholders
+      ?.find(p => p.type === "title" || p.type === "ctrTitle");
+    if (masterTitlePh?.position) {
+      layoutPositions["title:0"] = masterTitlePh.position;
+      console.log(`Title position from master placeholder: ${JSON.stringify(masterTitlePh.position)}`);
+    } else if (titlePositions.length > 0) {
       const freq = {};
       for (const p of titlePositions) {
         const k = `${p.left.toFixed(2)},${p.top.toFixed(2)},${p.width.toFixed(2)},${p.height.toFixed(2)}`;
