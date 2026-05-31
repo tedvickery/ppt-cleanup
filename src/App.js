@@ -721,25 +721,23 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
   if (!slideFile) throw new Error(`Slide ${selectedSlideIndex} not found in file`);
   const slideXml = await slideFile.async("string");
 
-  // Follow slide → layout → master chain to find the correct master for this slide
-  let detectedMasterIndex = chosenMasterIndex;
+  // Always use master 1's first layout — ignore whatever imported layout the slide references
   let layoutPositions = {};
+  let detectedMasterIndex = chosenMasterIndex;
 
-  const slideRelsFile = zip.file(`ppt/slides/_rels/slide${selectedSlideIndex}.xml.rels`);
-  if (slideRelsFile) {
-    const slideRelsXml = await slideRelsFile.async("string");
-    const relsDoc = parseXml(slideRelsXml);
-    const rels = relsDoc.getElementsByTagNameNS("*", "Relationship");
-
-    for (const rel of rels) {
+  // Find master 1's layouts via its rels file — use the first one listed
+  const masterRelsFile = zip.file(`ppt/slideMasters/_rels/slideMaster1.xml.rels`);
+  if (masterRelsFile) {
+    const masterRelsXml = await masterRelsFile.async("string");
+    const masterRelsDoc = parseXml(masterRelsXml);
+    const masterRels = masterRelsDoc.getElementsByTagNameNS("*", "Relationship");
+    for (const rel of masterRels) {
       const target = rel.getAttribute("Target") || "";
       const layoutMatch = target.match(/slideLayouts\/slideLayout(\d+)\.xml/);
       if (!layoutMatch) continue;
-
       const layoutNum = layoutMatch[1];
       const layoutFile = zip.file(`ppt/slideLayouts/slideLayout${layoutNum}.xml`);
       if (layoutFile) {
-        // Extract layout positions
         const layoutXml = await layoutFile.async("string");
         const layoutDoc = parseXml(layoutXml);
         const layoutShapes = layoutDoc.getElementsByTagNameNS("*", "sp");
@@ -747,10 +745,10 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
           const ph = sp.getElementsByTagNameNS("*", "ph")[0];
           if (!ph) continue;
           const phType = ph.getAttribute("type") || "body";
-          const phIdx = ph.getAttribute("idx") || "0";
+          const phIdx  = ph.getAttribute("idx") || "0";
           const xfrm = sp.getElementsByTagNameNS("*", "xfrm")[0];
-          const off = xfrm?.getElementsByTagNameNS("*", "off")[0];
-          const ext = xfrm?.getElementsByTagNameNS("*", "ext")[0];
+          const off  = xfrm?.getElementsByTagNameNS("*", "off")[0];
+          const ext  = xfrm?.getElementsByTagNameNS("*", "ext")[0];
           if (off && ext) {
             layoutPositions[`${phType}:${phIdx}`] = {
               left:   emuToInches(off.getAttribute("x")),
@@ -760,25 +758,9 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
             };
           }
         }
+        console.log(`Using master 1 → first layout ${layoutNum}`);
       }
-
-      // Follow layout rels → find which master this layout belongs to
-      const layoutRelsFile = zip.file(`ppt/slideLayouts/_rels/slideLayout${layoutNum}.xml.rels`);
-      if (layoutRelsFile) {
-        const layoutRelsXml = await layoutRelsFile.async("string");
-        const layoutRelsDoc = parseXml(layoutRelsXml);
-        const layoutRels = layoutRelsDoc.getElementsByTagNameNS("*", "Relationship");
-        for (const lrel of layoutRels) {
-          const ltarget = lrel.getAttribute("Target") || "";
-          const masterMatch = ltarget.match(/slideMasters\/slideMaster(\d+)\.xml/);
-          if (masterMatch) {
-            detectedMasterIndex = parseInt(masterMatch[1], 10);
-            console.log(`Slide ${selectedSlideIndex} → layout ${layoutNum} → master ${detectedMasterIndex}`);
-            break;
-          }
-        }
-      }
-      break;
+      break; // only use first layout
     }
   }
 
