@@ -731,36 +731,62 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
     const masterRelsXml = await masterRelsFile.async("string");
     const masterRelsDoc = parseXml(masterRelsXml);
     const masterRels = masterRelsDoc.getElementsByTagNameNS("*", "Relationship");
+
+    // Collect title positions from ALL layouts to find the most common one
+    const titlePositions = [];
+
     for (const rel of masterRels) {
       const target = rel.getAttribute("Target") || "";
       const layoutMatch = target.match(/slideLayouts\/slideLayout(\d+)\.xml/);
       if (!layoutMatch) continue;
       const layoutNum = layoutMatch[1];
       const layoutFile = zip.file(`ppt/slideLayouts/slideLayout${layoutNum}.xml`);
-      if (layoutFile) {
-        const layoutXml = await layoutFile.async("string");
-        const layoutDoc = parseXml(layoutXml);
-        const layoutShapes = layoutDoc.getElementsByTagNameNS("*", "sp");
-        for (const sp of layoutShapes) {
-          const ph = sp.getElementsByTagNameNS("*", "ph")[0];
-          if (!ph) continue;
-          const phType = ph.getAttribute("type") || "body";
-          const phIdx  = ph.getAttribute("idx") || "0";
-          const xfrm = sp.getElementsByTagNameNS("*", "xfrm")[0];
-          const off  = xfrm?.getElementsByTagNameNS("*", "off")[0];
-          const ext  = xfrm?.getElementsByTagNameNS("*", "ext")[0];
-          if (off && ext) {
-            layoutPositions[`${phType}:${phIdx}`] = {
-              left:   emuToInches(off.getAttribute("x")),
-              top:    emuToInches(off.getAttribute("y")),
-              width:  emuToInches(ext.getAttribute("cx")),
-              height: emuToInches(ext.getAttribute("cy")),
-            };
-          }
+      if (!layoutFile) continue;
+
+      const layoutXml = await layoutFile.async("string");
+      const layoutDoc = parseXml(layoutXml);
+      const layoutShapes = layoutDoc.getElementsByTagNameNS("*", "sp");
+
+      let isFirstLayout = titlePositions.length === 0;
+
+      for (const sp of layoutShapes) {
+        const ph = sp.getElementsByTagNameNS("*", "ph")[0];
+        if (!ph) continue;
+        const phType = ph.getAttribute("type") || "body";
+        const phIdx  = ph.getAttribute("idx") || "0";
+        const xfrm = sp.getElementsByTagNameNS("*", "xfrm")[0];
+        const off  = xfrm?.getElementsByTagNameNS("*", "off")[0];
+        const ext  = xfrm?.getElementsByTagNameNS("*", "ext")[0];
+        if (!off || !ext) continue;
+        const pos = {
+          left:   emuToInches(off.getAttribute("x")),
+          top:    emuToInches(off.getAttribute("y")),
+          width:  emuToInches(ext.getAttribute("cx")),
+          height: emuToInches(ext.getAttribute("cy")),
+        };
+        const key = `${phType}:${phIdx}`;
+        // Non-title positions: only take from first layout
+        if (isFirstLayout && phType !== "title" && phType !== "ctrTitle") {
+          layoutPositions[key] = pos;
         }
-        console.log(`Using master 1 → first layout ${layoutNum}`);
+        // Title positions: collect from all layouts
+        if (phType === "title" || phType === "ctrTitle") {
+          titlePositions.push(pos);
+        }
       }
-      break; // only use first layout
+    }
+
+    // Pick most common title position (round to 2dp to group near-identical values)
+    if (titlePositions.length > 0) {
+      const freq = {};
+      for (const p of titlePositions) {
+        const k = `${p.left.toFixed(2)},${p.top.toFixed(2)},${p.width.toFixed(2)},${p.height.toFixed(2)}`;
+        freq[k] = (freq[k] || 0) + 1;
+      }
+      const topKey = Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0];
+      const [left, top, width, height] = topKey.split(",").map(Number);
+      layoutPositions["title:0"] = { left, top, width, height };
+      console.log(`Most common title position (from ${titlePositions.length} layouts): ${topKey}`);
     }
   }
 
