@@ -1425,6 +1425,50 @@ async function callClaudeRaw(prompt, apiKey) {
       setDetectedTheme(pptxData.theme);
       setDetectedMaster(pptxData.masterPlaceholders);
 
+      // ─── PRE-STEP: Strip paragraph overrides directly in zip XML ────────────
+      // Office JS can't write shape XML, but we have the zip — edit it directly
+      addLog("Resetting paragraph formatting…");
+      try {
+        const slidePath = `ppt/slides/slide${slideIndex}.xml`;
+        const slideFile = zip.file(slidePath);
+        if (slideFile) {
+          let xml = await slideFile.async("string");
+          const before = xml;
+          // Strip explicit bullet overrides so master formatting is inherited
+          xml = xml.replace(/<a:buNone\s*\/>/g, "");
+          xml = xml.replace(/<a:buChar[^/]*\/>/g, "");
+          xml = xml.replace(/<a:buFont[^/>]*(?:\/>|>[\s\S]*?<\/a:buFont>)/g, "");
+          xml = xml.replace(/<a:buClr>[\s\S]*?<\/a:buClr>/g, "");
+          xml = xml.replace(/<a:buSzPct[^/]*\/>/g, "");
+          xml = xml.replace(/<a:buSzPts[^/]*\/>/g, "");
+          xml = xml.replace(/<a:buAutoNum[^/]*\/>/g, "");
+          // Strip indent/marL overrides from paragraph properties
+          xml = xml.replace(/(<a:pPr[^>]*?)\s+indent="[^"]*"/g, "$1");
+          xml = xml.replace(/(<a:pPr[^>]*?)\s+marL="[^"]*"/g, "$1");
+          if (xml !== before) {
+            zip.file(slidePath, xml);
+            addLog("✓ Paragraph formatting reset — saving file…");
+            // Re-save the modified pptx back to the document
+            const newPptxBytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+            await new Promise((resolve, reject) => {
+              Office.context.document.setFileAsync(
+                newPptxBytes.buffer,
+                { fileType: Office.FileType.Compressed },
+                (result) => {
+                  if (result.status === Office.AsyncResultStatus.Succeeded) {
+                    resolve();
+                  } else {
+                    reject(new Error(result.error?.message || "setFileAsync failed"));
+                  }
+                }
+              );
+            });
+          }
+        }
+      } catch (e) {
+        addLog(`⚠ Paragraph reset skipped: ${e.message}`);
+      }
+
       addLog("Duplicating slide…");
       const dupIndex = await duplicateSlide(slideIndex);
       addLog(dupIndex === slideIndex ? "⚠ Running on original — use Ctrl+Z to undo" : `Duplicate at position ${dupIndex}`);
@@ -1613,37 +1657,6 @@ async function callClaudeRaw(prompt, apiKey) {
           } catch (e) { /* shape may not support autosize */ }
         }
 
-        // Reset paragraph formatting via OOXML — strip explicit pPr overrides so master/layout is inherited
-        for (const ss of pptxData.slideShapes) {
-          if (!ss.textContent) continue;
-          const os = shapes.items.find(s => String(s.id) === String(ss.id))
-                  || shapes.items.find(s => s.name === ss.name);
-          if (!os) continue;
-          try {
-            os.load("xml");
-            await ctx.sync();
-            let xml = os.xml;
-            if (!xml) { console.log(`OOXML: no xml for shape ${ss.id}`); continue; }
-
-            const before = xml;
-            xml = xml.replace(/<a:buNone\s*\/>/g, "");
-            xml = xml.replace(/<a:buChar[^/]*\/>/g, "");
-            xml = xml.replace(/<a:buFont[^/]*(\/|>.*?<\/a:buFont)>/g, "");
-            xml = xml.replace(/<a:buClr>.*?<\/a:buClr>/gs, "");
-            xml = xml.replace(/<a:buSzPct[^/]*\/>/g, "");
-            xml = xml.replace(/<a:buSzPts[^/]*\/>/g, "");
-            xml = xml.replace(/<a:buAutoNum[^/]*\/>/g, "");
-            xml = xml.replace(/(<a:pPr[^>]*)\s+indent="[^"]*"/g, "$1");
-            xml = xml.replace(/(<a:pPr[^>]*)\s+marL="[^"]*"/g, "$1");
-
-            if (xml !== before) {
-              os.xml = xml;
-              await ctx.sync();
-              console.log(`Paragraph reset: shape ${ss.id} "${ss.name}"`);
-              totalFixes++;
-            }
-          } catch (e) { console.log(`OOXML error on shape ${ss.id} "${ss.name}":`, e.message); }
-        }
         const textShapes = pptxData.slideShapes.filter(ss =>
           ss.phType !== "title" && ss.phType !== "ctrTitle" &&
           ss.position && typeof ss.current.fontSize === "number"
