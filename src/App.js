@@ -1414,7 +1414,7 @@ Return [] if nothing needs fixing.`;
         }
       }
 
-      // ─── STEP 3: Fonts — correct font name, no bold/italic unless intended ──
+      // ─── STEP 3: Fonts — correct font name, normalise sizes ─────────────────
       addLog("Step 3: Fonts…");
       await PowerPoint.run(async (ctx) => {
         const slides = ctx.presentation.slides;
@@ -1427,17 +1427,26 @@ Return [] if nothing needs fixing.`;
         for (const s of shapes.items) s.load(["id", "name"]);
         await ctx.sync();
 
+        // Find the most common explicit font size among non-title shapes → use as normalised size
+        const nonTitleSizes = pptxData.slideShapes
+          .filter(ss => ss.phType !== "title" && ss.phType !== "ctrTitle" && typeof ss.current.fontSize === "number")
+          .map(ss => ss.current.fontSize);
+        const sizeFreq = nonTitleSizes.reduce((acc, s) => { acc[s] = (acc[s] || 0) + 1; return acc; }, {});
+        const normalisedSize = nonTitleSizes.length > 0
+          ? parseInt(Object.entries(sizeFreq).sort((a, b) => b[1] - a[1])[0][0])
+          : null;
+
         for (const ss of pptxData.slideShapes) {
           if (!ss.masterTarget) continue;
-          const os = shapes.items.find(s => String(s.id) === String(ss.id));
-          if (!os) continue;
+          const os = shapes.items.find(s => String(s.id) === String(ss.id))
+                  || shapes.items.find(s => s.name === ss.name);
+          if (!os) { console.log(`Font step: shape ${ss.id} "${ss.name}" NOT FOUND`); continue; }
           try {
             const tr = os.textFrame.textRange;
             tr.font.load(["name", "size", "bold", "italic"]);
             await ctx.sync();
 
             const isTitle = ss.phType === "title" || ss.phType === "ctrTitle";
-            // Font is wrong if explicitly set to something other than master, OR if it's inherited but we should enforce master
             const explicitWrongFont = ss.current.fontName !== "(inherited)" && ss.current.fontName !== ss.masterTarget.fontName;
             const inheritedFont = ss.current.fontName === "(inherited)";
             const wrongSize = typeof ss.current.fontSize === "number" && ss.masterTarget.fontSize && Math.abs(ss.current.fontSize - ss.masterTarget.fontSize) > 2;
@@ -1445,22 +1454,28 @@ Return [] if nothing needs fixing.`;
             const isBold   = tr.font.bold   === true;
             const isItalic = tr.font.italic === true;
 
+            // Non-title shapes: also normalise to most common size if they differ
+            const sizesDiffer = !isTitle && normalisedSize && typeof ss.current.fontSize === "number" && ss.current.fontSize !== normalisedSize;
+
             const needsFontFix = explicitWrongFont || (inheritedFont && ss.masterTarget.fontName);
-            const needsSizeFix = wrongSize || mixedSize;
+            const needsSizeFix = wrongSize || mixedSize || sizesDiffer;
 
             if (!needsFontFix && !needsSizeFix && !isBold && !isItalic) continue;
 
             if (needsFontFix) {
+              console.log(`Font fix: shape ${ss.id} "${ss.name}" font ${ss.current.fontName} → ${ss.masterTarget.fontName}`);
               tr.font.name = ss.masterTarget.fontName;
             }
-            if (needsSizeFix || needsFontFix) {
-              tr.font.size = ss.masterTarget.fontSize;
+            if (needsSizeFix) {
+              const targetSize = isTitle ? ss.masterTarget.fontSize : (normalisedSize || ss.masterTarget.fontSize);
+              console.log(`Size fix: shape ${ss.id} "${ss.name}" size ${ss.current.fontSize} → ${targetSize}`);
+              tr.font.size = targetSize;
             }
             if (isBold)   tr.font.bold   = false;
             if (isItalic) tr.font.italic = false;
             await ctx.sync();
             totalFixes++;
-          } catch (e) { /* no text */ }
+          } catch (e) { console.log(`Font step error on shape ${ss.id} "${ss.name}":`, e.message); }
         }
       });
 
