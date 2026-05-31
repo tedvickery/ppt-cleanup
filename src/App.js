@@ -1438,11 +1438,45 @@ async function callClaudeRaw(prompt, apiKey) {
           try {
             os.textFrame.load("autoSizeSetting");
             await ctx.sync();
-            // Set to auto-size height — shrinks/grows box to fit text
             os.textFrame.autoSizeSetting = PowerPoint.ShapeAutoSize.autoSizeShapeToFitText;
             await ctx.sync();
             totalFixes++;
           } catch (e) { /* shape may not support autosize */ }
+        }
+
+        // Normalise font sizes within groups of similarly-sized shapes (within 10% of each other)
+        const textShapes = pptxData.slideShapes.filter(ss =>
+          ss.phType !== "title" && ss.phType !== "ctrTitle" &&
+          ss.position && typeof ss.current.fontSize === "number"
+        );
+        for (let i = 0; i < textShapes.length; i++) {
+          const a = textShapes[i];
+          const group = [a];
+          for (let j = 0; j < textShapes.length; j++) {
+            if (i === j) continue;
+            const b = textShapes[j];
+            const wSim = Math.abs(a.position.width  - b.position.width)  / a.position.width  <= 0.10;
+            const hSim = Math.abs(a.position.height - b.position.height) / a.position.height <= 0.10;
+            if (wSim && hSim) group.push(b);
+          }
+          if (group.length < 2) continue;
+          // Find most common font size in group
+          const freq = group.reduce((acc, s) => { acc[s.current.fontSize] = (acc[s.current.fontSize]||0)+1; return acc; }, {});
+          const groupSize = parseInt(Object.entries(freq).sort((a,b) => b[1]-a[1])[0][0]);
+          for (const ss of group) {
+            if (ss.current.fontSize === groupSize) continue;
+            if (Math.abs(ss.current.fontSize - groupSize) > 3) continue; // still respect 3pt rule
+            const os = shapes.items.find(s => String(s.id) === String(ss.id));
+            if (!os) continue;
+            try {
+              const tr = os.textFrame.textRange;
+              tr.font.load("size");
+              await ctx.sync();
+              tr.font.size = groupSize;
+              await ctx.sync();
+              totalFixes++;
+            } catch (e) { /* no text */ }
+          }
         }
       });
 
@@ -1555,7 +1589,49 @@ async function callClaudeRaw(prompt, apiKey) {
             }
           }
 
-          // Resolve overlaps: push overlapping shapes apart by minimum amount
+          // Align similarly-sized shapes: if edges are within 10% of their dimension, snap to match
+          for (let i = 0; i < nonTitleShapes.length; i++) {
+            for (let j = i + 1; j < nonTitleShapes.length; j++) {
+              const a = positions[i], b = positions[j];
+              const wSim = Math.abs(a.width  - b.width)  / a.width  <= 0.10;
+              const hSim = Math.abs(a.height - b.height) / a.height <= 0.10;
+              if (!wSim && !hSim) continue;
+
+              // Snap left edges if within 10% of width
+              if (wSim && Math.abs(a.left - b.left) / a.width <= 0.10) {
+                const avgLeft = (a.left + b.left) / 2;
+                positions[i].left = avgLeft; positions[j].left = avgLeft;
+              }
+              // Snap top edges if within 10% of height
+              if (hSim && Math.abs(a.top - b.top) / a.height <= 0.10) {
+                const avgTop = (a.top + b.top) / 2;
+                positions[i].top = avgTop; positions[j].top = avgTop;
+              }
+              // Snap right edges if within 10% of width
+              if (wSim && Math.abs((a.left+a.width) - (b.left+b.width)) / a.width <= 0.10) {
+                const avgRight = ((a.left+a.width) + (b.left+b.width)) / 2;
+                positions[i].left = avgRight - a.width; positions[j].left = avgRight - b.width;
+              }
+              // Snap bottom edges if within 10% of height
+              if (hSim && Math.abs((a.top+a.height) - (b.top+b.height)) / a.height <= 0.10) {
+                const avgBottom = ((a.top+a.height) + (b.top+b.height)) / 2;
+                positions[i].top = avgBottom - a.height; positions[j].top = avgBottom - b.height;
+              }
+            }
+          }
+          // Apply any position changes from alignment
+          for (let i = 0; i < nonTitleShapes.length; i++) {
+            const s = nonTitleShapes[i];
+            const orig = s.position;
+            const p = positions[i];
+            if (Math.abs(p.left-orig.left)>0.001 || Math.abs(p.top-orig.top)>0.001) {
+              const existing = gridFixes.find(f => String(f.shapeId) === String(s.id));
+              if (existing) { existing.position.left = p.left; existing.position.top = p.top; }
+              else gridFixes.push({ shapeName: s.name, shapeId: s.id, _slideShape: s, shapeFill: s.shapeFill||null, position: { ...p } });
+            }
+          }
+
+          // Resolve overlaps: push overlapping shapes apart
           for (let i = 0; i < nonTitleShapes.length; i++) {
             for (let j = i + 1; j < nonTitleShapes.length; j++) {
               const a = positions[i], b = positions[j];
