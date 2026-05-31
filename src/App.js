@@ -1450,35 +1450,56 @@ Return [] if nothing needs fixing.`;
             const isTitle = ss.phType === "title" || ss.phType === "ctrTitle";
             const explicitWrongFont = ss.current.fontName !== "(inherited)" && ss.current.fontName !== ss.masterTarget.fontName;
             const inheritedFont = ss.current.fontName === "(inherited)";
-            const wrongSize = typeof ss.current.fontSize === "number" && ss.masterTarget.fontSize && Math.abs(ss.current.fontSize - ss.masterTarget.fontSize) > 2;
             const mixedSize = tr.font.size === null;
             const isBold   = tr.font.bold   === true;
             const isItalic = tr.font.italic === true;
 
-            // Non-title shapes: also normalise to most common size if they differ
-            const sizesDiffer = !isTitle && normalisedSize && typeof ss.current.fontSize === "number" && ss.current.fontSize !== normalisedSize;
+            // Only normalise size if within 3pt of the normalised size
+            const currentSize = typeof ss.current.fontSize === "number" ? ss.current.fontSize : null;
+            const sizesDiffer = !isTitle && normalisedSize && currentSize !== null &&
+              currentSize !== normalisedSize && Math.abs(currentSize - normalisedSize) <= 3;
 
             const needsFontFix = explicitWrongFont || (inheritedFont && ss.masterTarget.fontName);
-            const needsSizeFix = wrongSize || mixedSize || sizesDiffer;
+            const needsSizeFix = mixedSize || sizesDiffer;
 
             if (!needsFontFix && !needsSizeFix && !isBold && !isItalic) continue;
 
             if (needsFontFix) {
               console.log(`Font fix: shape ${ss.id} "${ss.name}" font ${ss.current.fontName} → ${ss.masterTarget.fontName}`);
               tr.font.name = ss.masterTarget.fontName;
-              // Always set size alongside font name to avoid inheriting wrong size
+              // Set size to normalised if within 3pt, otherwise keep current
+              if (normalisedSize && currentSize !== null && Math.abs(currentSize - normalisedSize) <= 3) {
+                tr.font.size = normalisedSize;
+              }
+            }
+            if (!needsFontFix && needsSizeFix) {
               const targetSize = isTitle ? ss.masterTarget.fontSize : (normalisedSize || ss.masterTarget.fontSize);
+              console.log(`Size fix: shape ${ss.id} "${ss.name}" size ${currentSize} → ${targetSize}`);
               tr.font.size = targetSize;
-            } else if (needsSizeFix) {
-              const targetSize = isTitle ? ss.masterTarget.fontSize : (normalisedSize || ss.masterTarget.fontSize);
-              console.log(`Size fix: shape ${ss.id} "${ss.name}" size ${ss.current.fontSize} → ${targetSize}`);
-              tr.font.size = targetSize;
+            }
+            if (mixedSize && !needsFontFix) {
+              tr.font.size = normalisedSize || ss.masterTarget.fontSize;
             }
             if (isBold)   tr.font.bold   = false;
             if (isItalic) tr.font.italic = false;
             await ctx.sync();
             totalFixes++;
           } catch (e) { console.log(`Font step error on shape ${ss.id} "${ss.name}":`, e.message); }
+        }
+
+        // Auto-size text boxes to fit content — expand height if text overflows
+        for (const ss of pptxData.slideShapes) {
+          if (!ss.position || !ss.textContent) continue;
+          const os = shapes.items.find(s => String(s.id) === String(ss.id));
+          if (!os) continue;
+          try {
+            os.textFrame.load("autoSizeSetting");
+            await ctx.sync();
+            // Set to auto-size height — shrinks/grows box to fit text
+            os.textFrame.autoSizeSetting = PowerPoint.ShapeAutoSize.autoSizeShapeToFitText;
+            await ctx.sync();
+            totalFixes++;
+          } catch (e) { /* shape may not support autosize */ }
         }
       });
 
