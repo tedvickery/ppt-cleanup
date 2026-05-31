@@ -1446,11 +1446,14 @@ async function callClaudeRaw(prompt, apiKey) {
           Math.abs(cur.height - targetTitlePos.height) > 0.01;
         const fontNeedsFix = titleShape.current.fontName !== "(inherited)" &&
           titleShape.current.fontName !== titleShape.masterTarget?.fontName;
-        if (posNeedsfix || fontNeedsFix) {
+        const fillNeedsFix = titleShape.shapeFill && titleShape.shapeFill !== "none" &&
+          titleShape.masterTarget?.fill === "none";
+        if (posNeedsfix || fontNeedsFix || fillNeedsFix) {
           addLog("Step 1: Title position & font…");
           await applyFixes(dupIndex, [{
             shapeName: titleShape.name, shapeId: titleShape.id,
-            _slideShape: titleShape, shapeFill: titleShape.shapeFill || null,
+            _slideShape: titleShape,
+            shapeFill: fillNeedsFix ? "none" : (titleShape.shapeFill || null),
             ...(posNeedsfix ? { position: targetTitlePos } : {}),
             ...(fontNeedsFix ? { font: { name: titleShape.masterTarget?.fontName } } : {}),
           }], themeColors);
@@ -1502,8 +1505,19 @@ async function callClaudeRaw(prompt, apiKey) {
 
             const needsFontFix = explicitWrongFont || (inheritedFont && ss.masterTarget.fontName);
             const needsSizeFix = mixedSize || sizesDiffer;
+            const needsFillReset = ss.shapeFill && ss.shapeFill !== "none" &&
+              ss.masterTarget?.fill === "none";
 
-            if (!needsFontFix && !needsSizeFix) continue;
+            if (!needsFontFix && !needsSizeFix && !needsFillReset) continue;
+
+            // Reset fill if shape has a fill that the master says should be none
+            if (needsFillReset) {
+              try {
+                os.fill.clear();
+                await ctx.sync();
+                console.log(`Fill reset: shape ${ss.id} "${ss.name}" ${ss.shapeFill} → none`);
+              } catch (e) { /* fill may not be clearable */ }
+            }
 
             if (needsFontFix) {
               console.log(`Font fix: shape ${ss.id} "${ss.name}" font ${ss.current.fontName} → ${ss.masterTarget.fontName}`);
@@ -1604,16 +1618,12 @@ async function callClaudeRaw(prompt, apiKey) {
                   || shapes.items.find(s => s.name === ss.name);
           if (!os) continue;
           try {
-            const ooxml = os.getOoxml();
+            os.load("xml");
             await ctx.sync();
-            let xml = ooxml.value;
+            let xml = os.xml;
+            if (!xml) { console.log(`OOXML: no xml for shape ${ss.id}`); continue; }
 
-            // Strip explicit paragraph property overrides that fight the master:
-            // - buChar (bullet character), buFont (bullet font), buClr (bullet colour)
-            // - buSzPct/buSzPts (bullet size), buNone (explicit no-bullet)
-            // - spcBef/spcAft/lnSpc (spacing) only if explicitly set on the slide
-            // - indent, marL on pPr
-            // Keep algn (text alignment) and other intentional overrides
+            const before = xml;
             xml = xml.replace(/<a:buNone\s*\/>/g, "");
             xml = xml.replace(/<a:buChar[^/]*\/>/g, "");
             xml = xml.replace(/<a:buFont[^/]*(\/|>.*?<\/a:buFont)>/g, "");
@@ -1621,14 +1631,16 @@ async function callClaudeRaw(prompt, apiKey) {
             xml = xml.replace(/<a:buSzPct[^/]*\/>/g, "");
             xml = xml.replace(/<a:buSzPts[^/]*\/>/g, "");
             xml = xml.replace(/<a:buAutoNum[^/]*\/>/g, "");
-            // Strip indent/marL from pPr attributes (leave other attrs)
             xml = xml.replace(/(<a:pPr[^>]*)\s+indent="[^"]*"/g, "$1");
             xml = xml.replace(/(<a:pPr[^>]*)\s+marL="[^"]*"/g, "$1");
 
-            os.setOoxml(xml);
-            await ctx.sync();
-            totalFixes++;
-          } catch (e) { /* shape may not support OOXML */ }
+            if (xml !== before) {
+              os.xml = xml;
+              await ctx.sync();
+              console.log(`Paragraph reset: shape ${ss.id} "${ss.name}"`);
+              totalFixes++;
+            }
+          } catch (e) { console.log(`OOXML error on shape ${ss.id} "${ss.name}":`, e.message); }
         }
         const textShapes = pptxData.slideShapes.filter(ss =>
           ss.phType !== "title" && ss.phType !== "ctrTitle" &&
