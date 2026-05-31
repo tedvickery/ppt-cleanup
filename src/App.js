@@ -793,6 +793,12 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
     console.log("Shapes on slide:", shapes.items.map(s => s.name));
     console.log("Fixes from Claude:", JSON.stringify(fixes));
 
+    // Snapshot original positions BEFORE applying any fixes to prevent cascade
+    const originalPositions = new Map();
+    for (const s of shapes.items) {
+      originalPositions.set(String(s.id), { left: s.left, top: s.top, width: s.width, height: s.height });
+    }
+
     for (const fix of fixes) {
       // shapeIndex refers to our pptxData.slideShapes array order
       // Use the shape's id/name from that array to find the correct Office JS shape
@@ -800,8 +806,8 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
       const lookupName = slideShape?.name || fix.shapeName;
       const lookupId = slideShape?.id || fix.shapeId;
       const target = lookupId
-        ? (shapes.items.find(s => s.id === lookupId) || shapes.items.find(s => s.name === lookupName))
-        : shapes.items.find(s => s.name === lookupName || s.id === fix.shapeId);
+        ? shapes.items.find(s => String(s.id) === String(lookupId))
+        : shapes.items.find(s => s.name === lookupName);
       console.log(`Fix for "${lookupName}" (idx:${fix.shapeIndex}) → ${target ? `FOUND: ${target.name}` : "NOT FOUND"}`);
       if (!target) continue;
 
@@ -809,8 +815,9 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
       if (fix.position) {
         const inchToPt = 72;
         const { left, top, width, height } = fix.position;
-        if (left   !== undefined && left   > 0   && left   < 10)  { console.log(`  left: ${target.left} → ${left * inchToPt}`);  target.left   = left   * inchToPt; }
-        if (top    !== undefined && top    > 0   && top    < 7.5) { console.log(`  top: ${target.top} → ${top * inchToPt}`);    target.top    = top    * inchToPt; }
+        const orig = originalPositions.get(String(target.id)) || {};
+        if (left   !== undefined && left   > 0   && left   < 10)  { console.log(`  left: ${orig.left} → ${left * inchToPt}`);  target.left   = left   * inchToPt; }
+        if (top    !== undefined && top    > 0   && top    < 7.5) { console.log(`  top: ${orig.top} → ${top * inchToPt}`);    target.top    = top    * inchToPt; }
         if (width  !== undefined && width  > 0.5 && width  <= 10) { target.width  = width  * inchToPt; }
         if (height !== undefined && height > 0.1 && height <= 7.5){ target.height = height * inchToPt; }
       }
