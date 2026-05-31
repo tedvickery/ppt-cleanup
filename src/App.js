@@ -1444,55 +1444,71 @@ async function callClaudeRaw(prompt, apiKey) {
         }
       });
 
-      // ─── STEP 4: Alignment — AI pass for tightening only ────────────────────
-      // ─── STEP 4: Alignment — snap nearly-aligned edges (code only, no AI) ────
-      const nonTitleShapes = pptxData.slideShapes.filter(s => s.phType !== "title" && s.phType !== "ctrTitle" && s.position);
-      if (nonTitleShapes.length > 1) {
-        const SNAP = 0.1; // snap if edges differ by less than 0.1"
-        const MAX_RATIO = 0.1; // only snap if move is ≤ 10% of width/height
+      // ─── STEP 4: Grid-based alignment ───────────────────────────────────────
+      // Divide the content area into a 100×100 grid and snap shapes to it
+      {
+        const nonTitleShapes = pptxData.slideShapes.filter(s =>
+          s.phType !== "title" && s.phType !== "ctrTitle" &&
+          s.phType !== "sldNum" && s.phType !== "ftr" &&
+          s.position
+        );
 
-        // Snapshot original positions — compare against these only, not mutated values
-        const origLefts  = nonTitleShapes.map(s => s.position.left);
-        const origTops   = nonTitleShapes.map(s => s.position.top);
-        const origRights = nonTitleShapes.map(s => s.position.left + s.position.width);
-        const origBots   = nonTitleShapes.map(s => s.position.top  + s.position.height);
+        if (nonTitleShapes.length > 0 && targetTitlePos) {
+          // Content area bounds derived from title
+          const areaLeft   = targetTitlePos.left;
+          const areaRight  = targetTitlePos.left + targetTitlePos.width;
+          const areaTop    = targetTitlePos.top + targetTitlePos.height + 0.1;
+          const areaBottom = 7.4;
+          const areaW = areaRight - areaLeft;
+          const areaH = areaBottom - areaTop;
 
-        const snapFixes = [];
-        for (let i = 0; i < nonTitleShapes.length; i++) {
-          const s = nonTitleShapes[i];
-          const pos = { ...s.position };
-          let changed = false;
+          // Snap a value to nearest grid unit (grid has 100 cells in each direction)
+          const snapX = v => areaLeft + Math.round((v - areaLeft) / areaW * 100) / 100 * areaW;
+          const snapY = v => areaTop  + Math.round((v - areaTop)  / areaH * 100) / 100 * areaH;
 
-          // Only snap to OTHER shapes' original edges (exclude self)
-          const otherLefts  = origLefts.filter((_, j) => j !== i);
-          const otherTops   = origTops.filter((_, j) => j !== i);
-          const otherRights = origRights.filter((_, j) => j !== i);
-          const otherBots   = origBots.filter((_, j) => j !== i);
+          const gridFixes = [];
+          for (const s of nonTitleShapes) {
+            const orig = s.position;
+            const snappedLeft   = snapX(orig.left);
+            const snappedTop    = snapY(orig.top);
+            const snappedRight  = snapX(orig.left + orig.width);
+            const snappedBottom = snapY(orig.top  + orig.height);
+            const snappedWidth  = snappedRight - snappedLeft;
+            const snappedHeight = snappedBottom - snappedTop;
 
-          const nearLeft = otherLefts.find(l => Math.abs(l - pos.left) > 0 && Math.abs(l - pos.left) < SNAP && Math.abs(l - pos.left) <= pos.width * MAX_RATIO);
-          if (nearLeft != null) { pos.left = nearLeft; changed = true; }
+            const leftDiff   = Math.abs(snappedLeft   - orig.left);
+            const topDiff    = Math.abs(snappedTop    - orig.top);
+            const widthDiff  = Math.abs(snappedWidth  - orig.width);
+            const heightDiff = Math.abs(snappedHeight - orig.height);
 
-          const nearTop = otherTops.find(t => Math.abs(t - pos.top) > 0 && Math.abs(t - pos.top) < SNAP && Math.abs(t - pos.top) <= pos.height * MAX_RATIO);
-          if (nearTop != null) { pos.top = nearTop; changed = true; }
+            // Only apply if the snap moves things by a small amount (≤ 1 grid cell = 1%)
+            const maxMoveX = areaW * 0.01;
+            const maxMoveY = areaH * 0.01;
+            const changed =
+              (leftDiff   > 0.001 && leftDiff   <= maxMoveX) ||
+              (topDiff    > 0.001 && topDiff    <= maxMoveY) ||
+              (widthDiff  > 0.001 && widthDiff  <= maxMoveX) ||
+              (heightDiff > 0.001 && heightDiff <= maxMoveY);
 
-          const myRight = origRights[i];
-          const nearRight = otherRights.find(r => Math.abs(r - myRight) > 0 && Math.abs(r - myRight) < SNAP && Math.abs(r - myRight) <= pos.width * MAX_RATIO);
-          if (nearRight != null) { pos.width = nearRight - pos.left; changed = true; }
+            if (changed) {
+              const newPos = {
+                left:   leftDiff   <= maxMoveX ? snappedLeft   : orig.left,
+                top:    topDiff    <= maxMoveY ? snappedTop    : orig.top,
+                width:  widthDiff  <= maxMoveX ? snappedWidth  : orig.width,
+                height: heightDiff <= maxMoveY ? snappedHeight : orig.height,
+              };
+              gridFixes.push({
+                shapeName: s.name, shapeId: s.id, _slideShape: s,
+                shapeFill: s.shapeFill || null, position: newPos,
+              });
+            }
+          }
 
-          const myBot = origBots[i];
-          const nearBot = otherBots.find(b => Math.abs(b - myBot) > 0 && Math.abs(b - myBot) < SNAP && Math.abs(b - myBot) <= pos.height * MAX_RATIO);
-          if (nearBot != null) { pos.height = nearBot - pos.top; changed = true; }
-
-          if (changed) snapFixes.push({
-            shapeName: s.name, shapeId: s.id, _slideShape: s,
-            shapeFill: s.shapeFill || null, position: pos,
-          });
-        }
-
-        if (snapFixes.length > 0) {
-          addLog(`Step 4: Snapping ${snapFixes.length} shape(s) to align…`);
-          await applyFixes(dupIndex, snapFixes, themeColors);
-          totalFixes += snapFixes.length;
+          if (gridFixes.length > 0) {
+            addLog(`Step 4: Grid-snapping ${gridFixes.length} shape(s)…`);
+            await applyFixes(dupIndex, gridFixes, themeColors);
+            totalFixes += gridFixes.length;
+          }
         }
       }
 
