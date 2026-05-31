@@ -636,7 +636,52 @@ async function readAllMasters(zip) {
     }
   }
 
-  // Fallback: if rels parsing failed, try master1 directly
+  // Count how many slides reference each master (via slide → layout → master chain)
+  // Masters used by fewer than 20% of slides relative to the dominant master are rejected as "imported"
+  const masterSlideCounts = {};
+  for (const master of masters) masterSlideCounts[master.index] = 0;
+
+  const slideFiles = zip.file(/^ppt\/slides\/slide\d+\.xml$/);
+  for (const slideFile of slideFiles) {
+    const slideNum = slideFile.name.match(/slide(\d+)\.xml/)?.[1];
+    if (!slideNum) continue;
+    const relsFile = zip.file(`ppt/slides/_rels/slide${slideNum}.xml.rels`);
+    if (!relsFile) continue;
+    try {
+      const relsXml = await relsFile.async("string");
+      const relsDoc = parseXml(relsXml);
+      for (const rel of relsDoc.getElementsByTagNameNS("*", "Relationship")) {
+        const target = rel.getAttribute("Target") || "";
+        const layoutMatch = target.match(/slideLayouts\/slideLayout(\d+)\.xml/);
+        if (!layoutMatch) continue;
+        const layoutRelsFile = zip.file(`ppt/slideLayouts/_rels/slideLayout${layoutMatch[1]}.xml.rels`);
+        if (!layoutRelsFile) continue;
+        const layoutRelsXml = await layoutRelsFile.async("string");
+        const layoutRelsDoc = parseXml(layoutRelsXml);
+        for (const lrel of layoutRelsDoc.getElementsByTagNameNS("*", "Relationship")) {
+          const ltarget = lrel.getAttribute("Target") || "";
+          const masterMatch = ltarget.match(/slideMasters\/slideMaster(\d+)\.xml/);
+          if (masterMatch) {
+            const idx = parseInt(masterMatch[1], 10);
+            if (masterSlideCounts[idx] !== undefined) masterSlideCounts[idx]++;
+            break;
+          }
+        }
+        break;
+      }
+    } catch (e) { /* skip unreadable slide */ }
+  }
+
+  const maxCount = Math.max(...Object.values(masterSlideCounts), 0);
+  const filteredMasters = masters.filter(m => {
+    const count = masterSlideCounts[m.index] || 0;
+    const keep = maxCount === 0 || count >= Math.max(1, maxCount * 0.2);
+    if (!keep) console.log(`Rejecting imported master ${m.index} ("${m.name}") — only used by ${count} slide(s) vs dominant ${maxCount}`);
+    return keep;
+  });
+
+  console.log("Master slide counts:", masterSlideCounts);
+  return filteredMasters.length > 0 ? filteredMasters : masters; // never return empty
   if (masters.length === 0) {
     const masterFile = zip.file("ppt/slideMasters/slideMaster1.xml");
     if (masterFile) {
@@ -672,57 +717,79 @@ async function readPptxFile() {
 
 // Phase 2: read slide data using the chosen master
 async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlideIndex) {
-  const master = masters.find((m) => m.index === chosenMasterIndex) || masters[0];
-
   const slideFile = zip.file(`ppt/slides/slide${selectedSlideIndex}.xml`);
   if (!slideFile) throw new Error(`Slide ${selectedSlideIndex} not found in file`);
   const slideXml = await slideFile.async("string");
 
-  // Also read the slide's layout XML to get fallback positions
-  // The slide rels file tells us which layout this slide uses
-  const slideRelsFile = zip.file(`ppt/slides/_rels/slide${selectedSlideIndex}.xml.rels`);
-  let layoutPositions = {}; // phIdx/phType → position
+  // Follow slide → layout → master chain to find the correct master for this slide
+  let detectedMasterIndex = chosenMasterIndex;
+  let layoutPositions = {};
 
+  const slideRelsFile = zip.file(`ppt/slides/_rels/slide${selectedSlideIndex}.xml.rels`);
   if (slideRelsFile) {
     const slideRelsXml = await slideRelsFile.async("string");
     const relsDoc = parseXml(slideRelsXml);
     const rels = relsDoc.getElementsByTagNameNS("*", "Relationship");
+
     for (const rel of rels) {
       const target = rel.getAttribute("Target") || "";
-      const match = target.match(/slideLayouts\/slideLayout(\d+)\.xml/);
-      if (match) {
-        const layoutFile = zip.file(`ppt/slideLayouts/slideLayout${match[1]}.xml`);
-        if (layoutFile) {
-          const layoutXml = await layoutFile.async("string");
-          const layoutDoc = parseXml(layoutXml);
-          const layoutShapes = layoutDoc.getElementsByTagNameNS("*", "sp");
-          for (const sp of layoutShapes) {
-            const ph = sp.getElementsByTagNameNS("*", "ph")[0];
-            if (!ph) continue;
-            const phType = ph.getAttribute("type") || "body";
-            const phIdx = ph.getAttribute("idx") || "0";
-            const xfrm = sp.getElementsByTagNameNS("*", "xfrm")[0];
-            const off = xfrm?.getElementsByTagNameNS("*", "off")[0];
-            const ext = xfrm?.getElementsByTagNameNS("*", "ext")[0];
-            if (off && ext) {
-              const key = `${phType}:${phIdx}`;
-              layoutPositions[key] = {
-                left:   emuToInches(off.getAttribute("x")),
-                top:    emuToInches(off.getAttribute("y")),
-                width:  emuToInches(ext.getAttribute("cx")),
-                height: emuToInches(ext.getAttribute("cy")),
-              };
-            }
+      const layoutMatch = target.match(/slideLayouts\/slideLayout(\d+)\.xml/);
+      if (!layoutMatch) continue;
+
+      const layoutNum = layoutMatch[1];
+      const layoutFile = zip.file(`ppt/slideLayouts/slideLayout${layoutNum}.xml`);
+      if (layoutFile) {
+        // Extract layout positions
+        const layoutXml = await layoutFile.async("string");
+        const layoutDoc = parseXml(layoutXml);
+        const layoutShapes = layoutDoc.getElementsByTagNameNS("*", "sp");
+        for (const sp of layoutShapes) {
+          const ph = sp.getElementsByTagNameNS("*", "ph")[0];
+          if (!ph) continue;
+          const phType = ph.getAttribute("type") || "body";
+          const phIdx = ph.getAttribute("idx") || "0";
+          const xfrm = sp.getElementsByTagNameNS("*", "xfrm")[0];
+          const off = xfrm?.getElementsByTagNameNS("*", "off")[0];
+          const ext = xfrm?.getElementsByTagNameNS("*", "ext")[0];
+          if (off && ext) {
+            layoutPositions[`${phType}:${phIdx}`] = {
+              left:   emuToInches(off.getAttribute("x")),
+              top:    emuToInches(off.getAttribute("y")),
+              width:  emuToInches(ext.getAttribute("cx")),
+              height: emuToInches(ext.getAttribute("cy")),
+            };
           }
         }
-        break;
       }
+
+      // Follow layout rels → find which master this layout belongs to
+      const layoutRelsFile = zip.file(`ppt/slideLayouts/_rels/slideLayout${layoutNum}.xml.rels`);
+      if (layoutRelsFile) {
+        const layoutRelsXml = await layoutRelsFile.async("string");
+        const layoutRelsDoc = parseXml(layoutRelsXml);
+        const layoutRels = layoutRelsDoc.getElementsByTagNameNS("*", "Relationship");
+        for (const lrel of layoutRels) {
+          const ltarget = lrel.getAttribute("Target") || "";
+          const masterMatch = ltarget.match(/slideMasters\/slideMaster(\d+)\.xml/);
+          if (masterMatch) {
+            detectedMasterIndex = parseInt(masterMatch[1], 10);
+            console.log(`Slide ${selectedSlideIndex} → layout ${layoutNum} → master ${detectedMasterIndex}`);
+            break;
+          }
+        }
+      }
+      break;
     }
   }
 
+  // Use the auto-detected master, fall back to chosen/first if not found
+  const master = masters.find((m) => m.index === detectedMasterIndex)
+              || masters.find((m) => m.index === chosenMasterIndex)
+              || masters[0];
+
   const slideShapes = parseSlideXml(slideXml, master.theme, master.placeholders, layoutPositions);
+  console.log(`Using master ${master.index} ("${master.name}") for slide ${selectedSlideIndex}`);
   console.log("Layout positions found:", JSON.stringify(layoutPositions));
-  console.log("Slide shape positions:", slideShapes.map(s => `${s.name}: ${JSON.stringify(s.position)}`));
 
   return {
     theme: master.theme,
