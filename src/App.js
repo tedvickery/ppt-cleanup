@@ -1530,34 +1530,38 @@ async function callClaudeRaw(prompt, apiKey) {
           } catch (e) { /* shape may not support autosize */ }
         }
 
-        // Apply master paragraph formatting — bullets, spacing, indents
+        // Reset paragraph formatting via OOXML — strip explicit pPr overrides so master/layout is inherited
         for (const ss of pptxData.slideShapes) {
-          if (!ss.masterTarget?.paraFormat) continue;
-          const pf = ss.masterTarget.paraFormat;
-          if (!Object.keys(pf).length) continue;
+          if (!ss.textContent) continue;
           const os = shapes.items.find(s => String(s.id) === String(ss.id))
                   || shapes.items.find(s => s.name === ss.name);
           if (!os) continue;
           try {
-            const paras = os.textFrame.paragraphs;
-            paras.load("items");
+            const ooxml = os.getOoxml();
             await ctx.sync();
-            for (const para of paras.items) {
-              para.load("level");
-              await ctx.sync();
-              const lvl = (para.level || 0) + 1;
-              const fmt = pf[lvl] || pf[1];
-              if (!fmt) continue;
-              const pFmt = para.paragraphFormat;
-              pFmt.load(["spaceAfter", "spaceBefore", "leftIndent"]);
-              await ctx.sync();
-              if (fmt.spcBef !== null) pFmt.spaceBefore = fmt.spcBef;
-              if (fmt.spcAft !== null) pFmt.spaceAfter  = fmt.spcAft;
-              if (fmt.marL   !== null) pFmt.leftIndent  = fmt.marL / 914400 * 72; // EMU to pt
-              await ctx.sync();
-            }
+            let xml = ooxml.value;
+
+            // Strip explicit paragraph property overrides that fight the master:
+            // - buChar (bullet character), buFont (bullet font), buClr (bullet colour)
+            // - buSzPct/buSzPts (bullet size), buNone (explicit no-bullet)
+            // - spcBef/spcAft/lnSpc (spacing) only if explicitly set on the slide
+            // - indent, marL on pPr
+            // Keep algn (text alignment) and other intentional overrides
+            xml = xml.replace(/<a:buNone\s*\/>/g, "");
+            xml = xml.replace(/<a:buChar[^/]*\/>/g, "");
+            xml = xml.replace(/<a:buFont[^/]*(\/|>.*?<\/a:buFont)>/g, "");
+            xml = xml.replace(/<a:buClr>.*?<\/a:buClr>/gs, "");
+            xml = xml.replace(/<a:buSzPct[^/]*\/>/g, "");
+            xml = xml.replace(/<a:buSzPts[^/]*\/>/g, "");
+            xml = xml.replace(/<a:buAutoNum[^/]*\/>/g, "");
+            // Strip indent/marL from pPr attributes (leave other attrs)
+            xml = xml.replace(/(<a:pPr[^>]*)\s+indent="[^"]*"/g, "$1");
+            xml = xml.replace(/(<a:pPr[^>]*)\s+marL="[^"]*"/g, "$1");
+
+            os.setOoxml(xml);
+            await ctx.sync();
             totalFixes++;
-          } catch (e) { /* shape may not support paragraph format */ }
+          } catch (e) { /* shape may not support OOXML */ }
         }
         const textShapes = pptxData.slideShapes.filter(ss =>
           ss.phType !== "title" && ss.phType !== "ctrTitle" &&
