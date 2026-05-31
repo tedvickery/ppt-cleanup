@@ -748,6 +748,8 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
       const layoutShapes = layoutDoc.getElementsByTagNameNS("*", "sp");
 
       let isFirstLayout = titlePositions.length === 0;
+      let layoutTitlePos = null;
+      let hasBody = false;
 
       for (const sp of layoutShapes) {
         const ph = sp.getElementsByTagNameNS("*", "ph")[0];
@@ -769,10 +771,17 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
         if (isFirstLayout && phType !== "title" && phType !== "ctrTitle") {
           layoutPositions[key] = pos;
         }
-        // Title positions: collect from all layouts
         if (phType === "title" || phType === "ctrTitle") {
-          titlePositions.push(pos);
+          layoutTitlePos = pos;
         }
+        // Mark if this layout has a content/body area
+        if (phType === "body" || phType === "obj" || phIdx === "1") {
+          hasBody = true;
+        }
+      }
+      // Only count title position if this layout also has a body (i.e. a content slide)
+      if (layoutTitlePos && hasBody) {
+        titlePositions.push(layoutTitlePos);
       }
     }
 
