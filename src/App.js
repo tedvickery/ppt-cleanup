@@ -1429,7 +1429,7 @@ Return [] if nothing needs fixing.`;
 
         for (const ss of pptxData.slideShapes) {
           if (!ss.masterTarget) continue;
-          const os = shapes.items.find(s => s.id === ss.id || s.name === ss.name);
+          const os = shapes.items.find(s => String(s.id) === String(ss.id));
           if (!os) continue;
           try {
             const tr = os.textFrame.textRange;
@@ -1437,21 +1437,25 @@ Return [] if nothing needs fixing.`;
             await ctx.sync();
 
             const isTitle = ss.phType === "title" || ss.phType === "ctrTitle";
-            const wrongFont = ss.current.fontName !== "(inherited)" && ss.current.fontName !== ss.masterTarget.fontName;
+            // Font is wrong if explicitly set to something other than master, OR if it's inherited but we should enforce master
+            const explicitWrongFont = ss.current.fontName !== "(inherited)" && ss.current.fontName !== ss.masterTarget.fontName;
+            const inheritedFont = ss.current.fontName === "(inherited)";
             const wrongSize = typeof ss.current.fontSize === "number" && ss.masterTarget.fontSize && Math.abs(ss.current.fontSize - ss.masterTarget.fontSize) > 2;
             const mixedSize = tr.font.size === null;
-            const isBold = tr.font.bold === true;
+            const isBold   = tr.font.bold   === true;
             const isItalic = tr.font.italic === true;
 
-            if (!isTitle && !wrongFont && !mixedSize && !isBold && !isItalic) continue;
+            const needsFontFix = explicitWrongFont || (inheritedFont && ss.masterTarget.fontName);
+            const needsSizeFix = wrongSize || mixedSize;
 
-            if (wrongFont) {
+            if (!needsFontFix && !needsSizeFix && !isBold && !isItalic) continue;
+
+            if (needsFontFix) {
               tr.font.name = ss.masterTarget.fontName;
-              tr.font.size = ss.masterTarget.fontSize;
-            } else if (wrongSize) {
+            }
+            if (needsSizeFix || needsFontFix) {
               tr.font.size = ss.masterTarget.fontSize;
             }
-            if (mixedSize) tr.font.size = ss.masterTarget.fontSize;
             if (isBold)   tr.font.bold   = false;
             if (isItalic) tr.font.italic = false;
             await ctx.sync();
@@ -1475,7 +1479,7 @@ Return [] if nothing needs fixing.`;
 
         for (const ss of pptxData.slideShapes) {
           if (!ss.masterTarget) continue;
-          const os = shapes.items.find(s => s.id === ss.id || s.name === ss.name);
+          const os = shapes.items.find(s => String(s.id) === String(ss.id));
           if (!os) continue;
           try {
             const tr = os.textFrame.textRange;
