@@ -1374,14 +1374,17 @@ async function callClaudeRaw(prompt, apiKey) {
 
             const isTitle = ss.phType === "title" || ss.phType === "ctrTitle";
             const wrongFont = ss.current.fontName !== "(inherited)" && ss.current.fontName !== ss.masterTarget.fontName;
+            const wrongSize = typeof ss.current.fontSize === "number" && ss.masterTarget.fontSize && Math.abs(ss.current.fontSize - ss.masterTarget.fontSize) > 2;
             const mixedSize = tr.font.size === null;
             const isBold = tr.font.bold === true;
             const isItalic = tr.font.italic === true;
 
             if (!isTitle && !wrongFont && !mixedSize && !isBold && !isItalic) continue;
 
-            if (isTitle || wrongFont) {
+            if (wrongFont) {
               tr.font.name = ss.masterTarget.fontName;
+              tr.font.size = ss.masterTarget.fontSize;
+            } else if (wrongSize) {
               tr.font.size = ss.masterTarget.fontSize;
             }
             if (mixedSize) tr.font.size = ss.masterTarget.fontSize;
@@ -1448,28 +1451,36 @@ async function callClaudeRaw(prompt, apiKey) {
         const SNAP = 0.1; // snap if edges differ by less than 0.1"
         const MAX_RATIO = 0.1; // only snap if move is ≤ 10% of width/height
 
-        const lefts  = nonTitleShapes.map(s => s.position.left);
-        const tops   = nonTitleShapes.map(s => s.position.top);
-        const rights = nonTitleShapes.map(s => s.position.left + s.position.width);
-        const bots   = nonTitleShapes.map(s => s.position.top  + s.position.height);
+        // Snapshot original positions — compare against these only, not mutated values
+        const origLefts  = nonTitleShapes.map(s => s.position.left);
+        const origTops   = nonTitleShapes.map(s => s.position.top);
+        const origRights = nonTitleShapes.map(s => s.position.left + s.position.width);
+        const origBots   = nonTitleShapes.map(s => s.position.top  + s.position.height);
 
         const snapFixes = [];
-        for (const s of nonTitleShapes) {
+        for (let i = 0; i < nonTitleShapes.length; i++) {
+          const s = nonTitleShapes[i];
           const pos = { ...s.position };
           let changed = false;
 
-          const nearLeft = lefts.find(l => l !== pos.left && Math.abs(l - pos.left) < SNAP && Math.abs(l - pos.left) <= pos.width * MAX_RATIO);
+          // Only snap to OTHER shapes' original edges (exclude self)
+          const otherLefts  = origLefts.filter((_, j) => j !== i);
+          const otherTops   = origTops.filter((_, j) => j !== i);
+          const otherRights = origRights.filter((_, j) => j !== i);
+          const otherBots   = origBots.filter((_, j) => j !== i);
+
+          const nearLeft = otherLefts.find(l => Math.abs(l - pos.left) > 0 && Math.abs(l - pos.left) < SNAP && Math.abs(l - pos.left) <= pos.width * MAX_RATIO);
           if (nearLeft != null) { pos.left = nearLeft; changed = true; }
 
-          const nearTop = tops.find(t => t !== pos.top && Math.abs(t - pos.top) < SNAP && Math.abs(t - pos.top) <= pos.height * MAX_RATIO);
+          const nearTop = otherTops.find(t => Math.abs(t - pos.top) > 0 && Math.abs(t - pos.top) < SNAP && Math.abs(t - pos.top) <= pos.height * MAX_RATIO);
           if (nearTop != null) { pos.top = nearTop; changed = true; }
 
-          const myRight = pos.left + pos.width;
-          const nearRight = rights.find(r => r !== myRight && Math.abs(r - myRight) < SNAP && Math.abs(r - myRight) <= pos.width * MAX_RATIO);
+          const myRight = origRights[i];
+          const nearRight = otherRights.find(r => Math.abs(r - myRight) > 0 && Math.abs(r - myRight) < SNAP && Math.abs(r - myRight) <= pos.width * MAX_RATIO);
           if (nearRight != null) { pos.width = nearRight - pos.left; changed = true; }
 
-          const myBot = pos.top + pos.height;
-          const nearBot = bots.find(b => b !== myBot && Math.abs(b - myBot) < SNAP && Math.abs(b - myBot) <= pos.height * MAX_RATIO);
+          const myBot = origBots[i];
+          const nearBot = otherBots.find(b => Math.abs(b - myBot) > 0 && Math.abs(b - myBot) < SNAP && Math.abs(b - myBot) <= pos.height * MAX_RATIO);
           if (nearBot != null) { pos.height = nearBot - pos.top; changed = true; }
 
           if (changed) snapFixes.push({
