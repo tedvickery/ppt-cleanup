@@ -1320,46 +1320,39 @@ async function callClaudeRaw(prompt, apiKey) {
       addLog(dupIndex === slideIndex ? "⚠ Running on original — use Ctrl+Z to undo" : `Duplicate at position ${dupIndex}`);
 
       const themeColors = pptxData.theme.colors;
+      const themeColorList = Object.values(themeColors).filter(v => v);
       let totalFixes = 0;
 
-      // ─── STEP 1: Snap title to master position ──────────────────────────────
+      // ─── STEP 1: Title — snap to master position and font ───────────────────
       const titleShape = pptxData.slideShapes.find(s => s.phType === "title" || s.phType === "ctrTitle");
       const titleMaster = pptxData.masterPlaceholders.find(p => p.type === "title" || p.type === "ctrTitle");
       const layoutTitlePos = pptxData.layoutPositions?.["title:0"];
       const targetTitlePos = layoutTitlePos || titleMaster?.position;
 
       if (titleShape && targetTitlePos) {
-        addLog("Step 1: Aligning title…");
-        await applyFixes(dupIndex, [{
-          shapeName: titleShape.name, shapeId: titleShape.id,
-          _slideShape: titleShape, shapeFill: titleShape.shapeFill || null,
-          position: targetTitlePos,
-          font: { name: titleShape.masterTarget?.fontName, bold: false, italic: false, color: titleShape.masterTarget?.color },
-        }], themeColors);
-        totalFixes++;
+        const cur = titleShape.position;
+        const posNeedsfix = cur && (
+          Math.abs(cur.left - targetTitlePos.left) > 0.05 ||
+          Math.abs(cur.top  - targetTitlePos.top)  > 0.05 ||
+          Math.abs(cur.width  - targetTitlePos.width)  > 0.05 ||
+          Math.abs(cur.height - targetTitlePos.height) > 0.05
+        );
+        const fontNeedsFix = titleShape.current.fontName !== "(inherited)" &&
+          titleShape.current.fontName !== titleShape.masterTarget?.fontName;
+        if (posNeedsfix || fontNeedsFix) {
+          addLog("Step 1: Title position & font…");
+          await applyFixes(dupIndex, [{
+            shapeName: titleShape.name, shapeId: titleShape.id,
+            _slideShape: titleShape, shapeFill: titleShape.shapeFill || null,
+            ...(posNeedsfix ? { position: targetTitlePos } : {}),
+            ...(fontNeedsFix ? { font: { name: titleShape.masterTarget?.fontName, bold: false, italic: false } } : {}),
+          }], themeColors);
+          totalFixes++;
+        }
       }
 
-      // ─── STEP 2: Fix fonts and font sizes ───────────────────────────────────
-      addLog("Step 2: Fixing fonts…");
-      const fontFixes = pptxData.slideShapes
-        .filter(s => s.masterTarget)
-        .map(s => {
-          const isTitle = s.phType === "title" || s.phType === "ctrTitle";
-          const wrongFont = s.current.fontName !== "(inherited)" && s.current.fontName !== s.masterTarget.fontName;
-          return {
-            shapeName: s.name, shapeId: s.id, _slideShape: s, shapeFill: s.shapeFill || null,
-            font: {
-              ...((isTitle || wrongFont) ? { name: s.masterTarget.fontName, size: s.masterTarget.fontSize } : {}),
-              bold: false, italic: false, color: s.masterTarget.color,
-            },
-          };
-        });
-      if (fontFixes.length > 0) {
-        await applyFixes(dupIndex, fontFixes, themeColors);
-        totalFixes += fontFixes.length;
-      }
-
-      // Normalise mixed font sizes within text boxes
+      // ─── STEP 2: Fonts — correct font name, no bold/italic unless intended ──
+      addLog("Step 2: Fonts…");
       await PowerPoint.run(async (ctx) => {
         const slides = ctx.presentation.slides;
         slides.load("items");
@@ -1368,103 +1361,139 @@ async function callClaudeRaw(prompt, apiKey) {
         const shapes = slide.shapes;
         shapes.load("items");
         await ctx.sync();
-        for (const shape of shapes.items) shape.load(["id", "name"]);
+        for (const s of shapes.items) s.load(["id", "name"]);
         await ctx.sync();
-        for (const slideShape of pptxData.slideShapes) {
-          if (!slideShape.masterTarget?.fontSize) continue;
-          const officeShape = shapes.items.find(s => s.id === slideShape.id || s.name === slideShape.name);
-          if (!officeShape) continue;
+
+        for (const ss of pptxData.slideShapes) {
+          if (!ss.masterTarget) continue;
+          const os = shapes.items.find(s => s.id === ss.id || s.name === ss.name);
+          if (!os) continue;
           try {
-            const tr = officeShape.textFrame.textRange;
-            tr.font.load("size");
+            const tr = os.textFrame.textRange;
+            tr.font.load(["name", "size", "bold", "italic"]);
             await ctx.sync();
-            if (tr.font.size === null) {
-              tr.font.size = slideShape.masterTarget.fontSize;
-              await ctx.sync();
-              addLog(`Normalised mixed sizes in "${slideShape.name}"`);
-              totalFixes++;
+
+            const isTitle = ss.phType === "title" || ss.phType === "ctrTitle";
+            const wrongFont = ss.current.fontName !== "(inherited)" && ss.current.fontName !== ss.masterTarget.fontName;
+            const mixedSize = tr.font.size === null;
+            const isBold = tr.font.bold === true;
+            const isItalic = tr.font.italic === true;
+
+            if (!isTitle && !wrongFont && !mixedSize && !isBold && !isItalic) continue;
+
+            if (isTitle || wrongFont) {
+              tr.font.name = ss.masterTarget.fontName;
+              tr.font.size = ss.masterTarget.fontSize;
             }
+            if (mixedSize) tr.font.size = ss.masterTarget.fontSize;
+            if (isBold)   tr.font.bold   = false;
+            if (isItalic) tr.font.italic = false;
+            await ctx.sync();
+            totalFixes++;
           } catch (e) { /* no text */ }
         }
       });
 
-      // ─── STEP 3: AI look-and-feel pass — colours, fills, layout ────────────
-      addLog("Step 3: AI styling & layout…");
+      // ─── STEP 3: Colours — snap text to theme colour only if wrong ──────────
+      addLog("Step 3: Colours…");
+      await PowerPoint.run(async (ctx) => {
+        const slides = ctx.presentation.slides;
+        slides.load("items");
+        await ctx.sync();
+        const slide = slides.items[dupIndex - 1];
+        const shapes = slide.shapes;
+        shapes.load("items");
+        await ctx.sync();
+        for (const s of shapes.items) s.load(["id", "name"]);
+        await ctx.sync();
 
-      // Build a single comprehensive prompt
-      const nonTitleShapes = pptxData.slideShapes.filter(s => s.phType !== "title" && s.phType !== "ctrTitle");
+        for (const ss of pptxData.slideShapes) {
+          if (!ss.masterTarget) continue;
+          const os = shapes.items.find(s => s.id === ss.id || s.name === ss.name);
+          if (!os) continue;
+          try {
+            const tr = os.textFrame.textRange;
+            tr.font.load("color");
+            await ctx.sync();
+
+            const cur = ss.current.color;
+            if (!cur || cur === "(inherited)") continue;
+
+            // Check if already a theme colour
+            const isThemeColor = themeColorList.some(c => c.toLowerCase() === cur.toLowerCase());
+            if (isThemeColor) continue;
+
+            const snapped = snapToThemeColor(cur, themeColors);
+            if (snapped.toLowerCase() === cur.toLowerCase()) continue;
+
+            // Check contrast against fill
+            let textColor = snapped;
+            const fill = ss.shapeFill;
+            if (fill && fill !== "none" && !fill.startsWith("theme:")) {
+              const fillLum = hexLuminance(fill);
+              const textLum = hexLuminance(snapped);
+              const contrast = (Math.max(fillLum, textLum) + 0.05) / (Math.min(fillLum, textLum) + 0.05);
+              if (contrast < 3) textColor = fillLum > 0.179 ? "#000000" : "#FFFFFF";
+            }
+            tr.font.color = textColor.replace("#", "");
+            await ctx.sync();
+            totalFixes++;
+          } catch (e) { /* no text */ }
+        }
+      });
+
+      // ─── STEP 4: Alignment — AI pass for tightening only ────────────────────
+      addLog("Step 4: Alignment…");
+      const nonTitleShapes = pptxData.slideShapes.filter(s => s.phType !== "title" && s.phType !== "ctrTitle" && s.position);
+      const titleBottom = targetTitlePos ? (targetTitlePos.top + targetTitlePos.height + 0.15).toFixed(2) : "1.50";
       const leftMargin  = targetTitlePos ? targetTitlePos.left.toFixed(2) : "0.50";
       const rightEdge   = targetTitlePos ? (targetTitlePos.left + targetTitlePos.width).toFixed(2) : "9.50";
-      const titleBottom = targetTitlePos ? (targetTitlePos.top + targetTitlePos.height + 0.15).toFixed(2) : "1.50";
-      const themeColorList = Object.values(pptxData.theme.colors).filter(v => v).join("  ");
 
-      // Detect overlaps and off-slide shapes
-      const overlapWarnings = [];
+      // Detect problems
+      const problems = [];
       for (let i = 0; i < nonTitleShapes.length; i++) {
         for (let j = i + 1; j < nonTitleShapes.length; j++) {
           const a = nonTitleShapes[i].position, b = nonTitleShapes[j].position;
-          if (!a || !b) continue;
           const overX = a.left < b.left + b.width && a.left + a.width > b.left;
           const overY = a.top  < b.top  + b.height && a.top  + a.height > b.top;
-          if (overX && overY) overlapWarnings.push(`⚠ #${i} "${nonTitleShapes[i].name}" and #${j} "${nonTitleShapes[j].name}" overlap`);
+          if (overX && overY) problems.push(`#${i} and #${j} overlap`);
         }
         const s = nonTitleShapes[i];
-        if (s.position && s.position.left + s.position.width > 10.1)
-          overlapWarnings.push(`⚠ #${i} "${s.name}" extends off the right edge of the slide`);
+        if (s.position.left + s.position.width > 10.1) problems.push(`#${i} extends off right edge`);
+        if (s.position.top < parseFloat(titleBottom))   problems.push(`#${i} overlaps title area`);
       }
 
-      const aiPrompt = `You are a PowerPoint formatting expert. Fix this slide's colours and layout to match the master theme.
+      const alignPrompt = `You are fixing alignment on a PowerPoint slide. The slide is 10"×7.5".
+Title occupies: left=${leftMargin}" right=${rightEdge}" — content must stay below top=${titleBottom}"
 
-━━━ MASTER THEME ━━━
-Heading font: "${pptxData.theme.fonts?.heading}"   Body font: "${pptxData.theme.fonts?.body}"
-Theme colours: ${themeColorList}
+SHAPES (do not move unless clearly needed):
+${nonTitleShapes.map((s, i) => `#${i} "${s.name}" pos=(${s.position.left.toFixed(2)}",${s.position.top.toFixed(2)}") size=(${s.position.width.toFixed(2)}"×${s.position.height.toFixed(2)}")`).join("\n")}
 
-━━━ SLIDE LAYOUT ━━━
-Slide: 10"×7.5"   Left margin: ${leftMargin}"   Right edge: ${rightEdge}"   Content area: top=${titleBottom}" to bottom=7.3"
+${problems.length > 0 ? `PROBLEMS TO FIX:\n${problems.map(p => `- ${p}`).join("\n")}\n` : ""}
+RULES — only suggest position changes when:
+- Two or more shapes share the same intended row/column but their edges differ by a small amount (< 0.3") — snap them to match
+- A row/column of similar shapes has uneven gaps — equalise
+- A shape overlaps another, goes off-slide, or is above top=${titleBottom}" — fix it
+- Do NOT move shapes that look intentionally placed
 
-━━━ SHAPES ━━━
-${nonTitleShapes.map((s, i) => `#${i} "${s.name}" [${s.phType}] pos=(${s.position?.left?.toFixed(2)}",${s.position?.top?.toFixed(2)}") size=(${s.position?.width?.toFixed(2)}"×${s.position?.height?.toFixed(2)}") fill=${s.shapeFill||"none"} border=${s.shapeBorder||"none"}
-    text: "${s.textContent?.slice(0,120)}"
-    font: ${s.current.fontName}  color: ${s.current.color}`).join("\n\n")}
+Return ONLY a JSON array: [{"shapeIndex":N,"position":{"left":X,"top":Y,"width":W,"height":H}}]
+Return [] if no alignment fixes needed.`;
 
-${overlapWarnings.length > 0 ? `━━━ PROBLEMS DETECTED ━━━\n${overlapWarnings.join("\n")}\n` : ""}
-━━━ RULES ━━━
-1. COLOURS — for each shape, fix textColor, fill, and border only if they don't already match a theme colour. Snap to the nearest/most appropriate theme colour. Consider look and feel — e.g. a dark fill might suit an accent box, light fill a content box.
-
-2. LAYOUT — only suggest position/size changes when:
-   - Shapes are clearly meant to be aligned (same column or row) but have slightly different left/top edges — snap them to match
-   - Shapes are clearly meant to be equally spaced (a row or column of boxes) but spacing is uneven — equalise the gaps
-   - A shape overlaps another or extends off the slide — fix it
-   - Do NOT reposition shapes that look intentionally placed
-
-3. CONSTRAINTS
-   - All colours must be from theme: ${themeColorList}
-   - No shape may go above top=${titleBottom}" or outside the slide
-   - Shapes must not overlap each other
-   - Preserve the slide's overall look and feel
-
-Return ONLY a JSON array. Each item: {"shapeIndex":N, "textColor":"#hex", "fill":"#hex or none", "border":"#hex or none", "position":{left,top,width,height}}
-Omit any field that doesn't need changing. Return [] if nothing needs fixing.`;
-
-      let enrichedLayoutFixes = [];
-      const aiResponse = await callClaudeRaw(aiPrompt, apiKey);
-      if (aiResponse.length > 0) {
-        enrichedLayoutFixes = aiResponse.map(fix => {
-          const shape = fix.shapeIndex !== undefined
-            ? nonTitleShapes[fix.shapeIndex]
-            : pptxData.slideShapes.find(s => s.name === fix.shapeName);
-          const pos = fix.position ? { ...fix.position } : null;
-          if (pos) {
-            if (!pos.width)  pos.width  = shape?.position?.width  || 5;
-            if (!pos.height) pos.height = shape?.position?.height || 1;
-            pos.left = Math.max(0, Math.min(pos.left, 10 - pos.width));
-            pos.top  = Math.max(0, Math.min(pos.top,  7.5 - pos.height));
-          }
-          return { ...fix, position: pos, shapeName: shape?.name, shapeId: shape?.id,
-                   _slideShape: shape || null, shapeFill: shape?.shapeFill || null, shapeBorder: shape?.shapeBorder || null };
-        });
-        await applyFixes(dupIndex, enrichedLayoutFixes, themeColors);
-        totalFixes += aiResponse.length;
+      const alignFixes = await callClaudeRaw(alignPrompt, apiKey);
+      if (alignFixes.length > 0) {
+        const enriched = alignFixes.map(fix => {
+          const shape = nonTitleShapes[fix.shapeIndex];
+          if (!shape) return null;
+          const pos = { ...fix.position };
+          pos.left = Math.max(0, Math.min(pos.left, 10 - (pos.width || shape.position.width)));
+          pos.top  = Math.max(parseFloat(titleBottom), Math.min(pos.top, 7.5 - (pos.height || shape.position.height)));
+          if (!pos.width)  pos.width  = shape.position.width;
+          if (!pos.height) pos.height = shape.position.height;
+          return { shapeName: shape.name, shapeId: shape.id, _slideShape: shape,
+                   shapeFill: shape.shapeFill || null, position: pos };
+        }).filter(Boolean);
+        await applyFixes(dupIndex, enriched, themeColors);
+        totalFixes += enriched.length;
       }
 
       // ─── ENFORCE: title position always wins ────────────────────────────────
@@ -1476,7 +1505,7 @@ Omit any field that doesn't need changing. Return [] if nothing needs fixing.`;
         }], themeColors);
       }
 
-      // ─── SAFETY NET: fix any remaining overlaps after Claude's pass ──────────
+      // ─── SAFETY NET: push any remaining overlaps apart ───────────────────────
       await PowerPoint.run(async (ctx) => {
         const slides = ctx.presentation.slides;
         slides.load("items");
@@ -1485,14 +1514,11 @@ Omit any field that doesn't need changing. Return [] if nothing needs fixing.`;
         const shapes = slide.shapes;
         shapes.load("items");
         await ctx.sync();
-        for (const s of shapes.items) s.load(["id", "name", "left", "top", "width", "height", "type"]);
+        for (const s of shapes.items) s.load(["id", "name", "left", "top", "width", "height"]);
         await ctx.sync();
 
-        // Collect actual current positions from Office (post-Claude)
         const live = shapes.items
-          .filter(s => s.type === PowerPoint.ShapeType.textBox || s.type === undefined || [1,14,17].includes(s.type))
-          .map(s => ({ id: s.id, name: s.name, shape: s,
-            left: s.left / 72, top: s.top / 72, width: s.width / 72, height: s.height / 72 }))
+          .map(s => ({ s, left: s.left/72, top: s.top/72, width: s.width/72, height: s.height/72 }))
           .filter(s => s.width > 0.1 && s.height > 0.1);
 
         let changed = true;
@@ -1504,13 +1530,12 @@ Omit any field that doesn't need changing. Return [] if nothing needs fixing.`;
               const overX = a.left < b.left + b.width - 0.05 && a.left + a.width > b.left + 0.05;
               const overY = a.top  < b.top  + b.height - 0.05 && a.top  + a.height > b.top  + 0.05;
               if (!overX || !overY) continue;
-              // Push the lower shape down by the overlap amount
               const lower = a.top >= b.top ? a : b;
               const upper = a.top >= b.top ? b : a;
               const newTop = upper.top + upper.height + 0.1;
               if (newTop + lower.height <= 7.5) {
                 lower.top = newTop;
-                lower.shape.top = newTop * 72;
+                lower.s.top = newTop * 72;
                 changed = true;
               }
             }
@@ -1518,6 +1543,9 @@ Omit any field that doesn't need changing. Return [] if nothing needs fixing.`;
         }
         await ctx.sync();
       });
+
+      addLog(`✓ Done — ${totalFixes} fix${totalFixes !== 1 ? "es" : ""} applied`);
+      setFixCount(totalFixes);
       setStatus("done");
     } catch (err) {
       setError(err.message);
