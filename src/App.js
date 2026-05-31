@@ -1330,7 +1330,64 @@ async function callClaudeRaw(prompt, apiKey) {
       const themeColorList = Object.values(themeColors).filter(v => v);
       let totalFixes = 0;
 
-      // ─── STEP 1: Title — snap to master position and font ───────────────────
+      // ─── STEP 1: AI overlap & layout check ──────────────────────────────────
+      const allContentShapes = pptxData.slideShapes.filter(s => s.position);
+      if (allContentShapes.length > 1) {
+        addLog("Step 1: Checking layout…");
+        const slideW = 13.33, slideH = 7.5;
+        const overlapPairs = [];
+        for (let i = 0; i < allContentShapes.length; i++) {
+          for (let j = i + 1; j < allContentShapes.length; j++) {
+            const a = allContentShapes[i].position, b = allContentShapes[j].position;
+            if (a.left < b.left + b.width && a.left + a.width > b.left &&
+                a.top  < b.top  + b.height && a.top  + a.height > b.top) {
+              overlapPairs.push(`"${allContentShapes[i].name}" (id:${allContentShapes[i].id}) overlaps "${allContentShapes[j].name}" (id:${allContentShapes[j].id})`);
+            }
+          }
+        }
+        const offSlide = allContentShapes.filter(s =>
+          s.position.left + s.position.width > slideW + 0.1 ||
+          s.position.top  + s.position.height > slideH + 0.1 ||
+          s.position.left < -0.1 || s.position.top < -0.1
+        );
+
+        if (overlapPairs.length > 0 || offSlide.length > 0) {
+          const overlapPrompt = `You are fixing layout problems on a PowerPoint slide (${slideW}"×${slideH}").
+
+PROBLEMS:
+${overlapPairs.length > 0 ? `Overlapping shapes:\n${overlapPairs.map(p => `- ${p}`).join("\n")}` : ""}
+${offSlide.length > 0 ? `Off-slide shapes:\n${offSlide.map(s => `- "${s.name}" (id:${s.id}) at left=${s.position.left.toFixed(2)}" top=${s.position.top.toFixed(2)}" w=${s.position.width.toFixed(2)}" h=${s.position.height.toFixed(2)}"`).join("\n")}` : ""}
+
+ALL SHAPES (id, name, position):
+${allContentShapes.map(s => `id:${s.id} "${s.name}" left=${s.position.left.toFixed(2)}" top=${s.position.top.toFixed(2)}" w=${s.position.width.toFixed(2)}" h=${s.position.height.toFixed(2)}" text="${(s.textContent||"").slice(0,40)}"`).join("\n")}
+
+RULES:
+- Only fix overlapping or off-slide shapes — do not move anything else
+- Make the minimum move needed to resolve each overlap
+- Keep shapes within the slide bounds (0–${slideW}" × 0–${slideH}")
+- Prefer moving/resizing the smaller or less important shape
+- Do NOT touch shapes that are not involved in any problem
+
+Return ONLY a JSON array: [{"shapeId":"ID","position":{"left":X,"top":Y,"width":W,"height":H}}]
+Return [] if nothing needs fixing.`;
+
+          const rawFixes = await callClaudeRaw(overlapPrompt, apiKey);
+          if (rawFixes.length > 0) {
+            const enriched = rawFixes.map(fix => {
+              const shape = allContentShapes.find(s => String(s.id) === String(fix.shapeId));
+              if (!shape) return null;
+              return { shapeName: shape.name, shapeId: shape.id, _slideShape: shape,
+                       shapeFill: shape.shapeFill || null, position: fix.position };
+            }).filter(Boolean);
+            if (enriched.length > 0) {
+              await applyFixes(dupIndex, enriched, themeColors);
+              totalFixes += enriched.length;
+            }
+          }
+        }
+      }
+
+      // ─── STEP 2: Title — snap to master position and font ───────────────────
       const titleShape = pptxData.slideShapes.find(s => s.phType === "title" || s.phType === "ctrTitle");
       const titleMaster = pptxData.masterPlaceholders.find(p => p.type === "title" || p.type === "ctrTitle");
       const layoutTitlePos = pptxData.layoutPositions?.["title:0"];
@@ -1346,7 +1403,7 @@ async function callClaudeRaw(prompt, apiKey) {
         const fontNeedsFix = titleShape.current.fontName !== "(inherited)" &&
           titleShape.current.fontName !== titleShape.masterTarget?.fontName;
         if (posNeedsfix || fontNeedsFix) {
-          addLog("Step 1: Title position & font…");
+          addLog("Step 2: Title position & font…");
           await applyFixes(dupIndex, [{
             shapeName: titleShape.name, shapeId: titleShape.id,
             _slideShape: titleShape, shapeFill: titleShape.shapeFill || null,
@@ -1357,8 +1414,8 @@ async function callClaudeRaw(prompt, apiKey) {
         }
       }
 
-      // ─── STEP 2: Fonts — correct font name, no bold/italic unless intended ──
-      addLog("Step 2: Fonts…");
+      // ─── STEP 3: Fonts — correct font name, no bold/italic unless intended ──
+      addLog("Step 3: Fonts…");
       await PowerPoint.run(async (ctx) => {
         const slides = ctx.presentation.slides;
         slides.load("items");
@@ -1403,7 +1460,7 @@ async function callClaudeRaw(prompt, apiKey) {
         }
       });
 
-      // ─── STEP 3: Colours — snap text to theme colour only if wrong ──────────
+      // ─── STEP 4: Colours — snap text to theme colour only if wrong ──────────
       addLog("Step 3: Colours…");
       await PowerPoint.run(async (ctx) => {
         const slides = ctx.presentation.slides;
@@ -1451,7 +1508,7 @@ async function callClaudeRaw(prompt, apiKey) {
         }
       });
 
-      // ─── STEP 4: Grid-based alignment ───────────────────────────────────────
+      // ─── STEP 5: Grid-based alignment ───────────────────────────────────────
       // Divide the content area into a 100×100 grid and snap shapes to it
       {
         const nonTitleShapes = pptxData.slideShapes.filter(s =>
@@ -1469,9 +1526,12 @@ async function callClaudeRaw(prompt, apiKey) {
           const areaW = areaRight - areaLeft;
           const areaH = areaBottom - areaTop;
 
-          // Snap a value to nearest grid unit (grid has 100 cells in each direction)
-          const snapX = v => areaLeft + Math.round((v - areaLeft) / areaW * 100) / 100 * areaW;
-          const snapY = v => areaTop  + Math.round((v - areaTop)  / areaH * 100) / 100 * areaH;
+          // Grid resolution = 10 × number of shapes on slide
+          const gridCells = nonTitleShapes.length * 10;
+
+          // Snap a value to nearest grid unit
+          const snapX = v => areaLeft + Math.round((v - areaLeft) / areaW * gridCells) / gridCells * areaW;
+          const snapY = v => areaTop  + Math.round((v - areaTop)  / areaH * gridCells) / gridCells * areaH;
 
           const gridFixes = [];
           for (const s of nonTitleShapes) {
@@ -1488,9 +1548,9 @@ async function callClaudeRaw(prompt, apiKey) {
             const widthDiff  = Math.abs(snappedWidth  - orig.width);
             const heightDiff = Math.abs(snappedHeight - orig.height);
 
-            // Only apply if the snap moves things by a small amount (≤ 1 grid cell = 1%)
-            const maxMoveX = areaW * 0.01;
-            const maxMoveY = areaH * 0.01;
+            // Only apply if the snap moves things by ≤ 1 grid cell
+            const maxMoveX = areaW / gridCells;
+            const maxMoveY = areaH / gridCells;
             const changed =
               (leftDiff   > 0.001 && leftDiff   <= maxMoveX) ||
               (topDiff    > 0.001 && topDiff    <= maxMoveY) ||
@@ -1512,7 +1572,7 @@ async function callClaudeRaw(prompt, apiKey) {
           }
 
           if (gridFixes.length > 0) {
-            addLog(`Step 4: Grid-snapping ${gridFixes.length} shape(s)…`);
+            addLog(`Step 5: Grid-snapping ${gridFixes.length} shape(s) (${gridCells}×${gridCells} grid)…`);
             await applyFixes(dupIndex, gridFixes, themeColors);
             totalFixes += gridFixes.length;
           }
