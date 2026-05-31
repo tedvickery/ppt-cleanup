@@ -1631,6 +1631,72 @@ async function callClaudeRaw(prompt, apiKey) {
             }
           }
 
+          // Distribute groups of 3+ similarly-sized shapes evenly
+          // Find groups: shapes within 10% of each other in both dimensions
+          const distributed = new Set();
+          for (let i = 0; i < nonTitleShapes.length; i++) {
+            if (distributed.has(i)) continue;
+            const group = [i];
+            const a = positions[i];
+            for (let j = i + 1; j < nonTitleShapes.length; j++) {
+              const b = positions[j];
+              const wSim = Math.abs(a.width  - b.width)  / a.width  <= 0.10;
+              const hSim = Math.abs(a.height - b.height) / a.height <= 0.10;
+              if (wSim && hSim) group.push(j);
+            }
+            if (group.length < 3) continue;
+            group.forEach(idx => distributed.add(idx));
+
+            const gPositions = group.map(idx => positions[idx]);
+
+            // Check if they are horizontally aligned (tops within 10% of height)
+            const topsAligned = gPositions.every(p =>
+              Math.abs(p.top - gPositions[0].top) / gPositions[0].height <= 0.10
+            );
+            // Check if they are vertically aligned (lefts within 10% of width)
+            const leftsAligned = gPositions.every(p =>
+              Math.abs(p.left - gPositions[0].left) / gPositions[0].width <= 0.10
+            );
+
+            if (topsAligned) {
+              // Distribute horizontally: sort by left, space evenly
+              const sorted = [...group].sort((x, y) => positions[x].left - positions[y].left);
+              const leftmost  = positions[sorted[0]].left;
+              const rightmost = positions[sorted[sorted.length-1]].left + positions[sorted[sorted.length-1]].width;
+              const totalWidth = sorted.reduce((sum, idx) => sum + positions[idx].width, 0);
+              const gap = (rightmost - leftmost - totalWidth) / (sorted.length - 1);
+              let cursor = leftmost;
+              for (const idx of sorted) {
+                if (Math.abs(positions[idx].left - cursor) > 0.001) {
+                  positions[idx].left = cursor;
+                  const existing = gridFixes.find(f => String(f.shapeId) === String(nonTitleShapes[idx].id));
+                  if (existing) existing.position.left = cursor;
+                  else gridFixes.push({ shapeName: nonTitleShapes[idx].name, shapeId: nonTitleShapes[idx].id, _slideShape: nonTitleShapes[idx], shapeFill: nonTitleShapes[idx].shapeFill||null, position: { ...positions[idx] } });
+                }
+                cursor += positions[idx].width + gap;
+              }
+            }
+
+            if (leftsAligned) {
+              // Distribute vertically: sort by top, space evenly
+              const sorted = [...group].sort((x, y) => positions[x].top - positions[y].top);
+              const topmost    = positions[sorted[0]].top;
+              const bottommost = positions[sorted[sorted.length-1]].top + positions[sorted[sorted.length-1]].height;
+              const totalHeight = sorted.reduce((sum, idx) => sum + positions[idx].height, 0);
+              const gap = (bottommost - topmost - totalHeight) / (sorted.length - 1);
+              let cursor = topmost;
+              for (const idx of sorted) {
+                if (Math.abs(positions[idx].top - cursor) > 0.001) {
+                  positions[idx].top = cursor;
+                  const existing = gridFixes.find(f => String(f.shapeId) === String(nonTitleShapes[idx].id));
+                  if (existing) existing.position.top = cursor;
+                  else gridFixes.push({ shapeName: nonTitleShapes[idx].name, shapeId: nonTitleShapes[idx].id, _slideShape: nonTitleShapes[idx], shapeFill: nonTitleShapes[idx].shapeFill||null, position: { ...positions[idx] } });
+                }
+                cursor += positions[idx].height + gap;
+              }
+            }
+          }
+
           // Resolve overlaps: push overlapping shapes apart
           for (let i = 0; i < nonTitleShapes.length; i++) {
             for (let j = i + 1; j < nonTitleShapes.length; j++) {
