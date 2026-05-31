@@ -1442,69 +1442,47 @@ async function callClaudeRaw(prompt, apiKey) {
       });
 
       // ─── STEP 4: Alignment — AI pass for tightening only ────────────────────
-      addLog("Step 4: Alignment…");
+      // ─── STEP 4: Alignment — snap nearly-aligned edges (code only, no AI) ────
       const nonTitleShapes = pptxData.slideShapes.filter(s => s.phType !== "title" && s.phType !== "ctrTitle" && s.position);
-      const titleBottom = targetTitlePos ? (targetTitlePos.top + targetTitlePos.height + 0.15).toFixed(2) : "1.50";
-      const leftMargin  = targetTitlePos ? targetTitlePos.left.toFixed(2) : "0.50";
-      const rightEdge   = targetTitlePos ? (targetTitlePos.left + targetTitlePos.width).toFixed(2) : "9.50";
+      if (nonTitleShapes.length > 1) {
+        const SNAP = 0.1; // snap if edges differ by less than 0.1"
+        const MAX_RATIO = 0.1; // only snap if move is ≤ 10% of width/height
 
-      // Detect problems
-      const problems = [];
-      for (let i = 0; i < nonTitleShapes.length; i++) {
-        for (let j = i + 1; j < nonTitleShapes.length; j++) {
-          const a = nonTitleShapes[i].position, b = nonTitleShapes[j].position;
-          const overX = a.left < b.left + b.width && a.left + a.width > b.left;
-          const overY = a.top  < b.top  + b.height && a.top  + a.height > b.top;
-          if (overX && overY) problems.push(`#${i} and #${j} overlap`);
+        const lefts  = nonTitleShapes.map(s => s.position.left);
+        const tops   = nonTitleShapes.map(s => s.position.top);
+        const rights = nonTitleShapes.map(s => s.position.left + s.position.width);
+        const bots   = nonTitleShapes.map(s => s.position.top  + s.position.height);
+
+        const snapFixes = [];
+        for (const s of nonTitleShapes) {
+          const pos = { ...s.position };
+          let changed = false;
+
+          const nearLeft = lefts.find(l => l !== pos.left && Math.abs(l - pos.left) < SNAP && Math.abs(l - pos.left) <= pos.width * MAX_RATIO);
+          if (nearLeft != null) { pos.left = nearLeft; changed = true; }
+
+          const nearTop = tops.find(t => t !== pos.top && Math.abs(t - pos.top) < SNAP && Math.abs(t - pos.top) <= pos.height * MAX_RATIO);
+          if (nearTop != null) { pos.top = nearTop; changed = true; }
+
+          const myRight = pos.left + pos.width;
+          const nearRight = rights.find(r => r !== myRight && Math.abs(r - myRight) < SNAP && Math.abs(r - myRight) <= pos.width * MAX_RATIO);
+          if (nearRight != null) { pos.width = nearRight - pos.left; changed = true; }
+
+          const myBot = pos.top + pos.height;
+          const nearBot = bots.find(b => b !== myBot && Math.abs(b - myBot) < SNAP && Math.abs(b - myBot) <= pos.height * MAX_RATIO);
+          if (nearBot != null) { pos.height = nearBot - pos.top; changed = true; }
+
+          if (changed) snapFixes.push({
+            shapeName: s.name, shapeId: s.id, _slideShape: s,
+            shapeFill: s.shapeFill || null, position: pos,
+          });
         }
-        const s = nonTitleShapes[i];
-        if (s.position.left + s.position.width > 10.1) problems.push(`#${i} extends off right edge`);
-        if (s.position.top < parseFloat(titleBottom))   problems.push(`#${i} overlaps title area`);
-      }
 
-      const alignPrompt = `You are fixing alignment on a PowerPoint slide. The slide is 10"×7.5".
-Title occupies: left=${leftMargin}" right=${rightEdge}" — content must stay below top=${titleBottom}"
-
-FIXED (do not move — title is locked to master):
-${titleShape && targetTitlePos ? `  TITLE "${titleShape.name}" pos=(${targetTitlePos.left.toFixed(2)}",${targetTitlePos.top.toFixed(2)}") size=(${targetTitlePos.width.toFixed(2)}"×${targetTitlePos.height.toFixed(2)}")` : "  (no title)"}
-
-SHAPES (adjust only when clearly needed — shapeIndex refers to this list):
-${nonTitleShapes.map((s, i) => {
-  const charsPerLine = Math.floor((s.position.width * 96) / ((s.current.fontSize || s.masterTarget?.fontSize || 12) * 0.6));
-  const lines = Math.ceil((s.textContent?.length || 0) / Math.max(charsPerLine, 1));
-  const lineHeight = (s.current.fontSize || s.masterTarget?.fontSize || 12) * 1.4 / 72;
-  const estHeight = lines * lineHeight;
-  const overflow = estHeight > s.position.height + 0.1;
-  return `#${i} "${s.name}" pos=(${s.position.left.toFixed(2)}",${s.position.top.toFixed(2)}") size=(${s.position.width.toFixed(2)}"×${s.position.height.toFixed(2)}") fontSize=${s.current.fontSize||'inherited'}pt${overflow ? ` ⚠ TEXT MAY OVERFLOW (est. ${estHeight.toFixed(2)}" needed, ${s.position.height.toFixed(2)}" available — shrink font or increase height)` : ''}`;
-}).join("\n")}
-
-${problems.length > 0 ? `PROBLEMS TO FIX:\n${problems.map(p => `- ${p}`).join("\n")}\n` : ""}
-RULES — only suggest position changes when:
-- Two or more shapes share the same intended row/column but their edges differ by a small amount (< 0.3") — snap them to match
-- A row/column of similar shapes has uneven gaps — equalise
-- A shape overlaps another, goes off-slide, or is above top=${titleBottom}" — fix it
-- If text overflows (marked ⚠), either reduce fontSize or increase box height to fit — prefer font reduction for small overflows, height increase for large ones
-- Do NOT move shapes that look intentionally placed
-
-Return ONLY a JSON array: [{"shapeIndex":N,"position":{"left":X,"top":Y,"width":W,"height":H},"fontSize":N}]
-Omit position if unchanged, omit fontSize if unchanged. Return [] if no fixes needed.`;
-
-      const alignFixes = await callClaudeRaw(alignPrompt, apiKey);
-      if (alignFixes.length > 0) {
-        const enriched = alignFixes.map(fix => {
-          const shape = nonTitleShapes[fix.shapeIndex];
-          if (!shape) return null;
-          const pos = { ...fix.position };
-          pos.left = Math.max(0, Math.min(pos.left, 10 - (pos.width || shape.position.width)));
-          pos.top  = Math.max(parseFloat(titleBottom), Math.min(pos.top, 7.5 - (pos.height || shape.position.height)));
-          if (!pos.width)  pos.width  = shape.position.width;
-          if (!pos.height) pos.height = shape.position.height;
-          return { shapeName: shape.name, shapeId: shape.id, _slideShape: shape,
-                   shapeFill: shape.shapeFill || null, position: pos,
-                   ...(fix.fontSize ? { font: { size: fix.fontSize } } : {}) };
-        }).filter(Boolean);
-        await applyFixes(dupIndex, enriched, themeColors);
-        totalFixes += enriched.length;
+        if (snapFixes.length > 0) {
+          addLog(`Step 4: Snapping ${snapFixes.length} shape(s) to align…`);
+          await applyFixes(dupIndex, snapFixes, themeColors);
+          totalFixes += snapFixes.length;
+        }
       }
 
       // ─── ENFORCE: title position always wins ────────────────────────────────
