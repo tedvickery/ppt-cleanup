@@ -1569,18 +1569,47 @@ Return [] if nothing needs fixing.`;
           const areaW = areaRight - areaLeft;
           const areaH = areaBottom - areaTop;
 
-          // Grid resolution = 10 × number of shapes on slide
-          const gridCells = nonTitleShapes.length * 10;
+          // Grid: 5×N capped at 100
+          const gridCells = Math.min(nonTitleShapes.length * 5, 100);
 
           // Snap a value to nearest grid unit
           const snapX = v => areaLeft + Math.round((v - areaLeft) / areaW * gridCells) / gridCells * areaW;
           const snapY = v => areaTop  + Math.round((v - areaTop)  / areaH * gridCells) / gridCells * areaH;
 
+          // Alignment anchors: left, centre, right horizontally; top, middle, bottom vertically
+          const alignAnchorsX = [areaLeft, areaLeft + areaW / 2, areaRight];
+          const alignAnchorsY = [areaTop,  areaTop  + areaH / 2, areaBottom];
+          const maxAlignMoveX = areaW * 0.20;
+          const maxAlignMoveY = areaH * 0.20;
+
+          // Snap an edge to nearest alignment anchor if within 20% of content area
+          const snapToAlignX = (v, w) => {
+            // Check left edge vs left/centre/right anchors, and right edge vs anchors
+            for (const anchor of alignAnchorsX) {
+              if (Math.abs(v - anchor) <= maxAlignMoveX) return anchor;
+              if (Math.abs(v + w - anchor) <= maxAlignMoveX) return anchor - w;
+            }
+            return null;
+          };
+          const snapToAlignY = (v, h) => {
+            for (const anchor of alignAnchorsY) {
+              if (Math.abs(v - anchor) <= maxAlignMoveY) return anchor;
+              if (Math.abs(v + h - anchor) <= maxAlignMoveY) return anchor - h;
+            }
+            return null;
+          };
+
           const gridFixes = [];
           for (const s of nonTitleShapes) {
             const orig = s.position;
-            const snappedLeft   = snapX(orig.left);
-            const snappedTop    = snapY(orig.top);
+
+            // First try alignment snap (higher priority, larger threshold)
+            const alignLeft = snapToAlignX(orig.left, orig.width);
+            const alignTop  = snapToAlignY(orig.top,  orig.height);
+
+            // Then fall back to grid snap for anything not alignment-snapped
+            const snappedLeft   = alignLeft  !== null ? alignLeft  : snapX(orig.left);
+            const snappedTop    = alignTop   !== null ? alignTop   : snapY(orig.top);
             const snappedRight  = snapX(orig.left + orig.width);
             const snappedBottom = snapY(orig.top  + orig.height);
             const snappedWidth  = snappedRight - snappedLeft;
@@ -1591,21 +1620,21 @@ Return [] if nothing needs fixing.`;
             const widthDiff  = Math.abs(snappedWidth  - orig.width);
             const heightDiff = Math.abs(snappedHeight - orig.height);
 
-            // Only apply if the snap moves things by ≤ 1 grid cell
-            const maxMoveX = areaW / gridCells;
-            const maxMoveY = areaH / gridCells;
+            // Grid snap: only apply if ≤ 1 grid cell; alignment snap: already bounded by 20%
+            const maxMoveX = alignLeft !== null ? maxAlignMoveX : areaW / gridCells;
+            const maxMoveY = alignTop  !== null ? maxAlignMoveY : areaH / gridCells;
             const changed =
               (leftDiff   > 0.001 && leftDiff   <= maxMoveX) ||
               (topDiff    > 0.001 && topDiff    <= maxMoveY) ||
-              (widthDiff  > 0.001 && widthDiff  <= maxMoveX) ||
-              (heightDiff > 0.001 && heightDiff <= maxMoveY);
+              (widthDiff  > 0.001 && widthDiff  <= areaW / gridCells) ||
+              (heightDiff > 0.001 && heightDiff <= areaH / gridCells);
 
             if (changed) {
               const newPos = {
-                left:   leftDiff   <= maxMoveX ? snappedLeft   : orig.left,
-                top:    topDiff    <= maxMoveY ? snappedTop    : orig.top,
-                width:  widthDiff  <= maxMoveX ? snappedWidth  : orig.width,
-                height: heightDiff <= maxMoveY ? snappedHeight : orig.height,
+                left:   leftDiff   <= maxMoveX           ? snappedLeft   : orig.left,
+                top:    topDiff    <= maxMoveY           ? snappedTop    : orig.top,
+                width:  widthDiff  <= areaW / gridCells  ? snappedWidth  : orig.width,
+                height: heightDiff <= areaH / gridCells  ? snappedHeight : orig.height,
               };
               gridFixes.push({
                 shapeName: s.name, shapeId: s.id, _slideShape: s,
