@@ -1433,6 +1433,13 @@ async function callClaudeRaw(prompt, apiKey) {
         const slideFile = zip.file(slidePath);
         if (slideFile) {
           let xml = await slideFile.async("string");
+
+          // Log what paragraph properties exist to diagnose bullet issue
+          const pPrMatches = xml.match(/<a:pPr[^>]*>/g) || [];
+          const buMatches = xml.match(/<a:bu[A-Za-z]+[^>]*\/?>/g) || [];
+          console.log(`Slide ${slideIndex} pPr tags:`, pPrMatches.slice(0, 5));
+          console.log(`Slide ${slideIndex} bullet tags:`, buMatches.slice(0, 10));
+
           const before = xml;
           // Strip explicit bullet overrides so master formatting is inherited
           xml = xml.replace(/<a:buNone\s*\/>/g, "");
@@ -1463,6 +1470,8 @@ async function callClaudeRaw(prompt, apiKey) {
                 }
               );
             });
+          } else {
+            addLog("No paragraph overrides found in slide XML");
           }
         }
       } catch (e) {
@@ -2038,13 +2047,13 @@ async function callClaudeRaw(prompt, apiKey) {
 
       if (masters.length === 0) throw new Error("No slide masters found in this file");
 
-      // Always show picker so user can confirm which master to fix TO
-      setAvailableMasters(masters);
-      setPendingZip(zip);
-      setPendingSlideIndex(slideIndex);
-      setStatus("picking");
-      setShowMasterPicker(true);
-      addLog(masters.length === 1 ? "Confirm template to fix to:" : "Multiple masters found — choose template to fix to:");
+      // Always use the first master (lowest index = original template)
+      const primaryMaster = masters[0];
+      addLog(`Using template: "${primaryMaster.name}"`);
+      if (masters.length > 1) {
+        addLog(`(${masters.length - 1} imported master${masters.length > 2 ? "s" : ""} ignored)`);
+      }
+      await runCleanupWithMaster(zip, masters, primaryMaster.index, slideIndex);
     } catch (err) {
       setError(err.message);
       addLog("✗ " + err.message);
