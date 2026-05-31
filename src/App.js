@@ -1352,7 +1352,7 @@ async function callClaudeRaw(prompt, apiKey) {
             shapeName: titleShape.name, shapeId: titleShape.id,
             _slideShape: titleShape, shapeFill: titleShape.shapeFill || null,
             ...(posNeedsfix ? { position: targetTitlePos } : {}),
-            ...(fontNeedsFix ? { font: { name: titleShape.masterTarget?.fontName, bold: false, italic: false } } : {}),
+            ...(fontNeedsFix ? { font: { name: titleShape.masterTarget?.fontName } } : {}),
           }], themeColors);
           totalFixes++;
         }
@@ -1394,8 +1394,6 @@ async function callClaudeRaw(prompt, apiKey) {
             const explicitWrongFont = ss.current.fontName !== "(inherited)" && ss.current.fontName !== ss.masterTarget.fontName;
             const inheritedFont = ss.current.fontName === "(inherited)";
             const mixedSize = tr.font.size === null;
-            const isBold   = tr.font.bold   === true;
-            const isItalic = tr.font.italic === true;
 
             // Only normalise size if within 3pt of the normalised size
             const currentSize = typeof ss.current.fontSize === "number" ? ss.current.fontSize : null;
@@ -1405,7 +1403,7 @@ async function callClaudeRaw(prompt, apiKey) {
             const needsFontFix = explicitWrongFont || (inheritedFont && ss.masterTarget.fontName);
             const needsSizeFix = mixedSize || sizesDiffer;
 
-            if (!needsFontFix && !needsSizeFix && !isBold && !isItalic) continue;
+            if (!needsFontFix && !needsSizeFix) continue;
 
             if (needsFontFix) {
               console.log(`Font fix: shape ${ss.id} "${ss.name}" font ${ss.current.fontName} → ${ss.masterTarget.fontName}`);
@@ -1423,8 +1421,6 @@ async function callClaudeRaw(prompt, apiKey) {
             if (mixedSize && !needsFontFix) {
               tr.font.size = normalisedSize || ss.masterTarget.fontSize;
             }
-            if (isBold)   tr.font.bold   = false;
-            if (isItalic) tr.font.italic = false;
             await ctx.sync();
             totalFixes++;
           } catch (e) { console.log(`Font step error on shape ${ss.id} "${ss.name}":`, e.message); }
