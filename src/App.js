@@ -1217,10 +1217,12 @@ function MasterPicker({ masters, onSelect }) {
   return (
     <div style={{ background: "#fff", borderRadius: 10, border: "1px solid #e5e7eb", padding: "14px", animation: "fadeIn 0.3s ease" }}>
       <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>
-        Multiple masters found
+        Fix to template
       </div>
       <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 12 }}>
-        This file has {masters.length} slide masters — pick the one to clean up to:
+        {masters.length === 1
+          ? "Fix this slide to the following template:"
+          : `${masters.length} masters found — choose which template to fix this slide to:`}
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
@@ -2023,18 +2025,13 @@ async function callClaudeRaw(prompt, apiKey) {
 
       if (masters.length === 0) throw new Error("No slide masters found in this file");
 
-      if (masters.length === 1) {
-        // Only one master — skip picker, go straight to cleanup
-        await runCleanupWithMaster(zip, masters, masters[0].index, slideIndex);
-      } else {
-        // Multiple masters — show picker
-        setAvailableMasters(masters);
-        setPendingZip(zip);
-        setPendingSlideIndex(slideIndex);
-        setStatus("picking");
-        setShowMasterPicker(true);
-        addLog("Multiple masters detected — please choose one");
-      }
+      // Always show picker so user can confirm which master to fix TO
+      setAvailableMasters(masters);
+      setPendingZip(zip);
+      setPendingSlideIndex(slideIndex);
+      setStatus("picking");
+      setShowMasterPicker(true);
+      addLog(masters.length === 1 ? "Confirm template to fix to:" : "Multiple masters found — choose template to fix to:");
     } catch (err) {
       setError(err.message);
       addLog("✗ " + err.message);
@@ -2077,7 +2074,7 @@ async function callClaudeRaw(prompt, apiKey) {
       <div style={{ flex: 1, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
 
         {/* Master picker — shown when multiple masters detected */}
-        {showMasterPicker && availableMasters.length > 1 && (
+        {showMasterPicker && availableMasters.length >= 1 && (
           <MasterPicker
             masters={availableMasters}
             onSelect={(chosenIndex) =>
