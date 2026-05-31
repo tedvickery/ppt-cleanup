@@ -1430,16 +1430,73 @@ async function callClaudeRaw(prompt, apiKey) {
           } catch (e) { console.log(`Font step error on shape ${ss.id} "${ss.name}":`, e.message); }
         }
 
-        // Auto-size text boxes to fit content — expand height if text overflows
+        // Fit text: incrementally expand box right/down until text fits, then recentre
+        const slideW = 13.33, slideH = 7.5;
         for (const ss of pptxData.slideShapes) {
           if (!ss.position || !ss.textContent) continue;
           const os = shapes.items.find(s => String(s.id) === String(ss.id));
           if (!os) continue;
           try {
+            // Load current dimensions and check if text already fits
+            os.load(["left", "top", "width", "height"]);
             os.textFrame.load("autoSizeSetting");
             await ctx.sync();
+
+            // Use autoSizeShapeToFitText to detect overflow — read expanded size
             os.textFrame.autoSizeSetting = PowerPoint.ShapeAutoSize.autoSizeShapeToFitText;
             await ctx.sync();
+            os.load(["width", "height"]);
+            await ctx.sync();
+            const neededW = os.width / 72;
+            const neededH = os.height / 72;
+
+            // Revert to no autosize — we'll manage size manually
+            os.textFrame.autoSizeSetting = PowerPoint.ShapeAutoSize.autoSizeNone;
+            await ctx.sync();
+
+            const origLeft = ss.position.left;
+            const origTop  = ss.position.top;
+            const origW    = ss.position.width;
+            const origH    = ss.position.height;
+
+            // If text already fits, nothing to do
+            if (neededW <= origW + 0.01 && neededH <= origH + 0.01) continue;
+
+            // Increment size: expand in steps of 1/100th of slide dimensions
+            const stepW = slideW / 100;
+            const stepH = slideH / 100;
+            let curW = origW, curH = origH;
+
+            // Expand until text fits or we hit slide edge
+            const maxW = slideW - origLeft;
+            const maxH = slideH - origTop;
+            while ((curW < neededW - 0.01 || curH < neededH - 0.01) &&
+                   (curW < maxW - 0.01 || curH < maxH - 0.01)) {
+              if (curW < neededW - 0.01 && curW < maxW) curW = Math.min(curW + stepW, maxW);
+              if (curH < neededH - 0.01 && curH < maxH) curH = Math.min(curH + stepH, maxH);
+            }
+
+            // Check if expanded box overlaps any other shape
+            let overlaps = false;
+            for (const other of pptxData.slideShapes) {
+              if (String(other.id) === String(ss.id) || !other.position) continue;
+              const o = other.position;
+              if (origLeft < o.left + o.width && origLeft + curW > o.left &&
+                  origTop  < o.top  + o.height && origTop  + curH > o.top) {
+                overlaps = true; break;
+              }
+            }
+
+            if (overlaps || origLeft + curW > slideW + 0.05 || origTop + curH > slideH + 0.05) {
+              // Can't expand cleanly — shrink font to fit original box instead
+              os.textFrame.autoSizeSetting = PowerPoint.ShapeAutoSize.autoSizeTextToFitShape;
+              await ctx.sync();
+            } else {
+              // Apply expanded size, keeping top-left position
+              os.width  = curW * 72;
+              os.height = curH * 72;
+              await ctx.sync();
+            }
             totalFixes++;
           } catch (e) { /* shape may not support autosize */ }
         }
