@@ -1331,64 +1331,7 @@ async function callClaudeRaw(prompt, apiKey) {
       const themeColorList = Object.values(themeColors).filter(v => v);
       let totalFixes = 0;
 
-      // ─── STEP 1: AI overlap & layout check ──────────────────────────────────
-      const allContentShapes = pptxData.slideShapes.filter(s => s.position);
-      if (allContentShapes.length > 1) {
-        addLog("Step 1: Checking layout…");
-        const slideW = 13.33, slideH = 7.5;
-        const overlapPairs = [];
-        for (let i = 0; i < allContentShapes.length; i++) {
-          for (let j = i + 1; j < allContentShapes.length; j++) {
-            const a = allContentShapes[i].position, b = allContentShapes[j].position;
-            if (a.left < b.left + b.width && a.left + a.width > b.left &&
-                a.top  < b.top  + b.height && a.top  + a.height > b.top) {
-              overlapPairs.push(`"${allContentShapes[i].name}" (id:${allContentShapes[i].id}) overlaps "${allContentShapes[j].name}" (id:${allContentShapes[j].id})`);
-            }
-          }
-        }
-        const offSlide = allContentShapes.filter(s =>
-          s.position.left + s.position.width > slideW + 0.1 ||
-          s.position.top  + s.position.height > slideH + 0.1 ||
-          s.position.left < -0.1 || s.position.top < -0.1
-        );
-
-        if (overlapPairs.length > 0 || offSlide.length > 0) {
-          const overlapPrompt = `You are fixing layout problems on a PowerPoint slide (${slideW}"×${slideH}").
-
-PROBLEMS:
-${overlapPairs.length > 0 ? `Overlapping shapes:\n${overlapPairs.map(p => `- ${p}`).join("\n")}` : ""}
-${offSlide.length > 0 ? `Off-slide shapes:\n${offSlide.map(s => `- "${s.name}" (id:${s.id}) at left=${s.position.left.toFixed(2)}" top=${s.position.top.toFixed(2)}" w=${s.position.width.toFixed(2)}" h=${s.position.height.toFixed(2)}"`).join("\n")}` : ""}
-
-ALL SHAPES (id, name, position):
-${allContentShapes.map(s => `id:${s.id} "${s.name}" left=${s.position.left.toFixed(2)}" top=${s.position.top.toFixed(2)}" w=${s.position.width.toFixed(2)}" h=${s.position.height.toFixed(2)}" text="${(s.textContent||"").slice(0,40)}"`).join("\n")}
-
-RULES:
-- Only fix overlapping or off-slide shapes — do not move anything else
-- Make the minimum move needed to resolve each overlap
-- Keep shapes within the slide bounds (0–${slideW}" × 0–${slideH}")
-- Prefer moving/resizing the smaller or less important shape
-- Do NOT touch shapes that are not involved in any problem
-
-Return ONLY a JSON array: [{"shapeId":"ID","position":{"left":X,"top":Y,"width":W,"height":H}}]
-Return [] if nothing needs fixing.`;
-
-          const rawFixes = await callClaudeRaw(overlapPrompt, apiKey);
-          if (rawFixes.length > 0) {
-            const enriched = rawFixes.map(fix => {
-              const shape = allContentShapes.find(s => String(s.id) === String(fix.shapeId));
-              if (!shape) return null;
-              return { shapeName: shape.name, shapeId: shape.id, _slideShape: shape,
-                       shapeFill: shape.shapeFill || null, position: fix.position };
-            }).filter(Boolean);
-            if (enriched.length > 0) {
-              await applyFixes(dupIndex, enriched, themeColors);
-              totalFixes += enriched.length;
-            }
-          }
-        }
-      }
-
-      // ─── STEP 2: Title — snap to master position and font ───────────────────
+      // ─── STEP 1: Title — snap to master position and font ───────────────────
       const titleShape = pptxData.slideShapes.find(s => s.phType === "title" || s.phType === "ctrTitle");
       const titleMaster = pptxData.masterPlaceholders.find(p => p.type === "title" || p.type === "ctrTitle");
       const layoutTitlePos = pptxData.layoutPositions?.["title:0"];
@@ -1404,7 +1347,7 @@ Return [] if nothing needs fixing.`;
         const fontNeedsFix = titleShape.current.fontName !== "(inherited)" &&
           titleShape.current.fontName !== titleShape.masterTarget?.fontName;
         if (posNeedsfix || fontNeedsFix) {
-          addLog("Step 2: Title position & font…");
+          addLog("Step 1: Title position & font…");
           await applyFixes(dupIndex, [{
             shapeName: titleShape.name, shapeId: titleShape.id,
             _slideShape: titleShape, shapeFill: titleShape.shapeFill || null,
@@ -1415,8 +1358,8 @@ Return [] if nothing needs fixing.`;
         }
       }
 
-      // ─── STEP 3: Fonts — correct font name, normalise sizes ─────────────────
-      addLog("Step 3: Fonts…");
+      // ─── STEP 2: Fonts — correct font name, normalise sizes ─────────────────
+      addLog("Step 2: Fonts…");
       await PowerPoint.run(async (ctx) => {
         const slides = ctx.presentation.slides;
         slides.load("items");
@@ -1503,7 +1446,7 @@ Return [] if nothing needs fixing.`;
         }
       });
 
-      // ─── STEP 4: Colours — snap text to theme colour only if wrong ──────────
+      // ─── STEP 3: Colours — snap text to theme colour only if wrong ──────────
       addLog("Step 3: Colours…");
       await PowerPoint.run(async (ctx) => {
         const slides = ctx.presentation.slides;
@@ -1551,8 +1494,7 @@ Return [] if nothing needs fixing.`;
         }
       });
 
-      // ─── STEP 5: Grid-based alignment ───────────────────────────────────────
-      // Divide the content area into a 100×100 grid and snap shapes to it
+      // ─── STEP 4: Grid alignment + overlap fix ───────────────────────────────
       {
         const nonTitleShapes = pptxData.slideShapes.filter(s =>
           s.phType !== "title" && s.phType !== "ctrTitle" &&
@@ -1561,90 +1503,91 @@ Return [] if nothing needs fixing.`;
         );
 
         if (nonTitleShapes.length > 0 && targetTitlePos) {
-          // Content area bounds derived from title
+          const GRID = 100;
           const areaLeft   = targetTitlePos.left;
           const areaRight  = targetTitlePos.left + targetTitlePos.width;
           const areaTop    = targetTitlePos.top + targetTitlePos.height + 0.1;
           const areaBottom = 7.4;
           const areaW = areaRight - areaLeft;
           const areaH = areaBottom - areaTop;
+          const cellW = areaW / GRID;
+          const cellH = areaH / GRID;
+          const MAX_CELLS = 5; // max movement in grid units
 
-          // Grid: 5×N capped at 100
-          const gridCells = Math.min(nonTitleShapes.length * 5, 100);
+          // Snap a value to nearest grid line
+          const snapX = v => areaLeft + Math.round((v - areaLeft) / cellW) * cellW;
+          const snapY = v => areaTop  + Math.round((v - areaTop)  / cellH) * cellH;
 
-          // Snap a value to nearest grid unit
-          const snapX = v => areaLeft + Math.round((v - areaLeft) / areaW * gridCells) / gridCells * areaW;
-          const snapY = v => areaTop  + Math.round((v - areaTop)  / areaH * gridCells) / gridCells * areaH;
-
-          // Alignment anchors: left, centre, right horizontally; top, middle, bottom vertically
-          const alignAnchorsX = [areaLeft, areaLeft + areaW / 2, areaRight];
-          const alignAnchorsY = [areaTop,  areaTop  + areaH / 2, areaBottom];
-          const maxAlignMoveX = areaW * 0.20;
-          const maxAlignMoveY = areaH * 0.20;
-
-          // Snap an edge to nearest alignment anchor if within 20% of content area
-          const snapToAlignX = (v, w) => {
-            // Check left edge vs left/centre/right anchors, and right edge vs anchors
-            for (const anchor of alignAnchorsX) {
-              if (Math.abs(v - anchor) <= maxAlignMoveX) return anchor;
-              if (Math.abs(v + w - anchor) <= maxAlignMoveX) return anchor - w;
-            }
-            return null;
-          };
-          const snapToAlignY = (v, h) => {
-            for (const anchor of alignAnchorsY) {
-              if (Math.abs(v - anchor) <= maxAlignMoveY) return anchor;
-              if (Math.abs(v + h - anchor) <= maxAlignMoveY) return anchor - h;
-            }
-            return null;
+          // Clamp snap to within MAX_CELLS of original
+          const clampSnap = (snapped, orig, cellSize) => {
+            const diff = snapped - orig;
+            if (Math.abs(diff) <= MAX_CELLS * cellSize) return snapped;
+            return orig; // too far, don't move
           };
 
           const gridFixes = [];
-          for (const s of nonTitleShapes) {
+          // Take a snapshot of original positions to detect overlaps after snapping
+          const positions = nonTitleShapes.map(s => ({ ...s.position }));
+
+          for (let i = 0; i < nonTitleShapes.length; i++) {
+            const s = nonTitleShapes[i];
             const orig = s.position;
 
-            // First try alignment snap (higher priority, larger threshold)
-            const alignLeft = snapToAlignX(orig.left, orig.width);
-            const alignTop  = snapToAlignY(orig.top,  orig.height);
+            const newLeft   = clampSnap(snapX(orig.left),              orig.left,   cellW);
+            const newTop    = clampSnap(snapY(orig.top),               orig.top,    cellH);
+            const newRight  = clampSnap(snapX(orig.left + orig.width), orig.left + orig.width,  cellW);
+            const newBottom = clampSnap(snapY(orig.top  + orig.height),orig.top  + orig.height, cellH);
+            const newWidth  = Math.max(newRight - newLeft, cellW);
+            const newHeight = Math.max(newBottom - newTop, cellH);
 
-            // Then fall back to grid snap for anything not alignment-snapped
-            const snappedLeft   = alignLeft  !== null ? alignLeft  : snapX(orig.left);
-            const snappedTop    = alignTop   !== null ? alignTop   : snapY(orig.top);
-            const snappedRight  = snapX(orig.left + orig.width);
-            const snappedBottom = snapY(orig.top  + orig.height);
-            const snappedWidth  = snappedRight - snappedLeft;
-            const snappedHeight = snappedBottom - snappedTop;
-
-            const leftDiff   = Math.abs(snappedLeft   - orig.left);
-            const topDiff    = Math.abs(snappedTop    - orig.top);
-            const widthDiff  = Math.abs(snappedWidth  - orig.width);
-            const heightDiff = Math.abs(snappedHeight - orig.height);
-
-            // Grid snap: only apply if ≤ 1 grid cell; alignment snap: already bounded by 20%
-            const maxMoveX = alignLeft !== null ? maxAlignMoveX : areaW / gridCells;
-            const maxMoveY = alignTop  !== null ? maxAlignMoveY : areaH / gridCells;
-            const changed =
-              (leftDiff   > 0.001 && leftDiff   <= maxMoveX) ||
-              (topDiff    > 0.001 && topDiff    <= maxMoveY) ||
-              (widthDiff  > 0.001 && widthDiff  <= areaW / gridCells) ||
-              (heightDiff > 0.001 && heightDiff <= areaH / gridCells);
+            const changed = Math.abs(newLeft - orig.left) > 0.001 ||
+                            Math.abs(newTop  - orig.top)  > 0.001 ||
+                            Math.abs(newWidth  - orig.width)  > 0.001 ||
+                            Math.abs(newHeight - orig.height) > 0.001;
 
             if (changed) {
-              const newPos = {
-                left:   leftDiff   <= maxMoveX           ? snappedLeft   : orig.left,
-                top:    topDiff    <= maxMoveY           ? snappedTop    : orig.top,
-                width:  widthDiff  <= areaW / gridCells  ? snappedWidth  : orig.width,
-                height: heightDiff <= areaH / gridCells  ? snappedHeight : orig.height,
-              };
+              positions[i] = { left: newLeft, top: newTop, width: newWidth, height: newHeight };
               gridFixes.push({
                 shapeName: s.name, shapeId: s.id, _slideShape: s,
-                shapeFill: s.shapeFill || null, position: newPos,
+                shapeFill: s.shapeFill || null,
+                position: { left: newLeft, top: newTop, width: newWidth, height: newHeight },
               });
             }
           }
 
+          // Resolve overlaps: push overlapping shapes apart by minimum amount
+          for (let i = 0; i < nonTitleShapes.length; i++) {
+            for (let j = i + 1; j < nonTitleShapes.length; j++) {
+              const a = positions[i], b = positions[j];
+              const overlapX = Math.min(a.left + a.width, b.left + b.width) - Math.max(a.left, b.left);
+              const overlapY = Math.min(a.top  + a.height, b.top  + b.height) - Math.max(a.top,  b.top);
+              if (overlapX > 0.01 && overlapY > 0.01) {
+                // Push the shape with the smaller area down/right by the overlap amount, snapped to grid
+                const pushRight = overlapX + cellW;
+                const pushDown  = overlapY + cellH;
+                // Push whichever axis needs less movement
+                if (pushRight <= pushDown) {
+                  positions[j].left += pushRight;
+                } else {
+                  positions[j].top  += pushDown;
+                }
+                // Update or add fix for shape j
+                const existing = gridFixes.find(f => String(f.shapeId) === String(nonTitleShapes[j].id));
+                if (existing) {
+                  existing.position = { ...positions[j] };
+                } else {
+                  gridFixes.push({
+                    shapeName: nonTitleShapes[j].name, shapeId: nonTitleShapes[j].id,
+                    _slideShape: nonTitleShapes[j], shapeFill: nonTitleShapes[j].shapeFill || null,
+                    position: { ...positions[j] },
+                  });
+                }
+              }
+            }
+          }
+
           if (gridFixes.length > 0) {
-            addLog(`Step 5: Grid-snapping ${gridFixes.length} shape(s) (${gridCells}×${gridCells} grid)…`);
+            addLog(`Step 4: Aligning ${gridFixes.length} shape(s) to 100×100 grid…`);
             await applyFixes(dupIndex, gridFixes, themeColors);
             totalFixes += gridFixes.length;
           }
