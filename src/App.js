@@ -1082,8 +1082,8 @@ export default function App() {
             }
           }
 
-          // ── 4c. Align edges: within 15% of dimension → snap to same edge ────
-          //        Also match sizes (width and height) if within 15%
+          // ── 4c. Align edges: within 5 grid cells → snap to same edge ────────
+          //        Also match sizes if within 15% of dimension
           const SIM = 0.15;
           for (let i = 0; i < nonTitleShapes.length; i++) {
             for (let j = i + 1; j < nonTitleShapes.length; j++) {
@@ -1091,36 +1091,34 @@ export default function App() {
               const wSim = Math.abs(a.width  - b.width)  / Math.max(a.width,  b.width)  <= SIM;
               const hSim = Math.abs(a.height - b.height) / Math.max(a.height, b.height) <= SIM;
 
-              // Alignment tolerance: 15% of dimension but capped at 5 grid cells
-              const topTol  = Math.min(SIM * Math.max(a.height, b.height), cellH * 5);
-              const leftTol = Math.min(SIM * Math.max(a.width,  b.width),  cellW * 5);
-              const botTol  = topTol, rightTol = leftTol;
+              // Alignment tolerance: purely 3 grid cells — no shape moves more than this
+              const tTol = cellH * 3, lTol = cellW * 3;
 
               // Align tops
-              if (Math.abs(a.top - b.top) <= topTol) {
+              if (Math.abs(a.top - b.top) <= tTol) {
                 const t = Math.min(a.top, b.top);
                 positions[i].top = t; positions[j].top = t;
                 recordFix(i); recordFix(j);
               }
               // Align lefts
-              if (Math.abs(a.left - b.left) <= leftTol) {
+              if (Math.abs(a.left - b.left) <= lTol) {
                 const l = Math.min(a.left, b.left);
                 positions[i].left = l; positions[j].left = l;
                 recordFix(i); recordFix(j);
               }
               // Align bottom edges
-              if (Math.abs((a.top+a.height) - (b.top+b.height)) <= botTol) {
+              if (Math.abs((a.top+a.height) - (b.top+b.height)) <= tTol) {
                 const bot = Math.max(a.top+a.height, b.top+b.height);
                 positions[i].top = bot - a.height; positions[j].top = bot - b.height;
                 recordFix(i); recordFix(j);
               }
               // Align right edges
-              if (Math.abs((a.left+a.width) - (b.left+b.width)) <= rightTol) {
+              if (Math.abs((a.left+a.width) - (b.left+b.width)) <= lTol) {
                 const right = Math.max(a.left+a.width, b.left+b.width);
                 positions[i].left = right - a.width; positions[j].left = right - b.width;
                 recordFix(i); recordFix(j);
               }
-              // Match sizes if within 15%
+              // Match sizes if within 15% of dimension
               if (wSim) {
                 const avgW = (a.width + b.width) / 2;
                 positions[i].width = avgW; positions[j].width = avgW;
