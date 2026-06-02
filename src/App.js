@@ -1084,8 +1084,8 @@ export default function App() {
             }
           }
 
-          // Proximity snap: if any two shapes' edges are within 1 grid cell of each other, snap them
-          // This catches column headers/boxes that are nearly aligned but not within dimension tolerance
+          // Proximity snap: if any two shapes' edges are within 5 grid cells snap them
+          // This catches shapes that are nearly aligned regardless of dimensions
           for (let i = 0; i < nonTitleShapes.length; i++) {
             for (let j = i + 1; j < nonTitleShapes.length; j++) {
               const a = positions[i], b = positions[j];
@@ -1098,31 +1098,29 @@ export default function App() {
                   else gridFixes.push({ shapeName: s.name, shapeId: s.id, _slideShape: s, shapeFill: s.shapeFill||null, position: { ...positions[idx] } });
                 }
               };
-              // Snap tops if within 1 grid cell
-              if (Math.abs(a.top - b.top) > 0.001 && Math.abs(a.top - b.top) <= cellH) {
-                snapAndRecord("top", (a.top + b.top) / 2);
-              }
-              // Snap lefts if within 1 grid cell
-              if (Math.abs(a.left - b.left) > 0.001 && Math.abs(a.left - b.left) <= cellW) {
-                snapAndRecord("left", (a.left + b.left) / 2);
-              }
-              // Snap bottom edges if within 1 grid cell
+              if (Math.abs(a.top  - b.top)  > 0.001 && Math.abs(a.top  - b.top)  <= cellH * 5) snapAndRecord("top",  (a.top  + b.top)  / 2);
+              if (Math.abs(a.left - b.left) > 0.001 && Math.abs(a.left - b.left) <= cellW * 5) snapAndRecord("left", (a.left + b.left) / 2);
               const aBot = a.top + a.height, bBot = b.top + b.height;
-              if (Math.abs(aBot - bBot) > 0.001 && Math.abs(aBot - bBot) <= cellH) {
+              if (Math.abs(aBot - bBot) > 0.001 && Math.abs(aBot - bBot) <= cellH * 5) {
                 const avg = (aBot + bBot) / 2;
-                snapAndRecord("top", avg - a.height);
-                positions[j].top = avg - b.height;
-                const exj = gridFixes.find(f => String(f.shapeId) === String(nonTitleShapes[j].id));
-                if (exj) exj.position.top = avg - b.height;
+                positions[i].top = avg - a.height; positions[j].top = avg - b.height;
+                for (const [idx, h] of [[i, a.height], [j, b.height]]) {
+                  const s = nonTitleShapes[idx], newTop = (avg - h);
+                  const ex = gridFixes.find(f => String(f.shapeId) === String(s.id));
+                  if (ex) ex.position.top = newTop;
+                  else gridFixes.push({ shapeName: s.name, shapeId: s.id, _slideShape: s, shapeFill: s.shapeFill||null, position: { ...positions[idx] } });
+                }
               }
-              // Snap right edges if within 1 grid cell
               const aRight = a.left + a.width, bRight = b.left + b.width;
-              if (Math.abs(aRight - bRight) > 0.001 && Math.abs(aRight - bRight) <= cellW) {
+              if (Math.abs(aRight - bRight) > 0.001 && Math.abs(aRight - bRight) <= cellW * 5) {
                 const avg = (aRight + bRight) / 2;
-                snapAndRecord("left", avg - a.width);
-                positions[j].left = avg - b.width;
-                const exj = gridFixes.find(f => String(f.shapeId) === String(nonTitleShapes[j].id));
-                if (exj) exj.position.left = avg - b.width;
+                positions[i].left = avg - a.width; positions[j].left = avg - b.width;
+                for (const [idx, w] of [[i, a.width], [j, b.width]]) {
+                  const s = nonTitleShapes[idx], newLeft = (avg - w);
+                  const ex = gridFixes.find(f => String(f.shapeId) === String(s.id));
+                  if (ex) ex.position.left = newLeft;
+                  else gridFixes.push({ shapeName: s.name, shapeId: s.id, _slideShape: s, shapeFill: s.shapeFill||null, position: { ...positions[idx] } });
+                }
               }
             }
           }
