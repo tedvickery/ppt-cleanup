@@ -1084,43 +1084,36 @@ export default function App() {
             }
           }
 
-          // Proximity snap: if any two shapes' edges are within 5 grid cells snap them
-          // This catches shapes that are nearly aligned regardless of dimensions
-          for (let i = 0; i < nonTitleShapes.length; i++) {
-            for (let j = i + 1; j < nonTitleShapes.length; j++) {
-              const a = positions[i], b = positions[j];
-              const snapAndRecord = (axis, val) => {
-                positions[i][axis] = val; positions[j][axis] = val;
-                for (const idx of [i, j]) {
-                  const s = nonTitleShapes[idx];
-                  const ex = gridFixes.find(f => String(f.shapeId) === String(s.id));
-                  if (ex) ex.position[axis] = val;
-                  else gridFixes.push({ shapeName: s.name, shapeId: s.id, _slideShape: s, shapeFill: s.shapeFill||null, position: { ...positions[idx] } });
-                }
-              };
-              if (Math.abs(a.top  - b.top)  > 0.001 && Math.abs(a.top  - b.top)  <= cellH * 5) snapAndRecord("top",  (a.top  + b.top)  / 2);
-              if (Math.abs(a.left - b.left) > 0.001 && Math.abs(a.left - b.left) <= cellW * 5) snapAndRecord("left", (a.left + b.left) / 2);
-              const aBot = a.top + a.height, bBot = b.top + b.height;
-              if (Math.abs(aBot - bBot) > 0.001 && Math.abs(aBot - bBot) <= cellH * 5) {
-                const avg = (aBot + bBot) / 2;
-                positions[i].top = avg - a.height; positions[j].top = avg - b.height;
-                for (const [idx, h] of [[i, a.height], [j, b.height]]) {
-                  const s = nonTitleShapes[idx], newTop = (avg - h);
-                  const ex = gridFixes.find(f => String(f.shapeId) === String(s.id));
-                  if (ex) ex.position.top = newTop;
-                  else gridFixes.push({ shapeName: s.name, shapeId: s.id, _slideShape: s, shapeFill: s.shapeFill||null, position: { ...positions[idx] } });
-                }
+          // Proximity snap: cluster shapes whose edges are within 5 grid cells, snap all to minimum
+          const snapEdges = [
+            { get: p => p.top,             set: (p, v) => { p.top = v; } },
+            { get: p => p.left,            set: (p, v) => { p.left = v; } },
+            { get: p => p.top + p.height,  set: (p, v) => { p.top = v - p.height; } },
+            { get: p => p.left + p.width,  set: (p, v) => { p.left = v - p.width; } },
+          ];
+          const edgeThreshH = cellH * 5, edgeThreshW = cellW * 5;
+          for (const edge of snapEdges) {
+            const thresh = edge === snapEdges[0] || edge === snapEdges[2] ? edgeThreshH : edgeThreshW;
+            // Build clusters: group indices whose edge values are all within thresh of each other
+            const visited = new Set();
+            for (let i = 0; i < nonTitleShapes.length; i++) {
+              if (visited.has(i)) continue;
+              const cluster = [i];
+              for (let j = i + 1; j < nonTitleShapes.length; j++) {
+                if (Math.abs(edge.get(positions[i]) - edge.get(positions[j])) <= thresh) cluster.push(j);
               }
-              const aRight = a.left + a.width, bRight = b.left + b.width;
-              if (Math.abs(aRight - bRight) > 0.001 && Math.abs(aRight - bRight) <= cellW * 5) {
-                const avg = (aRight + bRight) / 2;
-                positions[i].left = avg - a.width; positions[j].left = avg - b.width;
-                for (const [idx, w] of [[i, a.width], [j, b.width]]) {
-                  const s = nonTitleShapes[idx], newLeft = (avg - w);
-                  const ex = gridFixes.find(f => String(f.shapeId) === String(s.id));
-                  if (ex) ex.position.left = newLeft;
-                  else gridFixes.push({ shapeName: s.name, shapeId: s.id, _slideShape: s, shapeFill: s.shapeFill||null, position: { ...positions[idx] } });
-                }
+              if (cluster.length < 2) continue;
+              cluster.forEach(idx => visited.add(idx));
+              // Snap all to the minimum edge value in the cluster
+              const target = Math.min(...cluster.map(idx => edge.get(positions[idx])));
+              for (const idx of cluster) {
+                const before = edge.get(positions[idx]);
+                if (Math.abs(before - target) <= 0.001) continue;
+                edge.set(positions[idx], target);
+                const s = nonTitleShapes[idx];
+                const ex = gridFixes.find(f => String(f.shapeId) === String(s.id));
+                if (ex) { ex.position.top = positions[idx].top; ex.position.left = positions[idx].left; }
+                else gridFixes.push({ shapeName: s.name, shapeId: s.id, _slideShape: s, shapeFill: s.shapeFill||null, position: { ...positions[idx] } });
               }
             }
           }
