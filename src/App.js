@@ -1025,7 +1025,7 @@ export default function App() {
         }
       });
 
-      // ─── STEP 4: Grid snap → overlap fix → align → size match → distribute ────
+      // ─── STEP 4: Grid pipeline (looped until stable) ────────────────────────
       {
         const nonTitleShapes = pptxData.slideShapes.filter(s =>
           s.phType !== "title" && s.phType !== "ctrTitle" && s.phType !== "sldNum" && s.phType !== "ftr" && s.position
@@ -1049,7 +1049,10 @@ export default function App() {
             else gridFixes.push({ shapeName: s.name, shapeId: s.id, _slideShape: s, shapeFill: s.shapeFill||null, position: { ...p } });
           };
 
-          // ── 4a. Snap every shape to nearest grid point ──────────────────────
+          const sameH = (a, b) => Math.abs(a.height - b.height) <= cellH;
+          const sameW = (a, b) => Math.abs(a.width  - b.width)  <= cellW;
+
+          // ── Step 1: Snap every shape to nearest grid point (once, up front) ──
           for (let i = 0; i < nonTitleShapes.length; i++) {
             const orig = nonTitleShapes[i].position;
             const newLeft   = clamp(snapX(orig.left),              orig.left,              cellW);
@@ -1065,116 +1068,129 @@ export default function App() {
             }
           }
 
-          // ── 4b. Resolve text-box overlaps only ──────────────────────────────
-          const isTextBox = (s) => !s.phType || s.phType === "body" || s.phType === "obj" || s.phType === "subTitle";
-          for (let i = 0; i < nonTitleShapes.length; i++) {
-            if (!isTextBox(nonTitleShapes[i])) continue;
-            for (let j = i + 1; j < nonTitleShapes.length; j++) {
-              if (!isTextBox(nonTitleShapes[j])) continue;
-              const a = positions[i], b = positions[j];
-              const overlapX = Math.min(a.left+a.width, b.left+b.width) - Math.max(a.left, b.left);
-              const overlapY = Math.min(a.top+a.height, b.top+b.height) - Math.max(a.top,  b.top);
-              if (overlapX > cellW && overlapY > cellH) {
-                if (overlapX <= overlapY) { positions[j].left += overlapX + cellW; }
-                else                      { positions[j].top  += overlapY + cellH; }
-                recordFix(j);
-              }
-            }
-          }
+          // ── Steps 2–5 loop until no more changes ─────────────────────────────
+          for (let pass = 0; pass < 5; pass++) {
+            let changed = false;
 
-          // ── 4c. Align edges: within 5 grid cells → snap to same edge ────────
-          //        Also match sizes if within 15% of dimension
-          const SIM = 0.15;
-          for (let i = 0; i < nonTitleShapes.length; i++) {
-            for (let j = i + 1; j < nonTitleShapes.length; j++) {
-              const a = positions[i], b = positions[j];
-              const wSim = Math.abs(a.width  - b.width)  / Math.max(a.width,  b.width)  <= SIM;
-              const hSim = Math.abs(a.height - b.height) / Math.max(a.height, b.height) <= SIM;
+            // Step 2: Match dimensions — where width or height is within 1 cell,
+            //         snap both to the larger value
+            for (let i = 0; i < nonTitleShapes.length; i++) {
+              for (let j = i + 1; j < nonTitleShapes.length; j++) {
+                const a = positions[i], b = positions[j];
+                if (Math.abs(a.width - b.width) <= cellW && Math.abs(a.width - b.width) > cellW * 0.1) {
+                  const w = Math.max(a.width, b.width);
+                  positions[i].width = w; positions[j].width = w;
+                  recordFix(i); recordFix(j); changed = true;
+                }
+                if (Math.abs(a.height - b.height) <= cellH && Math.abs(a.height - b.height) > cellH * 0.1) {
+                  const h = Math.max(a.height, b.height);
+                  positions[i].height = h; positions[j].height = h;
+                  recordFix(i); recordFix(j); changed = true;
+                }
+              }
+            }
 
-              // Alignment tolerance: purely 3 grid cells — no shape moves more than this
-              const tTol = cellH * 3, lTol = cellW * 3;
+            // Step 3: Resolve text-box overlaps — move one cell at a time
+            for (let i = 0; i < nonTitleShapes.length; i++) {
+              for (let j = i + 1; j < nonTitleShapes.length; j++) {
+                const a = positions[i], b = positions[j];
+                const overlapX = Math.min(a.left+a.width, b.left+b.width) - Math.max(a.left, b.left);
+                const overlapY = Math.min(a.top+a.height, b.top+b.height) - Math.max(a.top,  b.top);
+                if (overlapX > cellW * 0.1 && overlapY > cellH * 0.1) {
+                  // Move j one cell in the axis of least overlap
+                  if (overlapX <= overlapY) { positions[j].left += cellW; }
+                  else                      { positions[j].top  += cellH; }
+                  recordFix(j); changed = true;
+                }
+              }
+            }
 
-              // Align tops
-              if (Math.abs(a.top - b.top) <= tTol) {
-                const t = Math.min(a.top, b.top);
-                positions[i].top = t; positions[j].top = t;
-                recordFix(i); recordFix(j);
-              }
-              // Align lefts
-              if (Math.abs(a.left - b.left) <= lTol) {
-                const l = Math.min(a.left, b.left);
-                positions[i].left = l; positions[j].left = l;
-                recordFix(i); recordFix(j);
-              }
-              // Align bottom edges
-              if (Math.abs((a.top+a.height) - (b.top+b.height)) <= tTol) {
-                const bot = Math.max(a.top+a.height, b.top+b.height);
-                positions[i].top = bot - a.height; positions[j].top = bot - b.height;
-                recordFix(i); recordFix(j);
-              }
-              // Align right edges
-              if (Math.abs((a.left+a.width) - (b.left+b.width)) <= lTol) {
-                const right = Math.max(a.left+a.width, b.left+b.width);
-                positions[i].left = right - a.width; positions[j].left = right - b.width;
-                recordFix(i); recordFix(j);
-              }
-              // Match sizes if within 15% of dimension
-              if (wSim) {
-                const avgW = (a.width + b.width) / 2;
-                positions[i].width = avgW; positions[j].width = avgW;
-                recordFix(i); recordFix(j);
-              }
-              if (hSim) {
-                const avgH = (a.height + b.height) / 2;
-                positions[i].height = avgH; positions[j].height = avgH;
-                recordFix(i); recordFix(j);
+            // Step 4: Align edges — within 2 grid cells AND same height/width
+            for (let i = 0; i < nonTitleShapes.length; i++) {
+              for (let j = i + 1; j < nonTitleShapes.length; j++) {
+                const a = positions[i], b = positions[j];
+                // Align tops if within 2 vertical cells and same height
+                if (sameH(a, b) && Math.abs(a.top - b.top) <= cellH * 2 && Math.abs(a.top - b.top) > cellH * 0.1) {
+                  const t = Math.min(a.top, b.top);
+                  positions[i].top = t; positions[j].top = t;
+                  recordFix(i); recordFix(j); changed = true;
+                }
+                // Align lefts if within 2 horizontal cells and same width
+                if (sameW(a, b) && Math.abs(a.left - b.left) <= cellW * 2 && Math.abs(a.left - b.left) > cellW * 0.1) {
+                  const l = Math.min(a.left, b.left);
+                  positions[i].left = l; positions[j].left = l;
+                  recordFix(i); recordFix(j); changed = true;
+                }
+                // Align bottom edges if within 2 vertical cells and same height
+                const aBotE = a.top + a.height, bBotE = b.top + b.height;
+                if (sameH(a, b) && Math.abs(aBotE - bBotE) <= cellH * 2 && Math.abs(aBotE - bBotE) > cellH * 0.1) {
+                  const bot = Math.min(aBotE, bBotE);
+                  positions[i].top = bot - a.height; positions[j].top = bot - b.height;
+                  recordFix(i); recordFix(j); changed = true;
+                }
+                // Align right edges if within 2 horizontal cells and same width
+                const aRightE = a.left + a.width, bRightE = b.left + b.width;
+                if (sameW(a, b) && Math.abs(aRightE - bRightE) <= cellW * 2 && Math.abs(aRightE - bRightE) > cellW * 0.1) {
+                  const right = Math.min(aRightE, bRightE);
+                  positions[i].left = right - a.width; positions[j].left = right - b.width;
+                  recordFix(i); recordFix(j); changed = true;
+                }
               }
             }
-          }
 
-          // ── 4d. Distribute groups of 3+ within 15% dimensions ───────────────
-          const distributed = new Set();
-          for (let i = 0; i < nonTitleShapes.length; i++) {
-            if (distributed.has(i)) continue;
-            const group = [i];
-            for (let j = i + 1; j < nonTitleShapes.length; j++) {
-              const a = positions[i], b = positions[j];
-              if (Math.abs(a.width-b.width)/Math.max(a.width,b.width) <= SIM &&
-                  Math.abs(a.height-b.height)/Math.max(a.height,b.height) <= SIM) group.push(j);
-            }
-            if (group.length < 3) continue;
-            group.forEach(idx => distributed.add(idx));
-            const gp = group.map(idx => positions[idx]);
-            // Distribute horizontally if tops are aligned
-            const topsAligned = gp.every(p => Math.abs(p.top - gp[0].top) / Math.max(p.height, gp[0].height) <= SIM);
-            if (topsAligned) {
-              const sorted = [...group].sort((x, y) => positions[x].left - positions[y].left);
-              const lmost = positions[sorted[0]].left;
-              const rmost = positions[sorted[sorted.length-1]].left + positions[sorted[sorted.length-1]].width;
-              const totalW = sorted.reduce((s, idx) => s + positions[idx].width, 0);
-              const gap = (rmost - lmost - totalW) / (sorted.length - 1);
-              let cursor = lmost;
-              for (const idx of sorted) {
-                positions[idx].left = cursor;
-                recordFix(idx);
-                cursor += positions[idx].width + gap;
+            // Step 5: Distribute spacing — groups of 2+ that are aligned and
+            //         same size get evenly spaced
+            for (let i = 0; i < nonTitleShapes.length; i++) {
+              // Find all shapes with same height and tops aligned with i
+              const hRow = [i];
+              for (let j = 0; j < nonTitleShapes.length; j++) {
+                if (j === i) continue;
+                const a = positions[i], b = positions[j];
+                if (sameH(a, b) && a.top === b.top) hRow.push(j);
+              }
+              if (hRow.length >= 2) {
+                const sorted = hRow.sort((x, y) => positions[x].left - positions[y].left);
+                const lmost = positions[sorted[0]].left;
+                const rmost = positions[sorted[sorted.length-1]].left + positions[sorted[sorted.length-1]].width;
+                const totalW = sorted.reduce((s, idx) => s + positions[idx].width, 0);
+                const gap = (rmost - lmost - totalW) / (sorted.length - 1);
+                if (gap > 0) {
+                  let cursor = lmost;
+                  for (const idx of sorted) {
+                    if (Math.abs(positions[idx].left - cursor) > cellW * 0.1) {
+                      positions[idx].left = cursor; recordFix(idx); changed = true;
+                    }
+                    cursor += positions[idx].width + gap;
+                  }
+                }
+              }
+
+              // Find all shapes with same width and lefts aligned with i
+              const wCol = [i];
+              for (let j = 0; j < nonTitleShapes.length; j++) {
+                if (j === i) continue;
+                const a = positions[i], b = positions[j];
+                if (sameW(a, b) && a.left === b.left) wCol.push(j);
+              }
+              if (wCol.length >= 2) {
+                const sorted = wCol.sort((x, y) => positions[x].top - positions[y].top);
+                const tmost = positions[sorted[0]].top;
+                const bmost = positions[sorted[sorted.length-1]].top + positions[sorted[sorted.length-1]].height;
+                const totalH = sorted.reduce((s, idx) => s + positions[idx].height, 0);
+                const gap = (bmost - tmost - totalH) / (sorted.length - 1);
+                if (gap > 0) {
+                  let cursor = tmost;
+                  for (const idx of sorted) {
+                    if (Math.abs(positions[idx].top - cursor) > cellH * 0.1) {
+                      positions[idx].top = cursor; recordFix(idx); changed = true;
+                    }
+                    cursor += positions[idx].height + gap;
+                  }
+                }
               }
             }
-            // Distribute vertically if lefts are aligned
-            const leftsAligned = gp.every(p => Math.abs(p.left - gp[0].left) / Math.max(p.width, gp[0].width) <= SIM);
-            if (leftsAligned) {
-              const sorted = [...group].sort((x, y) => positions[x].top - positions[y].top);
-              const tmost = positions[sorted[0]].top;
-              const bmost = positions[sorted[sorted.length-1]].top + positions[sorted[sorted.length-1]].height;
-              const totalH = sorted.reduce((s, idx) => s + positions[idx].height, 0);
-              const gap = (bmost - tmost - totalH) / (sorted.length - 1);
-              let cursor = tmost;
-              for (const idx of sorted) {
-                positions[idx].top = cursor;
-                recordFix(idx);
-                cursor += positions[idx].height + gap;
-              }
-            }
+
+            if (!changed) break;
           }
 
           if (gridFixes.length > 0) {
