@@ -970,8 +970,8 @@ export default function App() {
           for (let j = 0; j < textShapes.length; j++) {
             if (i === j) continue;
             const b = textShapes[j];
-            if (Math.abs(a.position.width  - b.position.width)  / a.position.width  <= 0.10 &&
-                Math.abs(a.position.height - b.position.height) / a.position.height <= 0.10) group.push(b);
+            if (Math.abs(a.position.width  - b.position.width)  / a.position.width  <= 0.20 &&
+                Math.abs(a.position.height - b.position.height) / a.position.height <= 0.20) group.push(b);
           }
           if (group.length < 2) continue;
           const freq = group.reduce((acc, s) => { acc[s.current.fontSize] = (acc[s.current.fontSize]||0)+1; return acc; }, {});
@@ -1060,16 +1060,16 @@ export default function App() {
           for (let i = 0; i < nonTitleShapes.length; i++) {
             for (let j = i + 1; j < nonTitleShapes.length; j++) {
               const a = positions[i], b = positions[j];
-              const wSim = Math.abs(a.width  - b.width)  / a.width  <= 0.10;
-              const hSim = Math.abs(a.height - b.height) / a.height <= 0.10;
+              const wSim = Math.abs(a.width  - b.width)  / a.width  <= 0.20;
+              const hSim = Math.abs(a.height - b.height) / a.height <= 0.20;
               if (!wSim && !hSim) continue;
-              if (wSim && Math.abs(a.left - b.left) / a.width <= 0.10) { const avg = (a.left + b.left) / 2; positions[i].left = avg; positions[j].left = avg; }
-              if (hSim && Math.abs(a.top  - b.top)  / a.height <= 0.10) { const avg = (a.top  + b.top)  / 2; positions[i].top  = avg; positions[j].top  = avg; }
-              if (wSim && Math.abs((a.left+a.width) - (b.left+b.width)) / a.width <= 0.10) {
+              if (wSim && Math.abs(a.left - b.left) / a.width <= 0.20) { const avg = (a.left + b.left) / 2; positions[i].left = avg; positions[j].left = avg; }
+              if (hSim && Math.abs(a.top  - b.top)  / a.height <= 0.20) { const avg = (a.top  + b.top)  / 2; positions[i].top  = avg; positions[j].top  = avg; }
+              if (wSim && Math.abs((a.left+a.width) - (b.left+b.width)) / a.width <= 0.20) {
                 const avg = ((a.left+a.width) + (b.left+b.width)) / 2;
                 positions[i].left = avg - a.width; positions[j].left = avg - b.width;
               }
-              if (hSim && Math.abs((a.top+a.height) - (b.top+b.height)) / a.height <= 0.10) {
+              if (hSim && Math.abs((a.top+a.height) - (b.top+b.height)) / a.height <= 0.20) {
                 const avg = ((a.top+a.height) + (b.top+b.height)) / 2;
                 positions[i].top = avg - a.height; positions[j].top = avg - b.height;
               }
@@ -1096,8 +1096,8 @@ export default function App() {
             if (group.length < 3) continue;
             group.forEach(idx => distributed.add(idx));
             const gp = group.map(idx => positions[idx]);
-            const topsAligned  = gp.every(p => Math.abs(p.top  - gp[0].top)  / gp[0].height <= 0.10);
-            const leftsAligned = gp.every(p => Math.abs(p.left - gp[0].left) / gp[0].width  <= 0.10);
+            const topsAligned  = gp.every(p => Math.abs(p.top  - gp[0].top)  / gp[0].height <= 0.20);
+            const leftsAligned = gp.every(p => Math.abs(p.left - gp[0].left) / gp[0].width  <= 0.20);
             if (topsAligned) {
               const sorted = [...group].sort((x, y) => positions[x].left - positions[y].left);
               const lmost = positions[sorted[0]].left, rmost = positions[sorted[sorted.length-1]].left + positions[sorted[sorted.length-1]].width;
