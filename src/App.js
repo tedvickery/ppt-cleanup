@@ -780,6 +780,7 @@ export default function App() {
     try {
       addLog("Reading selected slide…");
       const slideIndex = await getSelectedSlideIndex();
+      const slideW = 13.33, slideH = 7.5; // standard WIDE layout inches
       addLog(`Slide ${slideIndex} selected`);
 
       // Use cached file data if available, otherwise read now
@@ -851,10 +852,10 @@ export default function App() {
       if (titleShape && targetTitlePos) {
         const cur = titleShape.position;
         const posNeedsFix = !cur ||
-          Math.abs(cur.left   - targetTitlePos.left)   > 0.01 ||
-          Math.abs(cur.top    - targetTitlePos.top)    > 0.01 ||
-          Math.abs(cur.width  - targetTitlePos.width)  > 0.01 ||
-          Math.abs(cur.height - targetTitlePos.height) > 0.01;
+          Math.abs(cur.left   - targetTitlePos.left)   > targetTitlePos.width  * 0.005 ||
+          Math.abs(cur.top    - targetTitlePos.top)    > targetTitlePos.height * 0.005 ||
+          Math.abs(cur.width  - targetTitlePos.width)  > targetTitlePos.width  * 0.005 ||
+          Math.abs(cur.height - targetTitlePos.height) > targetTitlePos.height * 0.005;
         const fontNeedsFix = titleShape.current.fontName !== "(inherited)" && titleShape.current.fontName !== titleShape.masterTarget?.fontName;
         const fillNeedsFix = titleShape.shapeFill && titleShape.shapeFill !== "none" && titleShape.masterTarget?.fill === "none";
         if (posNeedsFix || fontNeedsFix || fillNeedsFix) {
@@ -921,7 +922,6 @@ export default function App() {
         }
 
         // Expand text boxes to fit content
-        const slideW = 13.33, slideH = 7.5;
         for (const ss of pptxData.slideShapes) {
           if (!ss.position || !ss.textContent) continue;
           const os = shapes.items.find(s => String(s.id) === String(ss.id));
@@ -938,13 +938,13 @@ export default function App() {
             os.textFrame.autoSizeSetting = PowerPoint.ShapeAutoSize.autoSizeNone;
             await ctx.sync();
             const { left: origLeft, top: origTop, width: origW, height: origH } = ss.position;
-            if (neededW <= origW + 0.01 && neededH <= origH + 0.01) continue;
             const stepW = slideW / 100, stepH = slideH / 100;
+            if (neededW <= origW + stepW * 0.1 && neededH <= origH + stepH * 0.1) continue;
             const maxW = slideW - origLeft, maxH = slideH - origTop;
             let curW = origW, curH = origH;
-            while ((curW < neededW - 0.01 || curH < neededH - 0.01) && (curW < maxW - 0.01 || curH < maxH - 0.01)) {
-              if (curW < neededW - 0.01 && curW < maxW) curW = Math.min(curW + stepW, maxW);
-              if (curH < neededH - 0.01 && curH < maxH) curH = Math.min(curH + stepH, maxH);
+            while ((curW < neededW - stepW * 0.1 || curH < neededH - stepH * 0.1) && (curW < maxW - stepW * 0.1 || curH < maxH - stepH * 0.1)) {
+              if (curW < neededW - stepW * 0.1 && curW < maxW) curW = Math.min(curW + stepW, maxW);
+              if (curH < neededH - stepH * 0.1 && curH < maxH) curH = Math.min(curH + stepH, maxH);
             }
             let overlaps = false;
             for (const other of pptxData.slideShapes) {
@@ -952,7 +952,7 @@ export default function App() {
               const o = other.position;
               if (origLeft < o.left + o.width && origLeft + curW > o.left && origTop < o.top + o.height && origTop + curH > o.top) { overlaps = true; break; }
             }
-            if (overlaps || origLeft + curW > slideW + 0.05 || origTop + curH > slideH + 0.05) {
+            if (overlaps || origLeft + curW > slideW + stepW * 0.5 || origTop + curH > slideH + stepH * 0.5) {
               os.textFrame.autoSizeSetting = PowerPoint.ShapeAutoSize.autoSizeTextToFitShape;
             } else {
               os.width = curW * 72; os.height = curH * 72;
@@ -1031,9 +1031,9 @@ export default function App() {
           s.phType !== "title" && s.phType !== "ctrTitle" && s.phType !== "sldNum" && s.phType !== "ftr" && s.position
         );
         if (nonTitleShapes.length > 0 && targetTitlePos) {
-          const GRID = 100, MAX_CELLS = 5;
+          const GRID = 50, MAX_CELLS = 5;
           const areaLeft = targetTitlePos.left, areaRight = targetTitlePos.left + targetTitlePos.width;
-          const areaTop  = targetTitlePos.top + targetTitlePos.height + 0.1, areaBottom = 7.4;
+          const areaTop  = targetTitlePos.top + targetTitlePos.height + slideH * 0.013, areaBottom = slideH * 0.987;
           const cellW = (areaRight - areaLeft) / GRID, cellH = (areaBottom - areaTop) / GRID;
           const snapX = v => areaLeft + Math.round((v - areaLeft) / cellW) * cellW;
           const snapY = v => areaTop  + Math.round((v - areaTop)  / cellH) * cellH;
@@ -1058,8 +1058,8 @@ export default function App() {
             const newBottom = clamp(snapY(orig.top  + orig.height),orig.top  + orig.height,cellH);
             const newWidth  = Math.max(newRight - newLeft, cellW);
             const newHeight = Math.max(newBottom - newTop, cellH);
-            if (Math.abs(newLeft-orig.left)>0.001 || Math.abs(newTop-orig.top)>0.001 ||
-                Math.abs(newWidth-orig.width)>0.001 || Math.abs(newHeight-orig.height)>0.001) {
+            if (Math.abs(newLeft-orig.left) > cellW*0.1 || Math.abs(newTop-orig.top) > cellH*0.1 ||
+                Math.abs(newWidth-orig.width) > cellW*0.1 || Math.abs(newHeight-orig.height) > cellH*0.1) {
               positions[i] = { left: newLeft, top: newTop, width: newWidth, height: newHeight };
               recordFix(i);
             }
@@ -1074,7 +1074,7 @@ export default function App() {
               const a = positions[i], b = positions[j];
               const overlapX = Math.min(a.left+a.width, b.left+b.width) - Math.max(a.left, b.left);
               const overlapY = Math.min(a.top+a.height, b.top+b.height) - Math.max(a.top,  b.top);
-              if (overlapX > 0.01 && overlapY > 0.01) {
+              if (overlapX > cellW && overlapY > cellH) {
                 if (overlapX <= overlapY) { positions[j].left += overlapX + cellW; }
                 else                      { positions[j].top  += overlapY + cellH; }
                 recordFix(j);
@@ -1091,26 +1091,31 @@ export default function App() {
               const wSim = Math.abs(a.width  - b.width)  / Math.max(a.width,  b.width)  <= SIM;
               const hSim = Math.abs(a.height - b.height) / Math.max(a.height, b.height) <= SIM;
 
-              // Align tops if their tops are within 15% of height
-              if (Math.abs(a.top - b.top) / Math.max(a.height, b.height) <= SIM) {
+              // Alignment tolerance: 15% of dimension but capped at 5 grid cells
+              const topTol  = Math.min(SIM * Math.max(a.height, b.height), cellH * 5);
+              const leftTol = Math.min(SIM * Math.max(a.width,  b.width),  cellW * 5);
+              const botTol  = topTol, rightTol = leftTol;
+
+              // Align tops
+              if (Math.abs(a.top - b.top) <= topTol) {
                 const t = Math.min(a.top, b.top);
                 positions[i].top = t; positions[j].top = t;
                 recordFix(i); recordFix(j);
               }
-              // Align lefts if their lefts are within 15% of width
-              if (Math.abs(a.left - b.left) / Math.max(a.width, b.width) <= SIM) {
+              // Align lefts
+              if (Math.abs(a.left - b.left) <= leftTol) {
                 const l = Math.min(a.left, b.left);
                 positions[i].left = l; positions[j].left = l;
                 recordFix(i); recordFix(j);
               }
-              // Align bottom edges if within 15% of height
-              if (Math.abs((a.top+a.height) - (b.top+b.height)) / Math.max(a.height, b.height) <= SIM) {
+              // Align bottom edges
+              if (Math.abs((a.top+a.height) - (b.top+b.height)) <= botTol) {
                 const bot = Math.max(a.top+a.height, b.top+b.height);
                 positions[i].top = bot - a.height; positions[j].top = bot - b.height;
                 recordFix(i); recordFix(j);
               }
-              // Align right edges if within 15% of width
-              if (Math.abs((a.left+a.width) - (b.left+b.width)) / Math.max(a.width, b.width) <= SIM) {
+              // Align right edges
+              if (Math.abs((a.left+a.width) - (b.left+b.width)) <= rightTol) {
                 const right = Math.max(a.left+a.width, b.left+b.width);
                 positions[i].left = right - a.width; positions[j].left = right - b.width;
                 recordFix(i); recordFix(j);
@@ -1190,7 +1195,7 @@ export default function App() {
         }], themeColors);
       }
 
-      // ─── SAFETY NET: push any remaining overlaps apart ───────────────────────
+      // ─── SAFETY NET: push any remaining text-box overlaps apart ─────────────
       await PowerPoint.run(async (ctx) => {
         const slides = ctx.presentation.slides;
         slides.load("items");
@@ -1198,22 +1203,27 @@ export default function App() {
         const shapes = slides.items[dupIndex - 1].shapes;
         shapes.load("items");
         await ctx.sync();
-        for (const s of shapes.items) s.load(["id", "name", "left", "top", "width", "height"]);
+        for (const s of shapes.items) s.load(["id", "name", "left", "top", "width", "height", "type"]);
         await ctx.sync();
-        const live = shapes.items.map(s => ({ s, left: s.left/72, top: s.top/72, width: s.width/72, height: s.height/72 })).filter(s => s.width > 0.1 && s.height > 0.1);
+        // Only consider text boxes (type 1 = text box, 14 = placeholder)
+        const live = shapes.items
+          .filter(s => s.width > 0 && s.height > 0)
+          .map(s => ({ s, left: s.left/72, top: s.top/72, width: s.width/72, height: s.height/72 }));
+        // Grid cell sizes based on slide area
+        const gW = slideW / 50, gH = slideH / 50;
         let changed = true;
         for (let iter = 0; iter < 8 && changed; iter++) {
           changed = false;
           for (let i = 0; i < live.length; i++) {
             for (let j = i + 1; j < live.length; j++) {
               const a = live[i], b = live[j];
-              const overX = a.left < b.left + b.width - 0.05 && a.left + a.width > b.left + 0.05;
-              const overY = a.top  < b.top  + b.height - 0.05 && a.top  + a.height > b.top  + 0.05;
+              const overX = a.left < b.left + b.width  - gW && a.left + a.width  > b.left + gW;
+              const overY = a.top  < b.top  + b.height - gH && a.top  + a.height > b.top  + gH;
               if (!overX || !overY) continue;
               const lower = a.top >= b.top ? a : b;
               const upper = a.top >= b.top ? b : a;
-              const newTop = upper.top + upper.height + 0.1;
-              if (newTop + lower.height <= 7.5) { lower.top = newTop; lower.s.top = newTop * 72; changed = true; }
+              const newTop = upper.top + upper.height + gH;
+              if (newTop + lower.height <= slideH) { lower.top = newTop; lower.s.top = newTop * 72; changed = true; }
             }
           }
         }
