@@ -970,8 +970,8 @@ export default function App() {
           for (let j = 0; j < textShapes.length; j++) {
             if (i === j) continue;
             const b = textShapes[j];
-            if (Math.abs(a.position.width  - b.position.width)  / a.position.width  <= 0.20 &&
-                Math.abs(a.position.height - b.position.height) / a.position.height <= 0.20) group.push(b);
+            if (Math.abs(a.position.width  - b.position.width)  / a.position.width  <= 0.15 &&
+                Math.abs(a.position.height - b.position.height) / a.position.height <= 0.15) group.push(b);
           }
           if (group.length < 2) continue;
           const freq = group.reduce((acc, s) => { acc[s.current.fontSize] = (acc[s.current.fontSize]||0)+1; return acc; }, {});
@@ -1060,16 +1060,16 @@ export default function App() {
           for (let i = 0; i < nonTitleShapes.length; i++) {
             for (let j = i + 1; j < nonTitleShapes.length; j++) {
               const a = positions[i], b = positions[j];
-              const wSim = Math.abs(a.width  - b.width)  / a.width  <= 0.20;
-              const hSim = Math.abs(a.height - b.height) / a.height <= 0.20;
+              const wSim = Math.abs(a.width  - b.width)  / a.width  <= 0.15;
+              const hSim = Math.abs(a.height - b.height) / a.height <= 0.15;
               if (!wSim && !hSim) continue;
-              if (wSim && Math.abs(a.left - b.left) / a.width <= 0.20) { const avg = (a.left + b.left) / 2; positions[i].left = avg; positions[j].left = avg; }
-              if (hSim && Math.abs(a.top  - b.top)  / a.height <= 0.20) { const avg = (a.top  + b.top)  / 2; positions[i].top  = avg; positions[j].top  = avg; }
-              if (wSim && Math.abs((a.left+a.width) - (b.left+b.width)) / a.width <= 0.20) {
+              if (wSim && Math.abs(a.left - b.left) / a.width <= 0.15) { const avg = (a.left + b.left) / 2; positions[i].left = avg; positions[j].left = avg; }
+              if (hSim && Math.abs(a.top  - b.top)  / a.height <= 0.15) { const avg = (a.top  + b.top)  / 2; positions[i].top  = avg; positions[j].top  = avg; }
+              if (wSim && Math.abs((a.left+a.width) - (b.left+b.width)) / a.width <= 0.15) {
                 const avg = ((a.left+a.width) + (b.left+b.width)) / 2;
                 positions[i].left = avg - a.width; positions[j].left = avg - b.width;
               }
-              if (hSim && Math.abs((a.top+a.height) - (b.top+b.height)) / a.height <= 0.20) {
+              if (hSim && Math.abs((a.top+a.height) - (b.top+b.height)) / a.height <= 0.15) {
                 const avg = ((a.top+a.height) + (b.top+b.height)) / 2;
                 positions[i].top = avg - a.height; positions[j].top = avg - b.height;
               }
@@ -1084,7 +1084,50 @@ export default function App() {
             }
           }
 
-          // Distribute groups of 3+ similarly-sized shapes
+          // Proximity snap: if any two shapes' edges are within 1 grid cell of each other, snap them
+          // This catches column headers/boxes that are nearly aligned but not within dimension tolerance
+          for (let i = 0; i < nonTitleShapes.length; i++) {
+            for (let j = i + 1; j < nonTitleShapes.length; j++) {
+              const a = positions[i], b = positions[j];
+              const snapAndRecord = (axis, val) => {
+                positions[i][axis] = val; positions[j][axis] = val;
+                for (const idx of [i, j]) {
+                  const s = nonTitleShapes[idx];
+                  const ex = gridFixes.find(f => String(f.shapeId) === String(s.id));
+                  if (ex) ex.position[axis] = val;
+                  else gridFixes.push({ shapeName: s.name, shapeId: s.id, _slideShape: s, shapeFill: s.shapeFill||null, position: { ...positions[idx] } });
+                }
+              };
+              // Snap tops if within 1 grid cell
+              if (Math.abs(a.top - b.top) > 0.001 && Math.abs(a.top - b.top) <= cellH) {
+                snapAndRecord("top", (a.top + b.top) / 2);
+              }
+              // Snap lefts if within 1 grid cell
+              if (Math.abs(a.left - b.left) > 0.001 && Math.abs(a.left - b.left) <= cellW) {
+                snapAndRecord("left", (a.left + b.left) / 2);
+              }
+              // Snap bottom edges if within 1 grid cell
+              const aBot = a.top + a.height, bBot = b.top + b.height;
+              if (Math.abs(aBot - bBot) > 0.001 && Math.abs(aBot - bBot) <= cellH) {
+                const avg = (aBot + bBot) / 2;
+                snapAndRecord("top", avg - a.height);
+                positions[j].top = avg - b.height;
+                const exj = gridFixes.find(f => String(f.shapeId) === String(nonTitleShapes[j].id));
+                if (exj) exj.position.top = avg - b.height;
+              }
+              // Snap right edges if within 1 grid cell
+              const aRight = a.left + a.width, bRight = b.left + b.width;
+              if (Math.abs(aRight - bRight) > 0.001 && Math.abs(aRight - bRight) <= cellW) {
+                const avg = (aRight + bRight) / 2;
+                snapAndRecord("left", avg - a.width);
+                positions[j].left = avg - b.width;
+                const exj = gridFixes.find(f => String(f.shapeId) === String(nonTitleShapes[j].id));
+                if (exj) exj.position.left = avg - b.width;
+              }
+            }
+          }
+
+
           const distributed = new Set();
           for (let i = 0; i < nonTitleShapes.length; i++) {
             if (distributed.has(i)) continue;
@@ -1096,8 +1139,8 @@ export default function App() {
             if (group.length < 3) continue;
             group.forEach(idx => distributed.add(idx));
             const gp = group.map(idx => positions[idx]);
-            const topsAligned  = gp.every(p => Math.abs(p.top  - gp[0].top)  / gp[0].height <= 0.20);
-            const leftsAligned = gp.every(p => Math.abs(p.left - gp[0].left) / gp[0].width  <= 0.20);
+            const topsAligned  = gp.every(p => Math.abs(p.top  - gp[0].top)  / gp[0].height <= 0.15);
+            const leftsAligned = gp.every(p => Math.abs(p.left - gp[0].left) / gp[0].width  <= 0.15);
             if (topsAligned) {
               const sorted = [...group].sort((x, y) => positions[x].left - positions[y].left);
               const lmost = positions[sorted[0]].left, rmost = positions[sorted[sorted.length-1]].left + positions[sorted[sorted.length-1]].width;
