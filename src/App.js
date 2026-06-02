@@ -1025,7 +1025,7 @@ export default function App() {
         }
       });
 
-      // ─── STEP 4: Grid alignment + overlap fix ───────────────────────────────
+      // ─── STEP 4: Grid snap → overlap fix → align → size match → distribute ────
       {
         const nonTitleShapes = pptxData.slideShapes.filter(s =>
           s.phType !== "title" && s.phType !== "ctrTitle" && s.phType !== "sldNum" && s.phType !== "ftr" && s.position
@@ -1042,140 +1042,134 @@ export default function App() {
           const gridFixes = [];
           const positions = nonTitleShapes.map(s => ({ ...s.position }));
 
+          const recordFix = (idx) => {
+            const s = nonTitleShapes[idx], p = positions[idx];
+            const ex = gridFixes.find(f => String(f.shapeId) === String(s.id));
+            if (ex) { ex.position = { ...p }; }
+            else gridFixes.push({ shapeName: s.name, shapeId: s.id, _slideShape: s, shapeFill: s.shapeFill||null, position: { ...p } });
+          };
+
+          // ── 4a. Snap every shape to nearest grid point ──────────────────────
           for (let i = 0; i < nonTitleShapes.length; i++) {
-            const s = nonTitleShapes[i], orig = s.position;
+            const orig = nonTitleShapes[i].position;
             const newLeft   = clamp(snapX(orig.left),              orig.left,              cellW);
             const newTop    = clamp(snapY(orig.top),               orig.top,               cellH);
             const newRight  = clamp(snapX(orig.left + orig.width), orig.left + orig.width, cellW);
             const newBottom = clamp(snapY(orig.top  + orig.height),orig.top  + orig.height,cellH);
             const newWidth  = Math.max(newRight - newLeft, cellW);
             const newHeight = Math.max(newBottom - newTop, cellH);
-            if (Math.abs(newLeft-orig.left)>0.001 || Math.abs(newTop-orig.top)>0.001 || Math.abs(newWidth-orig.width)>0.001 || Math.abs(newHeight-orig.height)>0.001) {
+            if (Math.abs(newLeft-orig.left)>0.001 || Math.abs(newTop-orig.top)>0.001 ||
+                Math.abs(newWidth-orig.width)>0.001 || Math.abs(newHeight-orig.height)>0.001) {
               positions[i] = { left: newLeft, top: newTop, width: newWidth, height: newHeight };
-              gridFixes.push({ shapeName: s.name, shapeId: s.id, _slideShape: s, shapeFill: s.shapeFill||null, position: { left: newLeft, top: newTop, width: newWidth, height: newHeight } });
+              recordFix(i);
             }
           }
 
-          // Align similarly-sized shape edges
+          // ── 4b. Resolve text-box overlaps only ──────────────────────────────
+          const isTextBox = (s) => !s.phType || s.phType === "body" || s.phType === "obj" || s.phType === "subTitle";
+          for (let i = 0; i < nonTitleShapes.length; i++) {
+            if (!isTextBox(nonTitleShapes[i])) continue;
+            for (let j = i + 1; j < nonTitleShapes.length; j++) {
+              if (!isTextBox(nonTitleShapes[j])) continue;
+              const a = positions[i], b = positions[j];
+              const overlapX = Math.min(a.left+a.width, b.left+b.width) - Math.max(a.left, b.left);
+              const overlapY = Math.min(a.top+a.height, b.top+b.height) - Math.max(a.top,  b.top);
+              if (overlapX > 0.01 && overlapY > 0.01) {
+                if (overlapX <= overlapY) { positions[j].left += overlapX + cellW; }
+                else                      { positions[j].top  += overlapY + cellH; }
+                recordFix(j);
+              }
+            }
+          }
+
+          // ── 4c. Align edges: within 15% of dimension → snap to same edge ────
+          //        Also match sizes (width and height) if within 15%
+          const SIM = 0.15;
           for (let i = 0; i < nonTitleShapes.length; i++) {
             for (let j = i + 1; j < nonTitleShapes.length; j++) {
               const a = positions[i], b = positions[j];
-              const wSim = Math.abs(a.width  - b.width)  / a.width  <= 0.15;
-              const hSim = Math.abs(a.height - b.height) / a.height <= 0.15;
-              if (!wSim && !hSim) continue;
-              if (wSim && Math.abs(a.left - b.left) / a.width <= 0.15) { const avg = (a.left + b.left) / 2; positions[i].left = avg; positions[j].left = avg; }
-              if (hSim && Math.abs(a.top  - b.top)  / a.height <= 0.15) { const avg = (a.top  + b.top)  / 2; positions[i].top  = avg; positions[j].top  = avg; }
-              if (wSim && Math.abs((a.left+a.width) - (b.left+b.width)) / a.width <= 0.15) {
-                const avg = ((a.left+a.width) + (b.left+b.width)) / 2;
-                positions[i].left = avg - a.width; positions[j].left = avg - b.width;
-              }
-              if (hSim && Math.abs((a.top+a.height) - (b.top+b.height)) / a.height <= 0.15) {
-                const avg = ((a.top+a.height) + (b.top+b.height)) / 2;
-                positions[i].top = avg - a.height; positions[j].top = avg - b.height;
-              }
-            }
-          }
-          for (let i = 0; i < nonTitleShapes.length; i++) {
-            const s = nonTitleShapes[i], orig = s.position, p = positions[i];
-            if (Math.abs(p.left-orig.left) > 0.001 || Math.abs(p.top-orig.top) > 0.001) {
-              const ex = gridFixes.find(f => String(f.shapeId) === String(s.id));
-              if (ex) { ex.position.left = p.left; ex.position.top = p.top; }
-              else gridFixes.push({ shapeName: s.name, shapeId: s.id, _slideShape: s, shapeFill: s.shapeFill||null, position: { ...p } });
-            }
-          }
+              const wSim = Math.abs(a.width  - b.width)  / Math.max(a.width,  b.width)  <= SIM;
+              const hSim = Math.abs(a.height - b.height) / Math.max(a.height, b.height) <= SIM;
 
-          // Proximity snap: cluster shapes whose edges are within 5 grid cells, snap all to minimum
-          const snapEdges = [
-            { get: p => p.top,             set: (p, v) => { p.top = v; } },
-            { get: p => p.left,            set: (p, v) => { p.left = v; } },
-            { get: p => p.top + p.height,  set: (p, v) => { p.top = v - p.height; } },
-            { get: p => p.left + p.width,  set: (p, v) => { p.left = v - p.width; } },
-          ];
-          const edgeThreshH = cellH * 5, edgeThreshW = cellW * 5;
-          for (const edge of snapEdges) {
-            const thresh = edge === snapEdges[0] || edge === snapEdges[2] ? edgeThreshH : edgeThreshW;
-            // Build clusters: group indices whose edge values are all within thresh of each other
-            const visited = new Set();
-            for (let i = 0; i < nonTitleShapes.length; i++) {
-              if (visited.has(i)) continue;
-              const cluster = [i];
-              for (let j = i + 1; j < nonTitleShapes.length; j++) {
-                if (Math.abs(edge.get(positions[i]) - edge.get(positions[j])) <= thresh) cluster.push(j);
+              // Align tops if their tops are within 15% of height
+              if (Math.abs(a.top - b.top) / Math.max(a.height, b.height) <= SIM) {
+                const t = Math.min(a.top, b.top);
+                positions[i].top = t; positions[j].top = t;
+                recordFix(i); recordFix(j);
               }
-              if (cluster.length < 2) continue;
-              cluster.forEach(idx => visited.add(idx));
-              // Snap all to the minimum edge value in the cluster
-              const target = Math.min(...cluster.map(idx => edge.get(positions[idx])));
-              for (const idx of cluster) {
-                const before = edge.get(positions[idx]);
-                if (Math.abs(before - target) <= 0.001) continue;
-                edge.set(positions[idx], target);
-                const s = nonTitleShapes[idx];
-                const ex = gridFixes.find(f => String(f.shapeId) === String(s.id));
-                if (ex) { ex.position.top = positions[idx].top; ex.position.left = positions[idx].left; }
-                else gridFixes.push({ shapeName: s.name, shapeId: s.id, _slideShape: s, shapeFill: s.shapeFill||null, position: { ...positions[idx] } });
+              // Align lefts if their lefts are within 15% of width
+              if (Math.abs(a.left - b.left) / Math.max(a.width, b.width) <= SIM) {
+                const l = Math.min(a.left, b.left);
+                positions[i].left = l; positions[j].left = l;
+                recordFix(i); recordFix(j);
+              }
+              // Align bottom edges if within 15% of height
+              if (Math.abs((a.top+a.height) - (b.top+b.height)) / Math.max(a.height, b.height) <= SIM) {
+                const bot = Math.max(a.top+a.height, b.top+b.height);
+                positions[i].top = bot - a.height; positions[j].top = bot - b.height;
+                recordFix(i); recordFix(j);
+              }
+              // Align right edges if within 15% of width
+              if (Math.abs((a.left+a.width) - (b.left+b.width)) / Math.max(a.width, b.width) <= SIM) {
+                const right = Math.max(a.left+a.width, b.left+b.width);
+                positions[i].left = right - a.width; positions[j].left = right - b.width;
+                recordFix(i); recordFix(j);
+              }
+              // Match sizes if within 15%
+              if (wSim) {
+                const avgW = (a.width + b.width) / 2;
+                positions[i].width = avgW; positions[j].width = avgW;
+                recordFix(i); recordFix(j);
+              }
+              if (hSim) {
+                const avgH = (a.height + b.height) / 2;
+                positions[i].height = avgH; positions[j].height = avgH;
+                recordFix(i); recordFix(j);
               }
             }
           }
 
-
+          // ── 4d. Distribute groups of 3+ within 15% dimensions ───────────────
           const distributed = new Set();
           for (let i = 0; i < nonTitleShapes.length; i++) {
             if (distributed.has(i)) continue;
             const group = [i];
             for (let j = i + 1; j < nonTitleShapes.length; j++) {
               const a = positions[i], b = positions[j];
-              if (Math.abs(a.width-b.width)/a.width<=0.10 && Math.abs(a.height-b.height)/a.height<=0.10) group.push(j);
+              if (Math.abs(a.width-b.width)/Math.max(a.width,b.width) <= SIM &&
+                  Math.abs(a.height-b.height)/Math.max(a.height,b.height) <= SIM) group.push(j);
             }
             if (group.length < 3) continue;
             group.forEach(idx => distributed.add(idx));
             const gp = group.map(idx => positions[idx]);
-            const topsAligned  = gp.every(p => Math.abs(p.top  - gp[0].top)  / gp[0].height <= 0.15);
-            const leftsAligned = gp.every(p => Math.abs(p.left - gp[0].left) / gp[0].width  <= 0.15);
+            // Distribute horizontally if tops are aligned
+            const topsAligned = gp.every(p => Math.abs(p.top - gp[0].top) / Math.max(p.height, gp[0].height) <= SIM);
             if (topsAligned) {
               const sorted = [...group].sort((x, y) => positions[x].left - positions[y].left);
-              const lmost = positions[sorted[0]].left, rmost = positions[sorted[sorted.length-1]].left + positions[sorted[sorted.length-1]].width;
-              const gap = (rmost - lmost - sorted.reduce((s, idx) => s + positions[idx].width, 0)) / (sorted.length - 1);
+              const lmost = positions[sorted[0]].left;
+              const rmost = positions[sorted[sorted.length-1]].left + positions[sorted[sorted.length-1]].width;
+              const totalW = sorted.reduce((s, idx) => s + positions[idx].width, 0);
+              const gap = (rmost - lmost - totalW) / (sorted.length - 1);
               let cursor = lmost;
               for (const idx of sorted) {
-                if (Math.abs(positions[idx].left - cursor) > 0.001) {
-                  positions[idx].left = cursor;
-                  const ex = gridFixes.find(f => String(f.shapeId) === String(nonTitleShapes[idx].id));
-                  if (ex) ex.position.left = cursor;
-                  else gridFixes.push({ shapeName: nonTitleShapes[idx].name, shapeId: nonTitleShapes[idx].id, _slideShape: nonTitleShapes[idx], shapeFill: nonTitleShapes[idx].shapeFill||null, position: { ...positions[idx] } });
-                }
+                positions[idx].left = cursor;
+                recordFix(idx);
                 cursor += positions[idx].width + gap;
               }
             }
+            // Distribute vertically if lefts are aligned
+            const leftsAligned = gp.every(p => Math.abs(p.left - gp[0].left) / Math.max(p.width, gp[0].width) <= SIM);
             if (leftsAligned) {
               const sorted = [...group].sort((x, y) => positions[x].top - positions[y].top);
-              const tmost = positions[sorted[0]].top, bmost = positions[sorted[sorted.length-1]].top + positions[sorted[sorted.length-1]].height;
-              const gap = (bmost - tmost - sorted.reduce((s, idx) => s + positions[idx].height, 0)) / (sorted.length - 1);
+              const tmost = positions[sorted[0]].top;
+              const bmost = positions[sorted[sorted.length-1]].top + positions[sorted[sorted.length-1]].height;
+              const totalH = sorted.reduce((s, idx) => s + positions[idx].height, 0);
+              const gap = (bmost - tmost - totalH) / (sorted.length - 1);
               let cursor = tmost;
               for (const idx of sorted) {
-                if (Math.abs(positions[idx].top - cursor) > 0.001) {
-                  positions[idx].top = cursor;
-                  const ex = gridFixes.find(f => String(f.shapeId) === String(nonTitleShapes[idx].id));
-                  if (ex) ex.position.top = cursor;
-                  else gridFixes.push({ shapeName: nonTitleShapes[idx].name, shapeId: nonTitleShapes[idx].id, _slideShape: nonTitleShapes[idx], shapeFill: nonTitleShapes[idx].shapeFill||null, position: { ...positions[idx] } });
-                }
+                positions[idx].top = cursor;
+                recordFix(idx);
                 cursor += positions[idx].height + gap;
-              }
-            }
-          }
-
-          // Resolve overlaps
-          for (let i = 0; i < nonTitleShapes.length; i++) {
-            for (let j = i + 1; j < nonTitleShapes.length; j++) {
-              const a = positions[i], b = positions[j];
-              const overlapX = Math.min(a.left+a.width, b.left+b.width) - Math.max(a.left, b.left);
-              const overlapY = Math.min(a.top+a.height, b.top+b.height) - Math.max(a.top,  b.top);
-              if (overlapX > 0.01 && overlapY > 0.01) {
-                if (overlapX + cellW <= overlapY + cellH) positions[j].left += overlapX + cellW;
-                else positions[j].top  += overlapY + cellH;
-                const ex = gridFixes.find(f => String(f.shapeId) === String(nonTitleShapes[j].id));
-                if (ex) ex.position = { ...positions[j] };
-                else gridFixes.push({ shapeName: nonTitleShapes[j].name, shapeId: nonTitleShapes[j].id, _slideShape: nonTitleShapes[j], shapeFill: nonTitleShapes[j].shapeFill||null, position: { ...positions[j] } });
               }
             }
           }
