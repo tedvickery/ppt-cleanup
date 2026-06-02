@@ -1035,8 +1035,9 @@ export default function App() {
           const areaLeft = targetTitlePos.left, areaRight = targetTitlePos.left + targetTitlePos.width;
           const areaTop  = targetTitlePos.top + targetTitlePos.height + slideH * 0.013, areaBottom = slideH * 0.987;
           const cellW = (areaRight - areaLeft) / GRID, cellH = (areaBottom - areaTop) / GRID;
-          const snapX = v => areaLeft + Math.round((v - areaLeft) / cellW) * cellW;
-          const snapY = v => areaTop  + Math.round((v - areaTop)  / cellH) * cellH;
+          const q = v => Math.round(v * 10000) / 10000; // 4dp precision to avoid float drift
+          const snapX = v => { const n = Math.round((v - areaLeft) / cellW); return q(areaLeft + n * cellW); };
+          const snapY = v => { const n = Math.round((v - areaTop)  / cellH); return q(areaTop  + n * cellH); };
           const clamp = (snapped, orig, cell) => Math.abs(snapped - orig) <= MAX_CELLS * cell ? snapped : orig;
 
           const gridFixes = [];
@@ -1111,28 +1112,28 @@ export default function App() {
                 const a = positions[i], b = positions[j];
                 // Align tops if within 2 vertical cells and same height
                 if (sameH(a, b) && Math.abs(a.top - b.top) <= cellH * 2 && Math.abs(a.top - b.top) > cellH * 0.1) {
-                  const t = Math.min(a.top, b.top);
+                  const t = q(Math.min(a.top, b.top));
                   positions[i].top = t; positions[j].top = t;
                   recordFix(i); recordFix(j); changed = true;
                 }
                 // Align lefts if within 2 horizontal cells and same width
                 if (sameW(a, b) && Math.abs(a.left - b.left) <= cellW * 2 && Math.abs(a.left - b.left) > cellW * 0.1) {
-                  const l = Math.min(a.left, b.left);
+                  const l = q(Math.min(a.left, b.left));
                   positions[i].left = l; positions[j].left = l;
                   recordFix(i); recordFix(j); changed = true;
                 }
                 // Align bottom edges if within 2 vertical cells and same height
                 const aBotE = a.top + a.height, bBotE = b.top + b.height;
                 if (sameH(a, b) && Math.abs(aBotE - bBotE) <= cellH * 2 && Math.abs(aBotE - bBotE) > cellH * 0.1) {
-                  const bot = Math.min(aBotE, bBotE);
-                  positions[i].top = bot - a.height; positions[j].top = bot - b.height;
+                  const bot = q(Math.min(aBotE, bBotE));
+                  positions[i].top = q(bot - a.height); positions[j].top = q(bot - b.height);
                   recordFix(i); recordFix(j); changed = true;
                 }
                 // Align right edges if within 2 horizontal cells and same width
                 const aRightE = a.left + a.width, bRightE = b.left + b.width;
                 if (sameW(a, b) && Math.abs(aRightE - bRightE) <= cellW * 2 && Math.abs(aRightE - bRightE) > cellW * 0.1) {
-                  const right = Math.min(aRightE, bRightE);
-                  positions[i].left = right - a.width; positions[j].left = right - b.width;
+                  const right = q(Math.min(aRightE, bRightE));
+                  positions[i].left = q(right - a.width); positions[j].left = q(right - b.width);
                   recordFix(i); recordFix(j); changed = true;
                 }
               }
@@ -1146,7 +1147,7 @@ export default function App() {
               for (let j = 0; j < nonTitleShapes.length; j++) {
                 if (j === i) continue;
                 const a = positions[i], b = positions[j];
-                if (sameH(a, b) && a.top === b.top) hRow.push(j);
+                if (sameH(a, b) && Math.abs(a.top - b.top) <= cellH * 0.1) hRow.push(j);
               }
               if (hRow.length >= 2) {
                 const sorted = hRow.sort((x, y) => positions[x].left - positions[y].left);
@@ -1170,7 +1171,7 @@ export default function App() {
               for (let j = 0; j < nonTitleShapes.length; j++) {
                 if (j === i) continue;
                 const a = positions[i], b = positions[j];
-                if (sameW(a, b) && a.left === b.left) wCol.push(j);
+                if (sameW(a, b) && Math.abs(a.left - b.left) <= cellW * 0.1) wCol.push(j);
               }
               if (wCol.length >= 2) {
                 const sorted = wCol.sort((x, y) => positions[x].top - positions[y].top);
