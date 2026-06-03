@@ -1144,6 +1144,7 @@ export default function App() {
         // Expand text boxes to fit content
         for (const ss of pptxData.slideShapes) {
           if (!ss.position || !ss.textContent) continue;
+          if (ss.isTable || ss.isGroup) continue;
           const os = shapes.items.find(s => String(s.id) === String(ss.id));
           if (!os) continue;
           try {
@@ -1183,7 +1184,7 @@ export default function App() {
         }
 
         // Normalise similarly-sized shape groups
-        const textShapes = pptxData.slideShapes.filter(ss => ss.phType !== "title" && ss.phType !== "ctrTitle" && ss.position && typeof ss.current.fontSize === "number");
+        const textShapes = pptxData.slideShapes.filter(ss => ss.phType !== "title" && ss.phType !== "ctrTitle" && ss.position && typeof ss.current.fontSize === "number" && !ss.isTable && !ss.isGroup);
         for (let i = 0; i < textShapes.length; i++) {
           const a = textShapes[i];
           const group = [a];
