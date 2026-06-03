@@ -1037,8 +1037,8 @@ export default function App() {
         }
       }
 
-      // ─── STEPS 2 + 3: Fonts, sizes, colours — single Office.js context ────────
-      addLog("Step 2: Fonts & colours…");
+      // ─── STEP 2: Fonts — correct font name, normalise sizes, expand text boxes ─
+      addLog("Step 2: Fonts…");
       await PowerPoint.run(async (ctx) => {
         const slides = ctx.presentation.slides;
         slides.load("items");
@@ -1056,7 +1056,6 @@ export default function App() {
         const sizeFreq = nonTitleSizes.reduce((acc, s) => { acc[s] = (acc[s] || 0) + 1; return acc; }, {});
         const normalisedSize = nonTitleSizes.length > 0 ? parseInt(Object.entries(sizeFreq).sort((a, b) => b[1] - a[1])[0][0]) : null;
 
-        // ── Font fixes ──────────────────────────────────────────────────────────
         for (const ss of pptxData.slideShapes) {
           if (ss.isTable) {
             const os = shapes.items.find(s => String(s.id) === String(ss.id)) || shapes.items.find(s => s.name === ss.name);
@@ -1066,7 +1065,6 @@ export default function App() {
               table.load("rowCount,columnCount");
               await ctx.sync();
               const masterFont = pptxData.masterPlaceholders.find(p => p.type === "body")?.font;
-              // Batch: load all cell fonts, sync once, write all, sync once
               const cells = [];
               for (let r = 0; r < table.rowCount; r++)
                 for (let c = 0; c < table.columnCount; c++) {
@@ -1094,7 +1092,6 @@ export default function App() {
               const groupShapes = os.shapes;
               groupShapes.load("items");
               await ctx.sync();
-              // Batch: load all child fonts, sync once, write all, sync once
               const trs = [];
               for (const child of groupShapes.items) {
                 try { const tr = child.textFrame.textRange; tr.font.load(["name", "size"]); trs.push({ tr }); } catch (e) { /* no text */ }
@@ -1204,10 +1201,21 @@ export default function App() {
             try { const tr = os.textFrame.textRange; tr.font.load("size"); await ctx.sync(); tr.font.size = groupSize; await ctx.sync(); totalFixes++; } catch (e) { /* ignore */ }
           }
         }
+      });
 
-        // ── Colour fixes — batch: load all colours, sync once, write all, sync once
-        addLog("Step 3: Colours…");
-        // Regular shapes: batch load then sync once; fall back to per-shape if batch fails
+      // ─── STEP 3: Colours — snap text to nearest theme colour ──────────────────
+      addLog("Step 3: Colours…");
+      await PowerPoint.run(async (ctx) => {
+        const slides = ctx.presentation.slides;
+        slides.load("items");
+        await ctx.sync();
+        const shapes = slides.items[dupIndex - 1].shapes;
+        shapes.load("items");
+        await ctx.sync();
+        for (const s of shapes.items) s.load(["id", "name"]);
+        await ctx.sync();
+
+        // Regular shapes: batch load all colours, sync once, write, sync once
         const colourJobs = [];
         for (const ss of pptxData.slideShapes) {
           if (ss.isTable || ss.isGroup) continue;
@@ -1220,17 +1228,14 @@ export default function App() {
             colourJobs.push({ ss, tr, os });
           } catch (e) { /* no text */ }
         }
-        addLog(`Colour jobs queued: ${colourJobs.length}`);
         let batchSyncOk = false;
-        try { await ctx.sync(); batchSyncOk = true; } catch (e) { addLog(`Batch sync failed: ${e.message}`); }
-        addLog(`Batch sync ok: ${batchSyncOk}`);
+        try { await ctx.sync(); batchSyncOk = true; } catch (e) { /* fall back to per-shape */ }
 
         if (batchSyncOk) {
           for (const { ss, tr } of colourJobs) {
             try {
               const liveColor = tr.font.color ? `#${tr.font.color}` : null;
               const cur = liveColor || ss.current.color;
-              addLog(`  ${ss.name}: live=${liveColor} cur=${cur}`);
               if (!cur || cur === "(inherited)" || cur === "#null" || cur === "#") continue;
               if (themeColorList.some(c => c && cur && c.toLowerCase() === cur.toLowerCase())) continue;
               if (ss.masterTarget?.color && ss.masterTarget.color !== "(inherited)" && cur.toLowerCase() === ss.masterTarget.color.toLowerCase()) continue;
@@ -1246,9 +1251,9 @@ export default function App() {
               totalFixes++;
             } catch (e) { /* no text */ }
           }
-          try { await ctx.sync(); } catch (e) { /* ignore write errors */ }
+          try { await ctx.sync(); } catch (e) { /* ignore */ }
         } else {
-          // Fallback: process each shape individually
+          // Fallback: per-shape
           for (const { ss, os } of colourJobs) {
             try {
               const tr = os.textFrame.textRange;
@@ -1274,7 +1279,7 @@ export default function App() {
           }
         }
 
-        // Tables: batch load all cell colours, sync once, write changes, sync once
+        // Tables: batch load all cell colours, sync once, write, sync once
         for (const ss of pptxData.slideShapes) {
           if (!ss.isTable) continue;
           const os = shapes.items.find(s => String(s.id) === String(ss.id));
