@@ -1217,8 +1217,7 @@ export default function App() {
         for (const s of shapes.items) s.load(["id", "name"]);
         await ctx.sync();
 
-        // Regular shapes: batch load all colours, sync once, write, sync once
-        const colourJobs = [];
+        // Regular shapes: snap font colour to nearest theme colour
         for (const ss of pptxData.slideShapes) {
           if (ss.isTable || ss.isGroup) continue;
           if (!ss.masterTarget) continue;
@@ -1227,56 +1226,25 @@ export default function App() {
           try {
             const tr = os.textFrame.textRange;
             tr.font.load("color");
-            colourJobs.push({ ss, tr, os });
+            await ctx.sync();
+            const shapeColor = tr.font.color ? `#${tr.font.color}` : null;
+            // null means mixed colours — force to master/primary colour
+            const cur = shapeColor && shapeColor !== "#null" && shapeColor !== "#"
+              ? shapeColor
+              : (ss.masterTarget?.color && ss.masterTarget.color !== "(inherited)" ? ss.masterTarget.color : null);
+            if (!cur) continue;
+            const nearest = snapToThemeColor(cur, themeColors);
+            if (nearest.toLowerCase() === shapeColor?.toLowerCase()) continue;
+            let textColor = nearest;
+            const fill = ss.shapeFill;
+            if (fill && fill !== "none" && !fill.startsWith("theme:")) {
+              const contrast = (Math.max(hexLuminance(fill), hexLuminance(nearest)) + 0.05) / (Math.min(hexLuminance(fill), hexLuminance(nearest)) + 0.05);
+              if (contrast < 3) textColor = hexLuminance(fill) > 0.179 ? "#000000" : "#FFFFFF";
+            }
+            tr.font.color = textColor.replace("#", "");
+            await ctx.sync();
+            totalFixes++;
           } catch (e) { /* no text */ }
-        }
-        let batchSyncOk = false;
-        try { await ctx.sync(); batchSyncOk = true; } catch (e) { /* fall back to per-shape */ }
-
-        if (batchSyncOk) {
-          for (const { ss, tr } of colourJobs) {
-            try {
-              const liveColor = tr.font.color ? `#${tr.font.color}` : null;
-              const cur = liveColor || ss.current.color;
-              if (!cur || cur === "(inherited)" || cur === "#null" || cur === "#") continue;
-              if (ss.masterTarget?.color && ss.masterTarget.color !== "(inherited)" && cur.toLowerCase() === ss.masterTarget.color.toLowerCase()) continue;
-              const nearestThemeColor = snapToThemeColor(cur, themeColors);
-              if (nearestThemeColor.toLowerCase() === cur.toLowerCase()) continue;
-              let textColor = nearestThemeColor;
-              const fill = ss.shapeFill;
-              if (fill && fill !== "none" && !fill.startsWith("theme:")) {
-                const contrast = (Math.max(hexLuminance(fill), hexLuminance(nearestThemeColor)) + 0.05) / (Math.min(hexLuminance(fill), hexLuminance(nearestThemeColor)) + 0.05);
-                if (contrast < 3) textColor = hexLuminance(fill) > 0.179 ? "#000000" : "#FFFFFF";
-              }
-              tr.font.color = textColor.replace("#", "");
-              totalFixes++;
-            } catch (e) { /* no text */ }
-          }
-          try { await ctx.sync(); } catch (e) { /* ignore */ }
-        } else {
-          // Fallback: per-shape
-          for (const { ss, os } of colourJobs) {
-            try {
-              const tr = os.textFrame.textRange;
-              tr.font.load("color");
-              await ctx.sync();
-              const liveColor = tr.font.color ? `#${tr.font.color}` : null;
-              const cur = liveColor || ss.current.color;
-              if (!cur || cur === "(inherited)" || cur === "#null" || cur === "#") continue;
-              if (ss.masterTarget?.color && ss.masterTarget.color !== "(inherited)" && cur.toLowerCase() === ss.masterTarget.color.toLowerCase()) continue;
-              const nearestThemeColor = snapToThemeColor(cur, themeColors);
-              if (nearestThemeColor.toLowerCase() === cur.toLowerCase()) continue;
-              let textColor = nearestThemeColor;
-              const fill = ss.shapeFill;
-              if (fill && fill !== "none" && !fill.startsWith("theme:")) {
-                const contrast = (Math.max(hexLuminance(fill), hexLuminance(nearestThemeColor)) + 0.05) / (Math.min(hexLuminance(fill), hexLuminance(nearestThemeColor)) + 0.05);
-                if (contrast < 3) textColor = hexLuminance(fill) > 0.179 ? "#000000" : "#FFFFFF";
-              }
-              tr.font.color = textColor.replace("#", "");
-              await ctx.sync();
-              totalFixes++;
-            } catch (e) { /* no text */ }
-          }
         }
 
         // Tables: batch load all cell colours, sync once, write, sync once
