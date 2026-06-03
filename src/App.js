@@ -1037,8 +1037,8 @@ export default function App() {
         }
       }
 
-      // ─── STEP 2: Fonts — correct font name, normalise sizes, expand text boxes
-      addLog("Step 2: Fonts…");
+      // ─── STEPS 2 + 3: Fonts, sizes, colours — single Office.js context ────────
+      addLog("Step 2: Fonts & colours…");
       await PowerPoint.run(async (ctx) => {
         const slides = ctx.presentation.slides;
         slides.load("items");
@@ -1056,9 +1056,9 @@ export default function App() {
         const sizeFreq = nonTitleSizes.reduce((acc, s) => { acc[s] = (acc[s] || 0) + 1; return acc; }, {});
         const normalisedSize = nonTitleSizes.length > 0 ? parseInt(Object.entries(sizeFreq).sort((a, b) => b[1] - a[1])[0][0]) : null;
 
+        // ── Font fixes ──────────────────────────────────────────────────────────
         for (const ss of pptxData.slideShapes) {
           if (ss.isTable) {
-            // Tables: apply normalised font size and font name to all cells
             const os = shapes.items.find(s => String(s.id) === String(ss.id)) || shapes.items.find(s => s.name === ss.name);
             if (!os) continue;
             try {
@@ -1066,17 +1066,21 @@ export default function App() {
               table.load("rowCount,columnCount");
               await ctx.sync();
               const masterFont = pptxData.masterPlaceholders.find(p => p.type === "body")?.font;
-              for (let r = 0; r < table.rowCount; r++) {
+              // Batch: load all cell fonts, sync once, write all, sync once
+              const cells = [];
+              for (let r = 0; r < table.rowCount; r++)
                 for (let c = 0; c < table.columnCount; c++) {
                   const cell = table.getCell(r, c);
                   const tr = cell.textFrame.textRange;
-                  try {
-                    tr.font.load(["name", "size"]);
-                    await ctx.sync();
-                    if (masterFont?.name && tr.font.name !== masterFont.name) tr.font.name = masterFont.name;
-                    if (normalisedSize && typeof ss.current.fontSize === "number" && Math.abs(ss.current.fontSize - normalisedSize) <= 3) tr.font.size = normalisedSize;
-                  } catch (e) { /* empty cell */ }
+                  tr.font.load(["name", "size"]);
+                  cells.push({ tr });
                 }
+              await ctx.sync();
+              for (const { tr } of cells) {
+                try {
+                  if (masterFont?.name && tr.font.name !== masterFont.name) tr.font.name = masterFont.name;
+                  if (normalisedSize && typeof ss.current.fontSize === "number" && Math.abs(ss.current.fontSize - normalisedSize) <= 3) tr.font.size = normalisedSize;
+                } catch (e) { /* empty cell */ }
               }
               await ctx.sync();
             } catch (e) { /* no table */ }
@@ -1090,16 +1094,19 @@ export default function App() {
               const groupShapes = os.shapes;
               groupShapes.load("items");
               await ctx.sync();
+              // Batch: load all child fonts, sync once, write all, sync once
+              const trs = [];
               for (const child of groupShapes.items) {
+                try { const tr = child.textFrame.textRange; tr.font.load(["name", "size"]); trs.push({ tr }); } catch (e) { /* no text */ }
+              }
+              await ctx.sync();
+              for (const { tr } of trs) {
                 try {
-                  const tr = child.textFrame.textRange;
-                  tr.font.load(["name", "size"]);
-                  await ctx.sync();
                   if (masterFont?.name && tr.font.name !== masterFont.name) tr.font.name = masterFont.name;
                   if (normalisedSize && typeof ss.current.fontSize === "number" && Math.abs(ss.current.fontSize - normalisedSize) <= 3) tr.font.size = normalisedSize;
-                  await ctx.sync();
                 } catch (e) { /* no text */ }
               }
+              await ctx.sync();
             } catch (e) { /* no group */ }
             continue;
           }
@@ -1196,90 +1203,29 @@ export default function App() {
             try { const tr = os.textFrame.textRange; tr.font.load("size"); await ctx.sync(); tr.font.size = groupSize; await ctx.sync(); totalFixes++; } catch (e) { /* ignore */ }
           }
         }
-      });
 
-      // ─── STEP 3: Colours — snap text to first theme colour ─────────────────
-      addLog("Step 3: Colours…");
-      await PowerPoint.run(async (ctx) => {
-        const slides = ctx.presentation.slides;
-        slides.load("items");
-        await ctx.sync();
-        const shapes = slides.items[dupIndex - 1].shapes;
-        shapes.load("items");
-        await ctx.sync();
-        for (const s of shapes.items) s.load(["id", "name"]);
-        await ctx.sync();
+        // ── Colour fixes — batch: load all colours, sync once, write all, sync once
+        addLog("Step 3: Colours…");
+        // Regular shapes: batch load
+        const colourJobs = [];
         for (const ss of pptxData.slideShapes) {
-          if (ss.isTable) {
-            // Snap font colours in every table cell
-            const os = shapes.items.find(s => String(s.id) === String(ss.id));
-            if (!os) continue;
-            try {
-              const table = os.table;
-              table.load("rowCount,columnCount");
-              await ctx.sync();
-              for (let r = 0; r < table.rowCount; r++) {
-                for (let c = 0; c < table.columnCount; c++) {
-                  const cell = table.getCell(r, c);
-                  const tr = cell.textFrame.textRange;
-                  try {
-                    tr.font.load("color");
-                    await ctx.sync();
-                    const cur = tr.font.color ? `#${tr.font.color}` : null;
-                    if (!cur || cur === "#null" || cur === "#") continue;
-                    const isTheme = themeColorList.some(c => c && cur.toLowerCase() === c.toLowerCase());
-                    if (isTheme) continue;
-                    const nearest = snapToThemeColor(cur, themeColors);
-                    if (nearest.toLowerCase() !== cur.toLowerCase()) {
-                      tr.font.color = nearest.replace("#", "");
-                      totalFixes++;
-                    }
-                  } catch (e) { /* empty cell */ }
-                }
-              }
-              await ctx.sync();
-            } catch (e) { /* no table */ }
-            continue;
-          }
-          if (ss.isGroup) {
-            const os = shapes.items.find(s => String(s.id) === String(ss.id));
-            if (!os) continue;
-            try {
-              const groupShapes = os.shapes;
-              groupShapes.load("items");
-              await ctx.sync();
-              for (const child of groupShapes.items) {
-                try {
-                  const tr = child.textFrame.textRange;
-                  tr.font.load("color");
-                  await ctx.sync();
-                  const cur = tr.font.color ? `#${tr.font.color}` : null;
-                  if (!cur || cur === "#null" || cur === "#") continue;
-                  const isTheme = themeColorList.some(c => c && cur.toLowerCase() === c.toLowerCase());
-                  if (isTheme) continue;
-                  const nearest = snapToThemeColor(cur, themeColors);
-                  if (nearest.toLowerCase() !== cur.toLowerCase()) {
-                    tr.font.color = nearest.replace("#", "");
-                    totalFixes++;
-                  }
-                  await ctx.sync();
-                } catch (e) { /* no text */ }
-              }
-            } catch (e) { /* no group */ }
-            continue;
-          }
+          if (ss.isTable || ss.isGroup) continue;
           if (!ss.masterTarget) continue;
-          const osShape = shapes.items.find(s => String(s.id) === String(ss.id));
-          if (!osShape) continue;
+          const os = shapes.items.find(s => String(s.id) === String(ss.id));
+          if (!os) continue;
           try {
-            const tr = osShape.textFrame.textRange;
+            const tr = os.textFrame.textRange;
             tr.font.load("color");
-            await ctx.sync();
+            colourJobs.push({ ss, tr });
+          } catch (e) { /* no text */ }
+        }
+        await ctx.sync();
+        for (const { ss, tr } of colourJobs) {
+          try {
             const liveColor = tr.font.color ? `#${tr.font.color}` : null;
             const cur = liveColor || ss.current.color;
             if (!cur || cur === "(inherited)" || cur === "#null" || cur === "#") continue;
-            const isThemeColor = themeColorList.some(c => c && cur && c.toLowerCase() === cur.toLowerCase());
-            if (isThemeColor) continue;
+            if (themeColorList.some(c => c && cur && c.toLowerCase() === cur.toLowerCase())) continue;
             if (ss.masterTarget?.color && ss.masterTarget.color !== "(inherited)" && cur.toLowerCase() === ss.masterTarget.color.toLowerCase()) continue;
             const nearestThemeColor = snapToThemeColor(cur, themeColors);
             if (nearestThemeColor.toLowerCase() === cur.toLowerCase()) continue;
@@ -1290,9 +1236,67 @@ export default function App() {
               if (contrast < 3) textColor = hexLuminance(fill) > 0.179 ? "#000000" : "#FFFFFF";
             }
             tr.font.color = textColor.replace("#", "");
-            await ctx.sync();
             totalFixes++;
           } catch (e) { /* no text */ }
+        }
+        await ctx.sync();
+
+        // Tables: batch load all cell colours, sync once, write changes, sync once
+        for (const ss of pptxData.slideShapes) {
+          if (!ss.isTable) continue;
+          const os = shapes.items.find(s => String(s.id) === String(ss.id));
+          if (!os) continue;
+          try {
+            const table = os.table;
+            table.load("rowCount,columnCount");
+            await ctx.sync();
+            const cellJobs = [];
+            for (let r = 0; r < table.rowCount; r++)
+              for (let c = 0; c < table.columnCount; c++) {
+                const cell = table.getCell(r, c);
+                const tr = cell.textFrame.textRange;
+                tr.font.load("color");
+                cellJobs.push({ tr });
+              }
+            await ctx.sync();
+            for (const { tr } of cellJobs) {
+              try {
+                const cur = tr.font.color ? `#${tr.font.color}` : null;
+                if (!cur || cur === "#null" || cur === "#") continue;
+                if (themeColorList.some(c => c && cur.toLowerCase() === c.toLowerCase())) continue;
+                const nearest = snapToThemeColor(cur, themeColors);
+                if (nearest.toLowerCase() !== cur.toLowerCase()) { tr.font.color = nearest.replace("#", ""); totalFixes++; }
+              } catch (e) { /* empty cell */ }
+            }
+            await ctx.sync();
+          } catch (e) { /* no table */ }
+        }
+
+        // Groups: batch load all child colours, sync once, write, sync once
+        for (const ss of pptxData.slideShapes) {
+          if (!ss.isGroup) continue;
+          const os = shapes.items.find(s => String(s.id) === String(ss.id));
+          if (!os) continue;
+          try {
+            const groupShapes = os.shapes;
+            groupShapes.load("items");
+            await ctx.sync();
+            const trs = [];
+            for (const child of groupShapes.items) {
+              try { const tr = child.textFrame.textRange; tr.font.load("color"); trs.push({ tr }); } catch (e) { /* no text */ }
+            }
+            await ctx.sync();
+            for (const { tr } of trs) {
+              try {
+                const cur = tr.font.color ? `#${tr.font.color}` : null;
+                if (!cur || cur === "#null" || cur === "#") continue;
+                if (themeColorList.some(c => c && cur.toLowerCase() === c.toLowerCase())) continue;
+                const nearest = snapToThemeColor(cur, themeColors);
+                if (nearest.toLowerCase() !== cur.toLowerCase()) { tr.font.color = nearest.replace("#", ""); totalFixes++; }
+              } catch (e) { /* no text */ }
+            }
+            await ctx.sync();
+          } catch (e) { /* no group */ }
         }
       });
 
@@ -1312,13 +1316,19 @@ export default function App() {
           const clamp = (snapped, orig, cell) => Math.abs(snapped - orig) <= MAX_CELLS * cell ? snapped : orig;
 
           const gridFixes = [];
+          const gridFixMap = new Map();
           const positions = nonTitleShapes.map(s => ({ ...s.position }));
 
           const recordFix = (idx) => {
             const s = nonTitleShapes[idx], p = positions[idx];
-            const ex = gridFixes.find(f => String(f.shapeId) === String(s.id));
+            const key = String(s.id);
+            const ex = gridFixMap.get(key);
             if (ex) { ex.position = { ...p }; }
-            else gridFixes.push({ shapeName: s.name, shapeId: s.id, _slideShape: s, shapeFill: s.shapeFill||null, position: { ...p } });
+            else {
+              const fix = { shapeName: s.name, shapeId: s.id, _slideShape: s, shapeFill: s.shapeFill||null, position: { ...p } };
+              gridFixMap.set(key, fix);
+              gridFixes.push(fix);
+            }
           };
 
           const sameH = (a, b) => Math.abs(a.height - b.height) <= cellH;
