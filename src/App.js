@@ -349,7 +349,9 @@ function parseSlideXml(xml, theme, masterPlaceholders, layoutPositions = {}) {
     else if (algn === "r") alignment = "right";
 
     const masterPh = masterPlaceholders.find(p => p.type === phType) ||
-                     (phType === "body" ? masterPlaceholders.find(p => p.type === "body") : null);
+                     masterPlaceholders.find(p => p.type === "body") ||
+                     masterPlaceholders.find(p => p.type !== "title" && p.type !== "ctrTitle") ||
+                     null;
     const layoutTargetPos = layoutPositions[`${phType}:${phIdx}`] || layoutPositions[`${phType}:0`] || masterPh?.position || null;
 
     shapes.push({
@@ -1237,7 +1239,6 @@ export default function App() {
               const liveColor = tr.font.color ? `#${tr.font.color}` : null;
               const cur = liveColor || ss.current.color;
               if (!cur || cur === "(inherited)" || cur === "#null" || cur === "#") continue;
-              if (themeColorList.some(c => c && cur && c.toLowerCase() === cur.toLowerCase())) continue;
               if (ss.masterTarget?.color && ss.masterTarget.color !== "(inherited)" && cur.toLowerCase() === ss.masterTarget.color.toLowerCase()) continue;
               const nearestThemeColor = snapToThemeColor(cur, themeColors);
               if (nearestThemeColor.toLowerCase() === cur.toLowerCase()) continue;
@@ -1262,7 +1263,6 @@ export default function App() {
               const liveColor = tr.font.color ? `#${tr.font.color}` : null;
               const cur = liveColor || ss.current.color;
               if (!cur || cur === "(inherited)" || cur === "#null" || cur === "#") continue;
-              if (themeColorList.some(c => c && cur && c.toLowerCase() === cur.toLowerCase())) continue;
               if (ss.masterTarget?.color && ss.masterTarget.color !== "(inherited)" && cur.toLowerCase() === ss.masterTarget.color.toLowerCase()) continue;
               const nearestThemeColor = snapToThemeColor(cur, themeColors);
               if (nearestThemeColor.toLowerCase() === cur.toLowerCase()) continue;
