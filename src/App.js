@@ -783,19 +783,16 @@ export default function App() {
       const slideW = 13.33, slideH = 7.5; // standard WIDE layout inches
       addLog(`Slide ${slideIndex} selected`);
 
-      // Use cached file data if available, otherwise read now
+      // Always read the file fresh so we get current slide positions.
+      // Masters/theme are cached since they don't change between runs.
+      addLog("Reading .pptx file…");
       let zip, masters;
-      if (cachedZip.current && cachedMasters.current) {
-        zip     = cachedZip.current;
-        masters = cachedMasters.current;
-        addLog(`Using cached template: "${masters[0]?.name}"`);
-      } else {
-        addLog("Reading .pptx file…");
-        ({ zip, masters } = await readPptxFile());
-        cachedZip.current     = zip;
+      ({ zip, masters } = await readPptxFile());
+      if (!cachedMasters.current) {
         cachedMasters.current = masters;
-        addLog(`Found ${masters.length} master${masters.length !== 1 ? "s" : ""}`);
-        if (masters.length > 1) addLog(`(${masters.length - 1} imported master${masters.length > 2 ? "s" : ""} ignored)`);
+        cachedZip.current = zip;
+      } else {
+        masters = cachedMasters.current; // reuse parsed masters, fresh zip
       }
 
       if (masters.length === 0) throw new Error("No slide masters found in this file");
