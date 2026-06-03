@@ -1112,6 +1112,11 @@ export default function App() {
             continue;
           }
           if (!ss.masterTarget) continue;
+          const os2 = shapes.items.find(s => String(s.id) === String(ss.id)) || shapes.items.find(s => s.name === ss.name);
+          if (!os2) continue;
+          try {
+            const tr = os2.textFrame.textRange;
+            tr.font.load(["name", "size"]);
             await ctx.sync();
             const isTitle       = ss.phType === "title" || ss.phType === "ctrTitle";
             const wrongFont     = ss.current.fontName !== "(inherited)" && ss.current.fontName !== ss.masterTarget.fontName;
@@ -1123,7 +1128,7 @@ export default function App() {
             const needsSizeFix  = mixedSize || sizesDiffer;
             const needsFillReset = ss.shapeFill && ss.shapeFill !== "none" && ss.masterTarget?.fill === "none";
             if (!needsFontFix && !needsSizeFix && !needsFillReset) continue;
-            if (needsFillReset) { try { os.fill.clear(); await ctx.sync(); } catch (e) { /* ignore */ } }
+            if (needsFillReset) { try { os2.fill.clear(); await ctx.sync(); } catch (e) { /* ignore */ } }
             if (needsFontFix) {
               tr.font.name = ss.masterTarget.fontName;
               if (normalisedSize && currentSize !== null && Math.abs(currentSize - normalisedSize) <= 3) tr.font.size = normalisedSize;
@@ -1272,6 +1277,11 @@ export default function App() {
             continue;
           }
           if (!ss.masterTarget) continue;
+          const os3 = shapes.items.find(s => String(s.id) === String(ss.id));
+          if (!os3) continue;
+          try {
+            const tr = os3.textFrame.textRange;
+            tr.font.load("color");
             await ctx.sync();
             const liveColor = tr.font.color ? `#${tr.font.color}` : null;
             const cur = liveColor || ss.current.color;
