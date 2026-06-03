@@ -1219,14 +1219,17 @@ export default function App() {
             colourJobs.push({ ss, tr, os });
           } catch (e) { /* no text */ }
         }
+        addLog(`Colour jobs queued: ${colourJobs.length}`);
         let batchSyncOk = false;
-        try { await ctx.sync(); batchSyncOk = true; } catch (e) { /* fall back to per-shape */ }
+        try { await ctx.sync(); batchSyncOk = true; } catch (e) { addLog(`Batch sync failed: ${e.message}`); }
+        addLog(`Batch sync ok: ${batchSyncOk}`);
 
         if (batchSyncOk) {
           for (const { ss, tr } of colourJobs) {
             try {
               const liveColor = tr.font.color ? `#${tr.font.color}` : null;
               const cur = liveColor || ss.current.color;
+              addLog(`  ${ss.name}: live=${liveColor} cur=${cur}`);
               if (!cur || cur === "(inherited)" || cur === "#null" || cur === "#") continue;
               if (themeColorList.some(c => c && cur && c.toLowerCase() === cur.toLowerCase())) continue;
               if (ss.masterTarget?.color && ss.masterTarget.color !== "(inherited)" && cur.toLowerCase() === ss.masterTarget.color.toLowerCase()) continue;
