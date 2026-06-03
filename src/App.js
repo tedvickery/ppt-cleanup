@@ -376,10 +376,147 @@ function parseSlideXml(xml, theme, masterPlaceholders, layoutPositions = {}) {
       } : null,
     });
   }
+
+  // ── Parse tables (graphicFrame elements containing tbl) ──────────────────
+  for (const gf of doc.getElementsByTagNameNS("*", "graphicFrame")) {
+    const tbl = gf.getElementsByTagNameNS("*", "tbl")[0];
+    if (!tbl) continue;
+
+    const nvGfSpPr = gf.getElementsByTagNameNS("*", "nvGraphicFramePr")[0];
+    const cNvPr   = nvGfSpPr?.getElementsByTagNameNS("*", "cNvPr")[0];
+    const id   = cNvPr?.getAttribute("id") || "";
+    const name = cNvPr?.getAttribute("name") || "";
+
+    const xfrm = gf.getElementsByTagNameNS("*", "xfrm")[0];
+    const off  = xfrm?.getElementsByTagNameNS("*", "off")[0];
+    const ext  = xfrm?.getElementsByTagNameNS("*", "ext")[0];
+    const position = off && ext ? {
+      left:   emuToInches(off.getAttribute("x")),
+      top:    emuToInches(off.getAttribute("y")),
+      width:  emuToInches(ext.getAttribute("cx")),
+      height: emuToInches(ext.getAttribute("cy")),
+    } : null;
+    if (!position) continue;
+
+    // Collect font info from first cell that has a run
+    let fontName = null, fontSize = null, color = null, bold = null, italic = null;
+    const allRuns = Array.from(tbl.getElementsByTagNameNS("*", "r"));
+    const firstRun = allRuns[0];
+    if (firstRun) {
+      const rPr = firstRun.getElementsByTagNameNS("*", "rPr")[0];
+      if (rPr) {
+        const lang = rPr.getAttribute("lang");
+        const szAttr = rPr.getAttribute("sz");
+        if (szAttr) fontSize = parseInt(szAttr, 10) / 100;
+        const bAttr = rPr.getAttribute("b");
+        if (bAttr !== null) bold = bAttr === "1" || bAttr === "true";
+        const iAttr = rPr.getAttribute("i");
+        if (iAttr !== null) italic = iAttr === "1" || iAttr === "true";
+        const solidFill = rPr.getElementsByTagNameNS("*", "solidFill")[0];
+        if (solidFill) {
+          const srgb   = solidFill.getElementsByTagNameNS("*", "srgbClr")[0];
+          const scheme = solidFill.getElementsByTagNameNS("*", "schemeClr")[0];
+          const sys    = solidFill.getElementsByTagNameNS("*", "sysClr")[0];
+          if (srgb)    color = "#" + srgb.getAttribute("val").toUpperCase();
+          else if (sys) color = "#" + (sys.getAttribute("lastClr") || "000000").toUpperCase();
+          else if (scheme) color = resolveThemeColor(scheme.getAttribute("val"), theme.colors) || null;
+        }
+        const latin = rPr.getElementsByTagNameNS("*", "latin")[0];
+        if (latin) fontName = latin.getAttribute("typeface") || null;
+      }
+    }
+    const textContent = allRuns.map(r => r.getElementsByTagNameNS("*", "t")[0]?.textContent || "").join(" ").substring(0, 100);
+
+    shapes.push({
+      id, name,
+      phType: "table", phIdx: "0",
+      position, shapeFill: null, shapeBorder: null,
+      isTable: true,
+      textContent,
+      current: {
+        fontName:  fontName  || "(inherited)",
+        fontSize:  fontSize  || "(inherited)",
+        color:     color     || "(inherited)",
+        bold:      bold      !== null ? bold   : "(inherited)",
+        italic:    italic    !== null ? italic : "(inherited)",
+        alignment: null,
+      },
+      masterTarget: null,
+    });
+  }
+
+  // ── Parse groups (grpSp elements) — treat as single shape by bounding box ─
+  // Only parse top-level groups (direct children of spTree), not nested ones
+  const spTree = doc.getElementsByTagNameNS("*", "spTree")[0];
+  if (spTree) {
+    for (const grp of Array.from(spTree.childNodes).filter(n => n.localName === "grpSp")) {
+      const nvGrpSpPr = grp.getElementsByTagNameNS("*", "nvGrpSpPr")[0];
+      const cNvPr     = nvGrpSpPr?.getElementsByTagNameNS("*", "cNvPr")[0];
+      const id   = cNvPr?.getAttribute("id") || "";
+      const name = cNvPr?.getAttribute("name") || "";
+
+      // Group transform gives the bounding box
+      const grpSpPr = grp.getElementsByTagNameNS("*", "grpSpPr")[0];
+      const xfrm = grpSpPr?.getElementsByTagNameNS("*", "xfrm")[0];
+      const off  = xfrm?.getElementsByTagNameNS("*", "off")[0];
+      const ext  = xfrm?.getElementsByTagNameNS("*", "ext")[0];
+      const position = off && ext ? {
+        left:   emuToInches(off.getAttribute("x")),
+        top:    emuToInches(off.getAttribute("y")),
+        width:  emuToInches(ext.getAttribute("cx")),
+        height: emuToInches(ext.getAttribute("cy")),
+      } : null;
+      if (!position) continue;
+
+      // Collect font info from first run inside the group
+      let fontName = null, fontSize = null, color = null, bold = null, italic = null;
+      const allRuns = Array.from(grp.getElementsByTagNameNS("*", "r"));
+      const firstRun = allRuns[0];
+      if (firstRun) {
+        const rPr = firstRun.getElementsByTagNameNS("*", "rPr")[0];
+        if (rPr) {
+          const szAttr = rPr.getAttribute("sz");
+          if (szAttr) fontSize = parseInt(szAttr, 10) / 100;
+          const bAttr = rPr.getAttribute("b");
+          if (bAttr !== null) bold = bAttr === "1" || bAttr === "true";
+          const iAttr = rPr.getAttribute("i");
+          if (iAttr !== null) italic = iAttr === "1" || iAttr === "true";
+          const solidFill = rPr.getElementsByTagNameNS("*", "solidFill")[0];
+          if (solidFill) {
+            const srgb   = solidFill.getElementsByTagNameNS("*", "srgbClr")[0];
+            const scheme = solidFill.getElementsByTagNameNS("*", "schemeClr")[0];
+            const sys    = solidFill.getElementsByTagNameNS("*", "sysClr")[0];
+            if (srgb)    color = "#" + srgb.getAttribute("val").toUpperCase();
+            else if (sys) color = "#" + (sys.getAttribute("lastClr") || "000000").toUpperCase();
+            else if (scheme) color = resolveThemeColor(scheme.getAttribute("val"), theme.colors) || null;
+          }
+          const latin = rPr.getElementsByTagNameNS("*", "latin")[0];
+          if (latin) fontName = latin.getAttribute("typeface") || null;
+        }
+      }
+      const textContent = allRuns.map(r => r.getElementsByTagNameNS("*", "t")[0]?.textContent || "").join(" ").substring(0, 100);
+
+      shapes.push({
+        id, name,
+        phType: "group", phIdx: "0",
+        position, shapeFill: null, shapeBorder: null,
+        isGroup: true,
+        textContent,
+        current: {
+          fontName:  fontName  || "(inherited)",
+          fontSize:  fontSize  || "(inherited)",
+          color:     color     || "(inherited)",
+          bold:      bold      !== null ? bold   : "(inherited)",
+          italic:    italic    !== null ? italic : "(inherited)",
+          alignment: null,
+        },
+        masterTarget: null,
+      });
+    }
+  }
+
   return shapes;
 }
-
-/* ── Read all masters ───────────────────────────────────────────────────── */
 
 async function readAllMasters(zip) {
   const relsFile = zip.file("ppt/_rels/presentation.xml.rels");
@@ -650,27 +787,68 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
 
       if (fix.font || fix.alignment) {
         try {
-          const tr = target.textFrame.textRange;
-          tr.load(["text"]);
-          await ctx.sync();
-          if (fix.font) {
-            if (fix.font.name)  tr.font.name = fix.font.name;
-            if (fix.font.size)  tr.font.size = fix.font.size;
-            if (fix.font.color) {
-              let textColor = snapToThemeColor(fix.font.color, themeColors);
-              const fill = fix.shapeFill;
-              if (fill && fill !== "none") {
-                const contrast = (Math.max(hexLuminance(fill), hexLuminance(textColor)) + 0.05) / (Math.min(hexLuminance(fill), hexLuminance(textColor)) + 0.05);
-                if (contrast < 3) textColor = hexLuminance(fill) > 0.179 ? "#000000" : "#FFFFFF";
+          if (fix._slideShape?.isTable) {
+            // Tables: apply font/colour to every cell
+            const table = target.table;
+            table.load("rowCount,columnCount");
+            await ctx.sync();
+            for (let r = 0; r < table.rowCount; r++) {
+              for (let c = 0; c < table.columnCount; c++) {
+                const cell = table.getCell(r, c);
+                const tr = cell.textFrame.textRange;
+                try {
+                  if (fix.font?.name)  tr.font.name = fix.font.name;
+                  if (fix.font?.size)  tr.font.size = fix.font.size;
+                  if (fix.font?.color) {
+                    let textColor = snapToThemeColor(fix.font.color, themeColors);
+                    tr.font.color = textColor.replace("#", "");
+                  }
+                } catch (e) { /* empty cell */ }
               }
-              tr.font.color = textColor.replace("#", "");
             }
+            await ctx.sync();
+          } else if (fix._slideShape?.isGroup) {
+            // Groups: apply font/colour to all child shapes
+            try {
+              const groupShapes = target.shapes;
+              groupShapes.load("items");
+              await ctx.sync();
+              for (const child of groupShapes.items) {
+                try {
+                  const tr = child.textFrame.textRange;
+                  if (fix.font?.name)  tr.font.name = fix.font.name;
+                  if (fix.font?.size)  tr.font.size = fix.font.size;
+                  if (fix.font?.color) {
+                    let textColor = snapToThemeColor(fix.font.color, themeColors);
+                    tr.font.color = textColor.replace("#", "");
+                  }
+                  await ctx.sync();
+                } catch (e) { /* no text */ }
+              }
+            } catch (e) { /* no group */ }
+          } else {
+            const tr = target.textFrame.textRange;
+            tr.load(["text"]);
+            await ctx.sync();
+            if (fix.font) {
+              if (fix.font.name)  tr.font.name = fix.font.name;
+              if (fix.font.size)  tr.font.size = fix.font.size;
+              if (fix.font.color) {
+                let textColor = snapToThemeColor(fix.font.color, themeColors);
+                const fill = fix.shapeFill;
+                if (fill && fill !== "none") {
+                  const contrast = (Math.max(hexLuminance(fill), hexLuminance(textColor)) + 0.05) / (Math.min(hexLuminance(fill), hexLuminance(textColor)) + 0.05);
+                  if (contrast < 3) textColor = hexLuminance(fill) > 0.179 ? "#000000" : "#FFFFFF";
+                }
+                tr.font.color = textColor.replace("#", "");
+              }
+            }
+            if (fix.alignment) {
+              const alignMap = { left: PowerPoint.ParagraphHorizontalAlignment.left, center: PowerPoint.ParagraphHorizontalAlignment.center, right: PowerPoint.ParagraphHorizontalAlignment.right };
+              if (alignMap[fix.alignment]) tr.paragraphFormat.horizontalAlignment = alignMap[fix.alignment];
+            }
+            await ctx.sync();
           }
-          if (fix.alignment) {
-            const alignMap = { left: PowerPoint.ParagraphHorizontalAlignment.left, center: PowerPoint.ParagraphHorizontalAlignment.center, right: PowerPoint.ParagraphHorizontalAlignment.right };
-            if (alignMap[fix.alignment]) tr.paragraphFormat.horizontalAlignment = alignMap[fix.alignment];
-          }
-          await ctx.sync();
         } catch (e) { console.log(`  Error applying font:`, e.message); }
       }
     }
@@ -887,12 +1065,53 @@ export default function App() {
         const normalisedSize = nonTitleSizes.length > 0 ? parseInt(Object.entries(sizeFreq).sort((a, b) => b[1] - a[1])[0][0]) : null;
 
         for (const ss of pptxData.slideShapes) {
+          if (ss.isTable) {
+            // Tables: apply normalised font size and font name to all cells
+            const os = shapes.items.find(s => String(s.id) === String(ss.id)) || shapes.items.find(s => s.name === ss.name);
+            if (!os) continue;
+            try {
+              const table = os.table;
+              table.load("rowCount,columnCount");
+              await ctx.sync();
+              const masterFont = pptxData.masterPlaceholders.find(p => p.type === "body")?.font;
+              for (let r = 0; r < table.rowCount; r++) {
+                for (let c = 0; c < table.columnCount; c++) {
+                  const cell = table.getCell(r, c);
+                  const tr = cell.textFrame.textRange;
+                  try {
+                    tr.font.load(["name", "size"]);
+                    await ctx.sync();
+                    if (masterFont?.name && tr.font.name !== masterFont.name) tr.font.name = masterFont.name;
+                    if (normalisedSize && typeof ss.current.fontSize === "number" && Math.abs(ss.current.fontSize - normalisedSize) <= 3) tr.font.size = normalisedSize;
+                  } catch (e) { /* empty cell */ }
+                }
+              }
+              await ctx.sync();
+            } catch (e) { /* no table */ }
+            continue;
+          }
+          if (ss.isGroup) {
+            const os = shapes.items.find(s => String(s.id) === String(ss.id)) || shapes.items.find(s => s.name === ss.name);
+            if (!os) continue;
+            try {
+              const masterFont = pptxData.masterPlaceholders.find(p => p.type === "body")?.font;
+              const groupShapes = os.shapes;
+              groupShapes.load("items");
+              await ctx.sync();
+              for (const child of groupShapes.items) {
+                try {
+                  const tr = child.textFrame.textRange;
+                  tr.font.load(["name", "size"]);
+                  await ctx.sync();
+                  if (masterFont?.name && tr.font.name !== masterFont.name) tr.font.name = masterFont.name;
+                  if (normalisedSize && typeof ss.current.fontSize === "number" && Math.abs(ss.current.fontSize - normalisedSize) <= 3) tr.font.size = normalisedSize;
+                  await ctx.sync();
+                } catch (e) { /* no text */ }
+              }
+            } catch (e) { /* no group */ }
+            continue;
+          }
           if (!ss.masterTarget) continue;
-          const os = shapes.items.find(s => String(s.id) === String(ss.id)) || shapes.items.find(s => s.name === ss.name);
-          if (!os) continue;
-          try {
-            const tr = os.textFrame.textRange;
-            tr.font.load(["name", "size"]);
             await ctx.sync();
             const isTitle       = ss.phType === "title" || ss.phType === "ctrTitle";
             const wrongFont     = ss.current.fontName !== "(inherited)" && ss.current.fontName !== ss.masterTarget.fontName;
@@ -994,12 +1213,65 @@ export default function App() {
         for (const s of shapes.items) s.load(["id", "name"]);
         await ctx.sync();
         for (const ss of pptxData.slideShapes) {
+          if (ss.isTable) {
+            // Snap font colours in every table cell
+            const os = shapes.items.find(s => String(s.id) === String(ss.id));
+            if (!os) continue;
+            try {
+              const table = os.table;
+              table.load("rowCount,columnCount");
+              await ctx.sync();
+              for (let r = 0; r < table.rowCount; r++) {
+                for (let c = 0; c < table.columnCount; c++) {
+                  const cell = table.getCell(r, c);
+                  const tr = cell.textFrame.textRange;
+                  try {
+                    tr.font.load("color");
+                    await ctx.sync();
+                    const cur = tr.font.color ? `#${tr.font.color}` : null;
+                    if (!cur || cur === "#null" || cur === "#") continue;
+                    const isTheme = themeColorList.some(c => c && cur.toLowerCase() === c.toLowerCase());
+                    if (isTheme) continue;
+                    const nearest = snapToThemeColor(cur, themeColors);
+                    if (nearest.toLowerCase() !== cur.toLowerCase()) {
+                      tr.font.color = nearest.replace("#", "");
+                      totalFixes++;
+                    }
+                  } catch (e) { /* empty cell */ }
+                }
+              }
+              await ctx.sync();
+            } catch (e) { /* no table */ }
+            continue;
+          }
+          if (ss.isGroup) {
+            const os = shapes.items.find(s => String(s.id) === String(ss.id));
+            if (!os) continue;
+            try {
+              const groupShapes = os.shapes;
+              groupShapes.load("items");
+              await ctx.sync();
+              for (const child of groupShapes.items) {
+                try {
+                  const tr = child.textFrame.textRange;
+                  tr.font.load("color");
+                  await ctx.sync();
+                  const cur = tr.font.color ? `#${tr.font.color}` : null;
+                  if (!cur || cur === "#null" || cur === "#") continue;
+                  const isTheme = themeColorList.some(c => c && cur.toLowerCase() === c.toLowerCase());
+                  if (isTheme) continue;
+                  const nearest = snapToThemeColor(cur, themeColors);
+                  if (nearest.toLowerCase() !== cur.toLowerCase()) {
+                    tr.font.color = nearest.replace("#", "");
+                    totalFixes++;
+                  }
+                  await ctx.sync();
+                } catch (e) { /* no text */ }
+              }
+            } catch (e) { /* no group */ }
+            continue;
+          }
           if (!ss.masterTarget) continue;
-          const os = shapes.items.find(s => String(s.id) === String(ss.id));
-          if (!os) continue;
-          try {
-            const tr = os.textFrame.textRange;
-            tr.font.load("color");
             await ctx.sync();
             const liveColor = tr.font.color ? `#${tr.font.color}` : null;
             const cur = liveColor || ss.current.color;
@@ -1007,12 +1279,12 @@ export default function App() {
             const isThemeColor = themeColorList.some(c => c && cur && c.toLowerCase() === cur.toLowerCase());
             if (isThemeColor) continue;
             if (ss.masterTarget?.color && ss.masterTarget.color !== "(inherited)" && cur.toLowerCase() === ss.masterTarget.color.toLowerCase()) continue;
-            const firstThemeColor = themeColorList[0];
-            if (!firstThemeColor || cur.toLowerCase() === firstThemeColor.toLowerCase()) continue;
-            let textColor = firstThemeColor;
+            const nearestThemeColor = snapToThemeColor(cur, themeColors);
+            if (nearestThemeColor.toLowerCase() === cur.toLowerCase()) continue;
+            let textColor = nearestThemeColor;
             const fill = ss.shapeFill;
             if (fill && fill !== "none" && !fill.startsWith("theme:")) {
-              const contrast = (Math.max(hexLuminance(fill), hexLuminance(firstThemeColor)) + 0.05) / (Math.min(hexLuminance(fill), hexLuminance(firstThemeColor)) + 0.05);
+              const contrast = (Math.max(hexLuminance(fill), hexLuminance(nearestThemeColor)) + 0.05) / (Math.min(hexLuminance(fill), hexLuminance(nearestThemeColor)) + 0.05);
               if (contrast < 3) textColor = hexLuminance(fill) > 0.179 ? "#000000" : "#FFFFFF";
             }
             tr.font.color = textColor.replace("#", "");
