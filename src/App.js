@@ -1557,7 +1557,7 @@ export default function App() {
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>✦</div>
           <div>
-            <div style={{ fontWeight: 700, fontSize: 15 }}>Plz fix thx</div>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>SlideLint</div>
             <div style={{ fontSize: 10, opacity: 0.75 }}>Fixes your slides</div>
           </div>
           <div style={{ marginLeft: "auto" }}>
@@ -1613,7 +1613,7 @@ export default function App() {
           style={{ width: "100%", padding: "14px 0", background: status === "done" ? "#15803d" : "#111111", color: "#fff", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.2s ease", boxShadow: "0 4px 14px rgba(0,0,0,0.28)" }}>
           {isRunning ? (
             <><span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.3)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block" }} />Working…</>
-          ) : status === "done" ? "✓ Done — clean another?" : "Plz fix thx"}
+          ) : status === "done" ? "✓ Done — clean another?" : "SlideLint"}
         </button>
 
         {status === "done" && fixCount > 0  && <FixBadge count={fixCount} />}
