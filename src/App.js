@@ -232,6 +232,19 @@ function parseSlideXml(xml, theme, masterPlaceholders, layoutPositions = {}) {
   const doc = parseXml(xml);
   const shapes = [];
 
+  function extractColorFromEl(el) {
+    if (!el) return null;
+    const solidFill = el.getElementsByTagNameNS("*", "solidFill")[0];
+    if (!solidFill) return null;
+    const srgb   = solidFill.getElementsByTagNameNS("*", "srgbClr")[0];
+    const scheme = solidFill.getElementsByTagNameNS("*", "schemeClr")[0];
+    const sys    = solidFill.getElementsByTagNameNS("*", "sysClr")[0];
+    if (srgb)   return "#" + srgb.getAttribute("val");
+    if (sys)    return "#" + (sys.getAttribute("lastClr") || "000000");
+    if (scheme) return resolveThemeColor(scheme.getAttribute("val"), theme.colors);
+    return null;
+  }
+
   for (const sp of doc.getElementsByTagNameNS("*", "sp")) {
     const nvSpPr = sp.getElementsByTagNameNS("*", "nvSpPr")[0];
     const cNvPr  = nvSpPr?.getElementsByTagNameNS("*", "cNvPr")[0];
@@ -300,29 +313,15 @@ function parseSlideXml(xml, theme, masterPlaceholders, layoutPositions = {}) {
 
     const txBody = sp.getElementsByTagNameNS("*", "txBody")[0];
     if (!txBody) continue;
-    const runs = txBody.getElementsByTagNameNS("*", "r");
-    const textContent = Array.from(runs).map(r => r.getElementsByTagNameNS("*", "t")[0]?.textContent || "").join("");
-    if (!textContent.trim() && runs.length === 0) continue;
-
     const allRuns  = Array.from(txBody.getElementsByTagNameNS("*", "r"));
+    const textContent = allRuns.map(r => r.getElementsByTagNameNS("*", "t")[0]?.textContent || "").join("");
+    if (!textContent.trim() && allRuns.length === 0) continue;
+
     const firstRun = allRuns[0];
     const rPr     = firstRun?.getElementsByTagNameNS("*", "rPr")[0];
     const allParas = Array.from(txBody.getElementsByTagNameNS("*", "p"));
 
     let fontName = null, fontSize = null, color = null, bold = null, italic = null;
-
-    function extractColorFromEl(el) {
-      if (!el) return null;
-      const solidFill = el.getElementsByTagNameNS("*", "solidFill")[0];
-      if (!solidFill) return null;
-      const srgb   = solidFill.getElementsByTagNameNS("*", "srgbClr")[0];
-      const scheme = solidFill.getElementsByTagNameNS("*", "schemeClr")[0];
-      const sys    = solidFill.getElementsByTagNameNS("*", "sysClr")[0];
-      if (srgb)   return "#" + srgb.getAttribute("val");
-      if (sys)    return "#" + (sys.getAttribute("lastClr") || "000000");
-      if (scheme) return resolveThemeColor(scheme.getAttribute("val"), theme.colors);
-      return null;
-    }
 
     for (const run of allRuns) { const c = extractColorFromEl(run.getElementsByTagNameNS("*", "rPr")[0]); if (c) { color = c; break; } }
     if (!color) { for (const para of allParas) { const c = extractColorFromEl(para.getElementsByTagNameNS("*", "pPr")[0]?.getElementsByTagNameNS("*", "defRPr")[0]); if (c) { color = c; break; } } }
@@ -405,7 +404,6 @@ function parseSlideXml(xml, theme, masterPlaceholders, layoutPositions = {}) {
     if (firstRun) {
       const rPr = firstRun.getElementsByTagNameNS("*", "rPr")[0];
       if (rPr) {
-        const lang = rPr.getAttribute("lang");
         const szAttr = rPr.getAttribute("sz");
         if (szAttr) fontSize = parseInt(szAttr, 10) / 100;
         const bAttr = rPr.getAttribute("b");
@@ -696,11 +694,6 @@ function getSelectedSlideIndex() {
   });
 }
 
-async function duplicateSlide(slideIndex) {
-  // Work on original — user can Ctrl+Z to undo
-  return slideIndex;
-}
-
 /* ── Colour utilities ────────────────────────────────────────────────────── */
 
 function hexToRgb(hex) {
@@ -962,15 +955,14 @@ export default function App() {
       addLog(`Slide ${slideIndex} selected`);
 
       // Always read the file fresh so we get current slide positions.
-      // Masters/theme are cached since they don't change between runs.
+      // Masters are cached since they don't change between runs.
       addLog("Reading .pptx file…");
       let zip, masters;
       ({ zip, masters } = await readPptxFile());
-      if (!cachedMasters.current) {
-        cachedMasters.current = masters;
-        cachedZip.current = zip;
-      } else {
+      if (cachedMasters.current) {
         masters = cachedMasters.current; // reuse parsed masters, fresh zip
+      } else {
+        cachedMasters.current = masters;
       }
 
       if (masters.length === 0) throw new Error("No slide masters found in this file");
@@ -1112,10 +1104,10 @@ export default function App() {
             continue;
           }
           if (!ss.masterTarget) continue;
-          const os2 = shapes.items.find(s => String(s.id) === String(ss.id)) || shapes.items.find(s => s.name === ss.name);
-          if (!os2) continue;
+          const osShape = shapes.items.find(s => String(s.id) === String(ss.id)) || shapes.items.find(s => s.name === ss.name);
+          if (!osShape) continue;
           try {
-            const tr = os2.textFrame.textRange;
+            const tr = osShape.textFrame.textRange;
             tr.font.load(["name", "size"]);
             await ctx.sync();
             const isTitle       = ss.phType === "title" || ss.phType === "ctrTitle";
@@ -1128,7 +1120,7 @@ export default function App() {
             const needsSizeFix  = mixedSize || sizesDiffer;
             const needsFillReset = ss.shapeFill && ss.shapeFill !== "none" && ss.masterTarget?.fill === "none";
             if (!needsFontFix && !needsSizeFix && !needsFillReset) continue;
-            if (needsFillReset) { try { os2.fill.clear(); await ctx.sync(); } catch (e) { /* ignore */ } }
+            if (needsFillReset) { try { osShape.fill.clear(); await ctx.sync(); } catch (e) { /* ignore */ } }
             if (needsFontFix) {
               tr.font.name = ss.masterTarget.fontName;
               if (normalisedSize && currentSize !== null && Math.abs(currentSize - normalisedSize) <= 3) tr.font.size = normalisedSize;
@@ -1277,10 +1269,10 @@ export default function App() {
             continue;
           }
           if (!ss.masterTarget) continue;
-          const os3 = shapes.items.find(s => String(s.id) === String(ss.id));
-          if (!os3) continue;
+          const osShape = shapes.items.find(s => String(s.id) === String(ss.id));
+          if (!osShape) continue;
           try {
-            const tr = os3.textFrame.textRange;
+            const tr = osShape.textFrame.textRange;
             tr.font.load("color");
             await ctx.sync();
             const liveColor = tr.font.color ? `#${tr.font.color}` : null;
