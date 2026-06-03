@@ -70,9 +70,9 @@
 
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon.16x16" DefaultValue="https://cdn.jsdelivr.net/gh/microsoft/fluentui-system-icons/assets/Sparkle/SVG/ic_fluent_sparkle_16_regular.svg" />
-        <bt:Image id="Icon.32x32" DefaultValue="https://cdn.jsdelivr.net/gh/microsoft/fluentui-system-icons/assets/Sparkle/SVG/ic_fluent_sparkle_32_regular.svg" />
-        <bt:Image id="Icon.80x80" DefaultValue="https://cdn.jsdelivr.net/gh/microsoft/fluentui-system-icons/assets/Sparkle/SVG/ic_fluent_sparkle_48_regular.svg" />
+        <bt:Image id="Icon.16x16" DefaultValue="https://cdn.jsdelivr.net/gh/microsoft/fluentui-system-icons/assets/Checkmark/SVG/ic_fluent_checkmark_16_regular.svg" />
+        <bt:Image id="Icon.32x32" DefaultValue="https://cdn.jsdelivr.net/gh/microsoft/fluentui-system-icons/assets/Checkmark/SVG/ic_fluent_checkmark_32_regular.svg" />
+        <bt:Image id="Icon.80x80" DefaultValue="https://cdn.jsdelivr.net/gh/microsoft/fluentui-system-icons/assets/Checkmark/SVG/ic_fluent_checkmark_48_regular.svg" />
       </bt:Images>
       <bt:Urls>
         <bt:Url id="Commands.Url" DefaultValue="https://YOUR-VERCEL-URL.vercel.app" />
