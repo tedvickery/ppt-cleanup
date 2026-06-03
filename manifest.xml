@@ -8,22 +8,22 @@
 
   <Id>a1b2c3d4-e5f6-7890-abcd-ef1234567890</Id>
   <Version>1.0.0.1</Version>
-  <ProviderName>Plz fix thx</ProviderName>
+  <ProviderName>SlideLint</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
 
-  <DisplayName DefaultValue="Plz fix thx" />
+  <DisplayName DefaultValue="SlideLint" />
   <Description DefaultValue="AI-powered slide formatter that syncs your slide to the master theme." />
 
-  <IconUrl DefaultValue="https://ppt-cleanup.vercel.app//icon-80.png" />
-  <HighResolutionIconUrl DefaultValue="https://ppt-cleanup.vercel.app//icon-80.png" />
-  <SupportUrl DefaultValue="https://ppt-cleanup.vercel.app/" />
+  <IconUrl DefaultValue="https://YOUR-VERCEL-URL.vercel.app/icon-80.png" />
+  <HighResolutionIconUrl DefaultValue="https://YOUR-VERCEL-URL.vercel.app/icon-80.png" />
+  <SupportUrl DefaultValue="https://YOUR-VERCEL-URL.vercel.app" />
 
   <Hosts>
     <Host Name="Presentation" />
   </Hosts>
 
   <DefaultSettings>
-    <SourceLocation DefaultValue="https://ppt-cleanup.vercel.app/" />
+    <SourceLocation DefaultValue="https://YOUR-VERCEL-URL.vercel.app" />
   </DefaultSettings>
 
   <Permissions>ReadWriteDocument</Permissions>
@@ -75,12 +75,12 @@
         <bt:Image id="Icon.80x80" DefaultValue="https://cdn.jsdelivr.net/gh/microsoft/fluentui-system-icons/assets/Sparkle/SVG/ic_fluent_sparkle_48_regular.svg" />
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="Commands.Url" DefaultValue="https://ppt-cleanup.vercel.app/" />
-        <bt:Url id="Taskpane.Url" DefaultValue="https://ppt-cleanup.vercel.app/" />
+        <bt:Url id="Commands.Url" DefaultValue="https://YOUR-VERCEL-URL.vercel.app" />
+        <bt:Url id="Taskpane.Url" DefaultValue="https://YOUR-VERCEL-URL.vercel.app" />
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="CommandsGroup.Label" DefaultValue="Formatting" />
-        <bt:String id="TaskpaneButton.Label" DefaultValue="Plz fix thx" />
+        <bt:String id="TaskpaneButton.Label" DefaultValue="SlideLint" />
       </bt:ShortStrings>
       <bt:LongStrings>
         <bt:String id="TaskpaneButton.Tooltip" DefaultValue="AI-powered slide cleanup — syncs fonts, colours and layout to your master theme." />
