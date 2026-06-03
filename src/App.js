@@ -1206,7 +1206,7 @@ export default function App() {
 
         // ── Colour fixes — batch: load all colours, sync once, write all, sync once
         addLog("Step 3: Colours…");
-        // Regular shapes: batch load
+        // Regular shapes: batch load then sync once; fall back to per-shape if batch fails
         const colourJobs = [];
         for (const ss of pptxData.slideShapes) {
           if (ss.isTable || ss.isGroup) continue;
@@ -1216,30 +1216,59 @@ export default function App() {
           try {
             const tr = os.textFrame.textRange;
             tr.font.load("color");
-            colourJobs.push({ ss, tr });
+            colourJobs.push({ ss, tr, os });
           } catch (e) { /* no text */ }
         }
-        await ctx.sync();
-        for (const { ss, tr } of colourJobs) {
-          try {
-            const liveColor = tr.font.color ? `#${tr.font.color}` : null;
-            const cur = liveColor || ss.current.color;
-            if (!cur || cur === "(inherited)" || cur === "#null" || cur === "#") continue;
-            if (themeColorList.some(c => c && cur && c.toLowerCase() === cur.toLowerCase())) continue;
-            if (ss.masterTarget?.color && ss.masterTarget.color !== "(inherited)" && cur.toLowerCase() === ss.masterTarget.color.toLowerCase()) continue;
-            const nearestThemeColor = snapToThemeColor(cur, themeColors);
-            if (nearestThemeColor.toLowerCase() === cur.toLowerCase()) continue;
-            let textColor = nearestThemeColor;
-            const fill = ss.shapeFill;
-            if (fill && fill !== "none" && !fill.startsWith("theme:")) {
-              const contrast = (Math.max(hexLuminance(fill), hexLuminance(nearestThemeColor)) + 0.05) / (Math.min(hexLuminance(fill), hexLuminance(nearestThemeColor)) + 0.05);
-              if (contrast < 3) textColor = hexLuminance(fill) > 0.179 ? "#000000" : "#FFFFFF";
-            }
-            tr.font.color = textColor.replace("#", "");
-            totalFixes++;
-          } catch (e) { /* no text */ }
+        let batchSyncOk = false;
+        try { await ctx.sync(); batchSyncOk = true; } catch (e) { /* fall back to per-shape */ }
+
+        if (batchSyncOk) {
+          for (const { ss, tr } of colourJobs) {
+            try {
+              const liveColor = tr.font.color ? `#${tr.font.color}` : null;
+              const cur = liveColor || ss.current.color;
+              if (!cur || cur === "(inherited)" || cur === "#null" || cur === "#") continue;
+              if (themeColorList.some(c => c && cur && c.toLowerCase() === cur.toLowerCase())) continue;
+              if (ss.masterTarget?.color && ss.masterTarget.color !== "(inherited)" && cur.toLowerCase() === ss.masterTarget.color.toLowerCase()) continue;
+              const nearestThemeColor = snapToThemeColor(cur, themeColors);
+              if (nearestThemeColor.toLowerCase() === cur.toLowerCase()) continue;
+              let textColor = nearestThemeColor;
+              const fill = ss.shapeFill;
+              if (fill && fill !== "none" && !fill.startsWith("theme:")) {
+                const contrast = (Math.max(hexLuminance(fill), hexLuminance(nearestThemeColor)) + 0.05) / (Math.min(hexLuminance(fill), hexLuminance(nearestThemeColor)) + 0.05);
+                if (contrast < 3) textColor = hexLuminance(fill) > 0.179 ? "#000000" : "#FFFFFF";
+              }
+              tr.font.color = textColor.replace("#", "");
+              totalFixes++;
+            } catch (e) { /* no text */ }
+          }
+          try { await ctx.sync(); } catch (e) { /* ignore write errors */ }
+        } else {
+          // Fallback: process each shape individually
+          for (const { ss, os } of colourJobs) {
+            try {
+              const tr = os.textFrame.textRange;
+              tr.font.load("color");
+              await ctx.sync();
+              const liveColor = tr.font.color ? `#${tr.font.color}` : null;
+              const cur = liveColor || ss.current.color;
+              if (!cur || cur === "(inherited)" || cur === "#null" || cur === "#") continue;
+              if (themeColorList.some(c => c && cur && c.toLowerCase() === cur.toLowerCase())) continue;
+              if (ss.masterTarget?.color && ss.masterTarget.color !== "(inherited)" && cur.toLowerCase() === ss.masterTarget.color.toLowerCase()) continue;
+              const nearestThemeColor = snapToThemeColor(cur, themeColors);
+              if (nearestThemeColor.toLowerCase() === cur.toLowerCase()) continue;
+              let textColor = nearestThemeColor;
+              const fill = ss.shapeFill;
+              if (fill && fill !== "none" && !fill.startsWith("theme:")) {
+                const contrast = (Math.max(hexLuminance(fill), hexLuminance(nearestThemeColor)) + 0.05) / (Math.min(hexLuminance(fill), hexLuminance(nearestThemeColor)) + 0.05);
+                if (contrast < 3) textColor = hexLuminance(fill) > 0.179 ? "#000000" : "#FFFFFF";
+              }
+              tr.font.color = textColor.replace("#", "");
+              await ctx.sync();
+              totalFixes++;
+            } catch (e) { /* no text */ }
+          }
         }
-        await ctx.sync();
 
         // Tables: batch load all cell colours, sync once, write changes, sync once
         for (const ss of pptxData.slideShapes) {
