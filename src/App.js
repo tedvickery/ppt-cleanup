@@ -1075,12 +1075,12 @@ export default function App() {
             for (let i = 0; i < nonTitleShapes.length; i++) {
               for (let j = i + 1; j < nonTitleShapes.length; j++) {
                 const a = positions[i], b = positions[j];
-                if (Math.abs(a.width - b.width) <= cellW && Math.abs(a.width - b.width) > cellW * 0.1) {
+                if (Math.abs(a.width - b.width) <= cellW * 2 && Math.abs(a.width - b.width) > cellW * 0.1) {
                   const w = Math.max(a.width, b.width);
                   positions[i].width = w; positions[j].width = w;
                   recordFix(i); recordFix(j); changed = true;
                 }
-                if (Math.abs(a.height - b.height) <= cellH && Math.abs(a.height - b.height) > cellH * 0.1) {
+                if (Math.abs(a.height - b.height) <= cellH * 2 && Math.abs(a.height - b.height) > cellH * 0.1) {
                   const h = Math.max(a.height, b.height);
                   positions[i].height = h; positions[j].height = h;
                   recordFix(i); recordFix(j); changed = true;
