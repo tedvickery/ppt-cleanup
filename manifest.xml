@@ -14,8 +14,8 @@
   <DisplayName DefaultValue="SlideLint" />
   <Description DefaultValue="AI-powered slide formatter that syncs your slide to the master theme." />
 
-  <IconUrl DefaultValue="https://ppt-cleanup.vercel.app//icon-80.png" />
-  <HighResolutionIconUrl DefaultValue="https://ppt-cleanup.vercel.app//icon-80.png" />
+  <IconUrl DefaultValue="https://ppt-cleanup.vercel.app//icon-32.png" />
+  <HighResolutionIconUrl DefaultValue="https://ppt-cleanup.vercel.app//icon-64.png" />
   <SupportUrl DefaultValue="https://ppt-cleanup.vercel.app/" />
 
   <Hosts>
