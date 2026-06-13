@@ -1399,8 +1399,8 @@ export default function App() {
             for (let i = 0; i < nonTitleShapes.length; i++) {
               for (let j = i + 1; j < nonTitleShapes.length; j++) {
                 const a = positions[i], b = positions[j];
-                // Align tops if within 2 vertical cells and same height
-                if (sameH(a, b) && Math.abs(a.top - b.top) <= cellH * 2 && Math.abs(a.top - b.top) > cellH * 0.1) {
+                // Align tops if within 2 vertical cells — no height check needed
+                if (Math.abs(a.top - b.top) <= cellH * 2 && Math.abs(a.top - b.top) > cellH * 0.1) {
                   const t = q(Math.min(a.top, b.top));
                   positions[i].top = t; positions[j].top = t;
                   recordFix(i); recordFix(j); changed = true;
