@@ -1049,7 +1049,7 @@ export default function App() {
         const shapes = slide.shapes;
         shapes.load("items");
         await ctx.sync();
-        for (const s of shapes.items) s.load(["id", "name"]);
+        for (const s of shapes.items) s.load(["id", "name", "type"]);
         await ctx.sync();
 
         const nonTitleSizes = pptxData.slideShapes
@@ -1146,6 +1146,8 @@ export default function App() {
           if (ss.isTable || ss.isGroup) continue;
           const os = shapes.items.find(s => String(s.id) === String(ss.id));
           if (!os) continue;
+          // Skip shapes without text frames (connectors, images, etc.)
+          if (os.type && !["GeometricShape", "Placeholder"].some(t => os.type.toString().includes(t))) continue;
           try {
             os.load(["left", "top", "width", "height"]);
             os.textFrame.load("autoSizeSetting");
@@ -1214,7 +1216,7 @@ export default function App() {
         const shapes = slides.items[dupIndex - 1].shapes;
         shapes.load("items");
         await ctx.sync();
-        for (const s of shapes.items) s.load(["id", "name"]);
+        for (const s of shapes.items) s.load(["id", "name", "type"]);
         await ctx.sync();
 
         // Regular shapes: snap font colour to nearest theme colour
