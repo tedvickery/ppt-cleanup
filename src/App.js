@@ -1109,14 +1109,22 @@ export default function App() {
             } catch (e) { /* no group */ }
             continue;
           }
-          if (!ss.masterTarget) continue;
           const osShape = shapes.items.find(s => String(s.id) === String(ss.id)) || shapes.items.find(s => s.name === ss.name);
           if (!osShape) continue;
           try {
             const tr = osShape.textFrame.textRange;
             tr.font.load(["name", "size"]);
             try { await ctx.sync(); } catch (e) { continue; } // skip shapes without text frames
-            const isTitle       = ss.phType === "title" || ss.phType === "ctrTitle";
+            const isTitle = ss.phType === "title" || ss.phType === "ctrTitle";
+            if (!ss.masterTarget) {
+              // Freeform text box — apply body font and normalised size
+              const bodyFont = pptxData.masterPlaceholders.find(p => p.type === "body")?.font;
+              let changed = false;
+              if (bodyFont?.name && tr.font.name && tr.font.name !== bodyFont.name) { tr.font.name = bodyFont.name; changed = true; }
+              if (normalisedSize && typeof ss.current.fontSize === "number" && Math.abs(ss.current.fontSize - normalisedSize) <= 3) { tr.font.size = normalisedSize; changed = true; }
+              if (changed) { await ctx.sync(); totalFixes++; }
+              continue;
+            }
             const wrongFont     = ss.current.fontName !== "(inherited)" && ss.current.fontName !== ss.masterTarget.fontName;
             const inheritedFont = ss.current.fontName === "(inherited)";
             const mixedSize     = tr.font.size === null;
@@ -1222,7 +1230,6 @@ export default function App() {
         // Regular shapes: snap font colour to nearest theme colour
         for (const ss of pptxData.slideShapes) {
           if (ss.isTable || ss.isGroup) continue;
-          if (!ss.masterTarget) continue;
           const os = shapes.items.find(s => String(s.id) === String(ss.id));
           if (!os) continue;
           try {
@@ -1230,7 +1237,7 @@ export default function App() {
             tr.font.load("color");
             try { await ctx.sync(); } catch (e) { continue; } // skip shapes without text frames
             const shapeColor = tr.font.color ? `#${tr.font.color}` : null;
-            // null means mixed colours — force to master/primary colour
+            // For freeform boxes with no masterTarget, use shapeColor only
             const cur = shapeColor && shapeColor !== "#null" && shapeColor !== "#"
               ? shapeColor
               : (ss.masterTarget?.color && ss.masterTarget.color !== "(inherited)" ? ss.masterTarget.color : null);
