@@ -1116,35 +1116,14 @@ export default function App() {
             tr.font.load(["name", "size"]);
             try { await ctx.sync(); } catch (e) { continue; } // skip shapes without text frames
             const isTitle = ss.phType === "title" || ss.phType === "ctrTitle";
-            if (!ss.masterTarget) {
-              // Freeform text box — apply body font and normalised size
-              const bodyFont = pptxData.masterPlaceholders.find(p => p.type === "body")?.font;
-              addLog(`Freeform "${ss.name}": font=${tr.font.name} body=${bodyFont?.name} size=${tr.font.size} norm=${normalisedSize}`);
-              let changed = false;
-              if (bodyFont?.name && tr.font.name && tr.font.name !== bodyFont.name) { tr.font.name = bodyFont.name; changed = true; }
-              if (normalisedSize && typeof ss.current.fontSize === "number" && Math.abs(ss.current.fontSize - normalisedSize) <= 3) { tr.font.size = normalisedSize; changed = true; }
-              if (changed) { await ctx.sync(); totalFixes++; }
-              continue;
-            }
-            const wrongFont     = ss.current.fontName !== "(inherited)" && ss.current.fontName !== ss.masterTarget.fontName;
-            const inheritedFont = ss.current.fontName === "(inherited)";
-            const mixedSize     = tr.font.size === null;
-            const currentSize   = typeof ss.current.fontSize === "number" ? ss.current.fontSize : null;
-            const sizesDiffer   = !isTitle && normalisedSize && currentSize !== null && currentSize !== normalisedSize && Math.abs(currentSize - normalisedSize) <= 3;
-            const needsFontFix  = wrongFont || (inheritedFont && ss.masterTarget.fontName);
-            const needsSizeFix  = mixedSize || sizesDiffer;
-            const needsFillReset = ss.shapeFill && ss.shapeFill !== "none" && ss.masterTarget?.fill === "none";
-            addLog(`Shape "${ss.name}": curFont=${ss.current.fontName} masterFont=${ss.masterTarget.fontName} needsFontFix=${needsFontFix} needsSizeFix=${needsSizeFix}`);
-            if (!needsFontFix && !needsSizeFix && !needsFillReset) continue;
-            if (needsFillReset) { try { osShape.fill.clear(); await ctx.sync(); } catch (e) { /* ignore */ } }
-            if (needsFontFix) {
-              tr.font.name = ss.masterTarget.fontName;
-              if (normalisedSize && currentSize !== null && Math.abs(currentSize - normalisedSize) <= 3) tr.font.size = normalisedSize;
-            }
-            if (!needsFontFix && needsSizeFix) {
-              tr.font.size = isTitle ? ss.masterTarget.fontSize : (normalisedSize || ss.masterTarget.fontSize);
-            }
-            if (mixedSize && !needsFontFix) tr.font.size = normalisedSize || ss.masterTarget.fontSize;
+            if (isTitle) continue;
+            const bodyFont = pptxData.masterPlaceholders.find(p => p.type === "body")?.font;
+            const targetFont = ss.masterTarget?.fontName || bodyFont?.name;
+            if (!targetFont) continue;
+            let changed = false;
+            if (tr.font.name !== targetFont) { tr.font.name = targetFont; changed = true; }
+            if (normalisedSize && tr.font.size !== normalisedSize) { tr.font.size = normalisedSize; changed = true; }
+            if (changed) { await ctx.sync(); totalFixes++; }
             await ctx.sync();
             totalFixes++;
           } catch (e) { /* shape may not support font ops */ }
