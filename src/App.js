@@ -1217,19 +1217,22 @@ export default function App() {
           if (ss.isTable || ss.isGroup) continue;
           const os = shapes.items.find(s => String(s.id) === String(ss.id)) || shapes.items.find(s => s.name === ss.name);
           if (!os) continue;
-          try { const tr = os.textFrame.textRange; tr.font.load("color"); colorJobs.push({ tr }); } catch (e) { /* no text frame */ }
+          try { const tr = os.textFrame.textRange; tr.font.load("color"); colorJobs.push({ tr, ss }); } catch (e) { /* no text frame */ }
         }
         try { await ctx.sync(); } catch (e) { /* ignore */ }
-        for (const { tr } of colorJobs) {
+        for (const { tr, ss } of colorJobs) {
           try {
             const rawColor = tr.font.color;
             const shapeColor = rawColor ? `#${rawColor}` : null;
+            // If Office.js returns null, fall back to XML-parsed colour
+            const xmlColor = ss.current?.color && ss.current.color !== "(inherited)" && !ss.current.color.startsWith("theme:") ? ss.current.color : null;
+            const effectiveColor = (shapeColor && shapeColor !== "#null" && shapeColor !== "#") ? shapeColor : xmlColor;
             let targetColor;
-            if (!shapeColor || shapeColor === "#null" || shapeColor === "#") {
+            if (!effectiveColor) {
               targetColor = primaryThemeColor;
             } else {
-              const nearest = snapToThemeColor(shapeColor, themeColors);
-              targetColor = nearest.toLowerCase() === shapeColor.toLowerCase() ? null : nearest;
+              const nearest = snapToThemeColor(effectiveColor, themeColors);
+              targetColor = nearest.toLowerCase() === effectiveColor.toLowerCase() ? null : nearest;
             }
             if (!targetColor) continue;
             tr.font.color = targetColor.replace("#", "");
