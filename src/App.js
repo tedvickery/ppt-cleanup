@@ -714,7 +714,7 @@ function hexLuminance(hex) {
   return 0.2126*toLinear(parseInt(h.slice(0,2),16)/255) + 0.7152*toLinear(parseInt(h.slice(2,4),16)/255) + 0.0722*toLinear(parseInt(h.slice(4,6),16)/255);
 }
 
-function snapToThemeColor(hex, themeColors, threshold = 80) {
+function snapToThemeColor(hex, themeColors) {
   if (!hex || hex === "none" || hex.startsWith("theme:")) return hex;
   let nearest = null, nearestDist = Infinity;
   for (const [, themeHex] of Object.entries(themeColors)) {
@@ -722,8 +722,7 @@ function snapToThemeColor(hex, themeColors, threshold = 80) {
     const dist = colourDistance(hex, themeHex);
     if (dist < nearestDist) { nearestDist = dist; nearest = themeHex; }
   }
-  if (nearestDist <= threshold) { console.log(`  Snapping ${hex} → ${nearest}`); return nearest; }
-  return hex;
+  return nearest || hex;
 }
 
 /* ── Apply fixes via Office JS ──────────────────────────────────────────── */
