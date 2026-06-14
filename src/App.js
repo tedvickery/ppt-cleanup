@@ -1115,7 +1115,7 @@ export default function App() {
           try {
             const tr = osShape.textFrame.textRange;
             tr.font.load(["name", "size"]);
-            await ctx.sync();
+            try { await ctx.sync(); } catch (e) { continue; } // skip shapes without text frames
             const isTitle       = ss.phType === "title" || ss.phType === "ctrTitle";
             const wrongFont     = ss.current.fontName !== "(inherited)" && ss.current.fontName !== ss.masterTarget.fontName;
             const inheritedFont = ss.current.fontName === "(inherited)";
@@ -1151,7 +1151,7 @@ export default function App() {
           try {
             os.load(["left", "top", "width", "height"]);
             os.textFrame.load("autoSizeSetting");
-            await ctx.sync();
+            try { await ctx.sync(); } catch (e) { continue; }
             os.textFrame.autoSizeSetting = PowerPoint.ShapeAutoSize.autoSizeShapeToFitText;
             await ctx.sync();
             os.load(["width", "height"]);
@@ -1228,7 +1228,7 @@ export default function App() {
           try {
             const tr = os.textFrame.textRange;
             tr.font.load("color");
-            await ctx.sync();
+            try { await ctx.sync(); } catch (e) { continue; } // skip shapes without text frames
             const shapeColor = tr.font.color ? `#${tr.font.color}` : null;
             // null means mixed colours — force to master/primary colour
             const cur = shapeColor && shapeColor !== "#null" && shapeColor !== "#"
