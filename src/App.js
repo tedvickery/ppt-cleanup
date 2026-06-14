@@ -1209,15 +1209,21 @@ export default function App() {
         await ctx.sync();
 
         // All shapes: snap font colour to nearest theme colour — iterate Office.js shapes directly
+        const masterBodyColor = pptxData.masterPlaceholders.find(p => p.type === "body")?.color;
         for (const os of shapes.items) {
           try {
             const tr = os.textFrame.textRange;
             tr.font.load("color");
             try { await ctx.sync(); } catch (e) { continue; }
-            const shapeColor = tr.font.color ? `#${tr.font.color}` : null;
-            if (!shapeColor || shapeColor === "#null" || shapeColor === "#") continue;
-            const nearest = snapToThemeColor(shapeColor, themeColors);
-            if (nearest.toLowerCase() === shapeColor.toLowerCase()) continue;
+            const rawColor = tr.font.color;
+            const shapeColor = rawColor ? `#${rawColor}` : null;
+            // If null (inherited), use master body colour as the effective colour
+            const effectiveColor = (shapeColor && shapeColor !== "#null" && shapeColor !== "#")
+              ? shapeColor
+              : (masterBodyColor && masterBodyColor !== "(inherited)" ? masterBodyColor : null);
+            if (!effectiveColor) continue;
+            const nearest = snapToThemeColor(effectiveColor, themeColors);
+            if (nearest.toLowerCase() === effectiveColor.toLowerCase()) continue;
             tr.font.color = nearest.replace("#", "");
             await ctx.sync();
             totalFixes++;
