@@ -1211,14 +1211,13 @@ export default function App() {
         // All shapes: snap font colour to nearest theme colour — iterate Office.js shapes directly
         const themeColorValues = Object.values(themeColors).filter(Boolean);
         const primaryThemeColor = themeColorValues[0];
-        // All shapes: batch load colours, then snap to nearest theme colour
+        // All shapes: batch load colours via XML-matched IDs, then snap to nearest theme colour
         const colorJobs = [];
-        for (const os of shapes.items) {
-          try {
-            const tr = os.textFrame.textRange;
-            tr.font.load("color");
-            colorJobs.push({ os, tr });
-          } catch (e) { /* no text frame */ }
+        for (const ss of pptxData.slideShapes) {
+          if (ss.isTable || ss.isGroup) continue;
+          const os = shapes.items.find(s => String(s.id) === String(ss.id)) || shapes.items.find(s => s.name === ss.name);
+          if (!os) continue;
+          try { const tr = os.textFrame.textRange; tr.font.load("color"); colorJobs.push({ tr }); } catch (e) { /* no text frame */ }
         }
         try { await ctx.sync(); } catch (e) { /* ignore */ }
         for (const { tr } of colorJobs) {
