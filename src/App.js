@@ -1122,7 +1122,8 @@ export default function App() {
             if (!targetFont) continue;
             let changed = false;
             if (tr.font.name !== targetFont) { tr.font.name = targetFont; changed = true; }
-            if (normalisedSize && tr.font.size !== normalisedSize) { tr.font.size = normalisedSize; changed = true; }
+            const currentSize = typeof ss.current.fontSize === "number" ? ss.current.fontSize : tr.font.size;
+            if (normalisedSize && currentSize !== null && Math.abs(currentSize - normalisedSize) <= 3 && tr.font.size !== normalisedSize) { tr.font.size = normalisedSize; changed = true; }
             if (changed) { await ctx.sync(); totalFixes++; }
             await ctx.sync();
             totalFixes++;
