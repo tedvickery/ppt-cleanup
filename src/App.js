@@ -1211,29 +1211,33 @@ export default function App() {
         // All shapes: snap font colour to nearest theme colour — iterate Office.js shapes directly
         const themeColorValues = Object.values(themeColors).filter(Boolean);
         const primaryThemeColor = themeColorValues[0];
+        // All shapes: batch load colours, then snap to nearest theme colour
+        const colorJobs = [];
         for (const os of shapes.items) {
           try {
             const tr = os.textFrame.textRange;
             tr.font.load("color");
-            try { await ctx.sync(); } catch (e) { continue; }
-            const rawColor = tr.font.color;
-            const shapeColor = rawColor ? `#${rawColor}` : null;
-            if (!shapeColor || shapeColor === "#null" || shapeColor === "#") {
-              // Inherited — force primary theme colour
-              if (primaryThemeColor) {
-                tr.font.color = primaryThemeColor.replace("#", "");
-                await ctx.sync();
-                totalFixes++;
-              }
-              continue;
-            }
-            const nearest = snapToThemeColor(shapeColor, themeColors);
-            if (nearest.toLowerCase() === shapeColor.toLowerCase()) continue;
-            tr.font.color = nearest.replace("#", "");
-            await ctx.sync();
-            totalFixes++;
+            colorJobs.push({ os, tr });
           } catch (e) { /* no text frame */ }
         }
+        try { await ctx.sync(); } catch (e) { /* ignore */ }
+        for (const { tr } of colorJobs) {
+          try {
+            const rawColor = tr.font.color;
+            const shapeColor = rawColor ? `#${rawColor}` : null;
+            let targetColor;
+            if (!shapeColor || shapeColor === "#null" || shapeColor === "#") {
+              targetColor = primaryThemeColor;
+            } else {
+              const nearest = snapToThemeColor(shapeColor, themeColors);
+              targetColor = nearest.toLowerCase() === shapeColor.toLowerCase() ? null : nearest;
+            }
+            if (!targetColor) continue;
+            tr.font.color = targetColor.replace("#", "");
+            totalFixes++;
+          } catch (e) { /* skip */ }
+        }
+        try { await ctx.sync(); } catch (e) { /* ignore */ }
 
         // Tables: batch load all cell colours, sync once, write, sync once
         for (const ss of pptxData.slideShapes) {
