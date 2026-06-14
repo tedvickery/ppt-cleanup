@@ -1119,6 +1119,7 @@ export default function App() {
             if (!ss.masterTarget) {
               // Freeform text box — apply body font and normalised size
               const bodyFont = pptxData.masterPlaceholders.find(p => p.type === "body")?.font;
+              addLog(`Freeform "${ss.name}": font=${tr.font.name} body=${bodyFont?.name} size=${tr.font.size} norm=${normalisedSize}`);
               let changed = false;
               if (bodyFont?.name && tr.font.name && tr.font.name !== bodyFont.name) { tr.font.name = bodyFont.name; changed = true; }
               if (normalisedSize && typeof ss.current.fontSize === "number" && Math.abs(ss.current.fontSize - normalisedSize) <= 3) { tr.font.size = normalisedSize; changed = true; }
@@ -1133,6 +1134,7 @@ export default function App() {
             const needsFontFix  = wrongFont || (inheritedFont && ss.masterTarget.fontName);
             const needsSizeFix  = mixedSize || sizesDiffer;
             const needsFillReset = ss.shapeFill && ss.shapeFill !== "none" && ss.masterTarget?.fill === "none";
+            addLog(`Shape "${ss.name}": curFont=${ss.current.fontName} masterFont=${ss.masterTarget.fontName} needsFontFix=${needsFontFix} needsSizeFix=${needsSizeFix}`);
             if (!needsFontFix && !needsSizeFix && !needsFillReset) continue;
             if (needsFillReset) { try { osShape.fill.clear(); await ctx.sync(); } catch (e) { /* ignore */ } }
             if (needsFontFix) {
