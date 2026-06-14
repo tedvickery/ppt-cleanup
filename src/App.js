@@ -1051,6 +1051,8 @@ export default function App() {
         await ctx.sync();
         for (const s of shapes.items) s.load(["id", "name", "type"]);
         await ctx.sync();
+        addLog(`Office shapes: ${shapes.items.map(s=>`${s.id}:${s.name}`).join(' | ')}`);
+        addLog(`XML shapes: ${pptxData.slideShapes.map(ss=>`${ss.id}:${ss.name}`).join(' | ')}`);
 
         const nonTitleSizes = pptxData.slideShapes
           .filter(ss => ss.phType !== "title" && ss.phType !== "ctrTitle" && typeof ss.current.fontSize === "number")
@@ -1114,7 +1116,7 @@ export default function App() {
           try {
             const tr = osShape.textFrame.textRange;
             tr.font.load(["name", "size"]);
-            try { await ctx.sync(); } catch (e) { continue; } // skip shapes without text frames
+            try { await ctx.sync(); } catch (e) { continue; }
             const isTitle = ss.phType === "title" || ss.phType === "ctrTitle";
             if (isTitle) continue;
             const bodyFont = pptxData.masterPlaceholders.find(p => p.type === "body")?.font;
@@ -1125,8 +1127,6 @@ export default function App() {
             const currentSize = typeof ss.current.fontSize === "number" ? ss.current.fontSize : tr.font.size;
             if (normalisedSize && currentSize !== null && Math.abs(currentSize - normalisedSize) <= 3 && tr.font.size !== normalisedSize) { tr.font.size = normalisedSize; changed = true; }
             if (changed) { await ctx.sync(); totalFixes++; }
-            await ctx.sync();
-            totalFixes++;
           } catch (e) { /* shape may not support font ops */ }
         }
 
@@ -1209,33 +1209,20 @@ export default function App() {
         for (const s of shapes.items) s.load(["id", "name", "type"]);
         await ctx.sync();
 
-        // Regular shapes: snap font colour to nearest theme colour
-        for (const ss of pptxData.slideShapes) {
-          if (ss.isTable || ss.isGroup) continue;
-          const os = shapes.items.find(s => String(s.id) === String(ss.id));
-          if (!os) continue;
+        // All shapes: snap font colour to nearest theme colour — iterate Office.js shapes directly
+        for (const os of shapes.items) {
           try {
             const tr = os.textFrame.textRange;
             tr.font.load("color");
-            try { await ctx.sync(); } catch (e) { continue; } // skip shapes without text frames
+            try { await ctx.sync(); } catch (e) { continue; }
             const shapeColor = tr.font.color ? `#${tr.font.color}` : null;
-            // For freeform boxes with no masterTarget, use shapeColor only
-            const cur = shapeColor && shapeColor !== "#null" && shapeColor !== "#"
-              ? shapeColor
-              : (ss.masterTarget?.color && ss.masterTarget.color !== "(inherited)" ? ss.masterTarget.color : null);
-            if (!cur) continue;
-            const nearest = snapToThemeColor(cur, themeColors);
-            if (nearest.toLowerCase() === shapeColor?.toLowerCase()) continue;
-            let textColor = nearest;
-            const fill = ss.shapeFill;
-            if (fill && fill !== "none" && !fill.startsWith("theme:")) {
-              const contrast = (Math.max(hexLuminance(fill), hexLuminance(nearest)) + 0.05) / (Math.min(hexLuminance(fill), hexLuminance(nearest)) + 0.05);
-              if (contrast < 3) textColor = hexLuminance(fill) > 0.179 ? "#000000" : "#FFFFFF";
-            }
-            tr.font.color = textColor.replace("#", "");
+            if (!shapeColor || shapeColor === "#null" || shapeColor === "#") continue;
+            const nearest = snapToThemeColor(shapeColor, themeColors);
+            if (nearest.toLowerCase() === shapeColor.toLowerCase()) continue;
+            tr.font.color = nearest.replace("#", "");
             await ctx.sync();
             totalFixes++;
-          } catch (e) { /* no text */ }
+          } catch (e) { /* no text frame */ }
         }
 
         // Tables: batch load all cell colours, sync once, write, sync once
