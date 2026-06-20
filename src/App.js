@@ -1292,18 +1292,24 @@ export default function App() {
 
         // All shapes: snap fill colour and border/line colour to nearest theme colour
         // Simple rule — iterate every live shape on the slide directly, no XML cross-referencing
+        addLog(`Slide has ${shapes.items.length} live shapes`);
         const fillJobs = [];
         for (const os of shapes.items) {
-          try { os.fill.load(["type", "color"]); fillJobs.push({ os, kind: "fill" }); } catch (e) { /* no fill */ }
-          try { os.lineFormat.load(["color", "visible"]); fillJobs.push({ os, kind: "line" }); } catch (e) { /* no line */ }
+          try {
+            os.load(["name", "type"]);
+            os.fill.load(["type", "color"]);
+            fillJobs.push({ os, kind: "fill" });
+          } catch (e) { addLog(`⚠ fill.load threw: ${e.message}`); }
+          try { os.lineFormat.load(["color", "visible"]); fillJobs.push({ os, kind: "line" }); } catch (e) { addLog(`⚠ lineFormat.load threw: ${e.message}`); }
         }
-        try { await ctx.sync(); } catch (e) { /* ignore */ }
+        try { await ctx.sync(); } catch (e) { addLog(`⚠ sync after fill load failed: ${e.message}`); }
         for (const { os, kind } of fillJobs) {
           try {
             if (kind === "fill") {
               const fillTypeStr = String(os.fill.type).toLowerCase();
-              if (fillTypeStr !== "solid") continue; // skip none/gradient/picture fills
               const liveFill = os.fill.color ? (os.fill.color.startsWith("#") ? os.fill.color : `#${os.fill.color}`) : null;
+              addLog(`"${os.name}" (${os.type}) fill type=${fillTypeStr} color=${liveFill}`);
+              if (fillTypeStr !== "solid") continue; // skip none/gradient/picture fills
               if (!liveFill) continue;
               const nearest = snapToThemeColor(liveFill, themeColors);
               if (nearest.toLowerCase() === liveFill.toLowerCase()) continue;
@@ -1318,9 +1324,9 @@ export default function App() {
               os.lineFormat.color = nearest.replace("#", "");
               totalFixes++;
             }
-          } catch (e) { /* skip */ }
+          } catch (e) { addLog(`⚠ write failed for "${os.name}": ${e.message}`); }
         }
-        try { await ctx.sync(); } catch (e) { /* ignore */ }
+        try { await ctx.sync(); } catch (e) { addLog(`⚠ sync after fill write failed: ${e.message}`); }
         for (const ss of pptxData.slideShapes) {
           if (!ss.isTable) continue;
           const os = shapes.items.find(s => String(s.id) === String(ss.id));
