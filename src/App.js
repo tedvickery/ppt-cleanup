@@ -1099,8 +1099,6 @@ export default function App() {
         await ctx.sync();
         for (const s of shapes.items) s.load(["id", "name", "type"]);
         await ctx.sync();
-        addLog(`Office shapes: ${shapes.items.map(s=>`${s.id}:${s.name}`).join(' | ')}`);
-        addLog(`XML shapes: ${pptxData.slideShapes.map(ss=>`${ss.id}:${ss.name}`).join(' | ')}`);
 
         const nonTitleSizes = pptxData.slideShapes
           .filter(ss => ss.phType !== "title" && ss.phType !== "ctrTitle" && typeof ss.current.fontSize === "number")
@@ -1291,30 +1289,32 @@ export default function App() {
         try { await ctx.sync(); } catch (e) { /* ignore */ }
 
         // All shapes: snap fill colour and border/line colour to nearest theme colour
-        // Simple rule — iterate every live shape on the slide directly, no XML cross-referencing
-        addLog(`Slide has ${shapes.items.length} live shapes`);
         const fillJobs = [];
         for (const os of shapes.items) {
           try {
             os.load(["name", "type"]);
             os.fill.load(["type", "color"]);
             fillJobs.push({ os, kind: "fill" });
-          } catch (e) { addLog(`⚠ fill.load threw: ${e.message}`); }
-          try { os.lineFormat.load(["color", "visible"]); fillJobs.push({ os, kind: "line" }); } catch (e) { addLog(`⚠ lineFormat.load threw: ${e.message}`); }
+          } catch (e) { /* no fill */ }
+          try { os.lineFormat.load(["color", "visible"]); fillJobs.push({ os, kind: "line" }); } catch (e) { /* no line */ }
         }
-        try { await ctx.sync(); } catch (e) { addLog(`⚠ sync after fill load failed: ${e.message}`); }
+        try { await ctx.sync(); } catch (e) { /* ignore */ }
         for (const { os, kind } of fillJobs) {
           try {
             if (kind === "fill") {
               const fillTypeStr = String(os.fill.type).toLowerCase();
-              const liveFill = os.fill.color ? (os.fill.color.startsWith("#") ? os.fill.color : `#${os.fill.color}`) : null;
-              addLog(`"${os.name}" (${os.type}) fill type=${fillTypeStr} color=${liveFill}`);
               if (fillTypeStr !== "solid") continue; // skip none/gradient/picture fills
-              if (!liveFill) continue;
-              const nearest = snapToThemeColor(liveFill, themeColors);
-              if (nearest.toLowerCase() === liveFill.toLowerCase()) continue;
-              os.fill.setSolidColor(nearest.replace("#", ""));
-              totalFixes++;
+              const liveFill = os.fill.color ? (os.fill.color.startsWith("#") ? os.fill.color : `#${os.fill.color}`) : null;
+              if (liveFill) {
+                const nearest = snapToThemeColor(liveFill, themeColors);
+                if (nearest.toLowerCase() === liveFill.toLowerCase()) continue;
+                os.fill.setSolidColor(nearest.replace("#", ""));
+                totalFixes++;
+              } else if (primaryThemeColor) {
+                // Colour comes from a style/theme reference Office.js can't read directly — force it explicit
+                os.fill.setSolidColor(primaryThemeColor.replace("#", ""));
+                totalFixes++;
+              }
             } else {
               if (!os.lineFormat.visible) continue;
               const cur = os.lineFormat.color ? (os.lineFormat.color.startsWith("#") ? os.lineFormat.color : `#${os.lineFormat.color}`) : null;
