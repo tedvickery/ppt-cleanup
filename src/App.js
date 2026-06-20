@@ -1303,9 +1303,11 @@ export default function App() {
         for (const { os, ss, kind } of fillJobs) {
           try {
             if (kind === "fill") {
-              if (os.fill.type !== PowerPoint.ShapeFillType.solid) continue; // skip none/gradient/picture fills
-              // Prefer the live colour (covers style-referenced fills not present as explicit XML solidFill)
+              const fillTypeStr = String(os.fill.type).toLowerCase();
               const liveFill = os.fill.color ? (os.fill.color.startsWith("#") ? os.fill.color : `#${os.fill.color}`) : null;
+              addLog(`Shape "${ss.name}" fill: type=${fillTypeStr} live=${liveFill} xml=${ss.shapeFill}`);
+              if (fillTypeStr !== "solid") continue; // skip none/gradient/picture fills
+              // Prefer the live colour (covers style-referenced fills not present as explicit XML solidFill)
               const xmlFill = ss.shapeFill && ss.shapeFill !== "none" && !ss.shapeFill.startsWith("theme:") && !ss.shapeFill.includes("gradient") ? ss.shapeFill : null;
               const effectiveFill = liveFill || xmlFill;
               if (!effectiveFill) continue;
