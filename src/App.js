@@ -1299,7 +1299,7 @@ export default function App() {
           try { os.lineFormat.load(["color", "visible"]); fillJobs.push({ os, kind: "line" }); } catch (e) { /* no line */ }
         }
         try { await ctx.sync(); } catch (e) { /* ignore */ }
-        // Identify which live shapes have text, to test whether a colourless shape sits behind one
+        // Identify which live shapes have text, to test whether a colourless shape overlaps one
         const textBearingBoxes = [];
         for (const os of shapes.items) {
           try {
@@ -1313,9 +1313,10 @@ export default function App() {
         const textBoxRects = textBearingBoxes
           .filter(({ tr }) => { try { return tr.text && tr.text.trim().length > 0; } catch (e) { return false; } })
           .map(({ os }) => ({ left: os.left, top: os.top, width: os.width, height: os.height }));
-        const isContainerOf = (container, rects) => rects.some(inner =>
-          inner.left >= container.left - 0.5 && inner.left + inner.width  <= container.left + container.width  + 0.5 &&
-          inner.top  >= container.top  - 0.5 && inner.top  + inner.height <= container.top  + container.height + 0.5
+        // Simple rectangle overlap (not strict containment) — true if the two rects intersect at all
+        const overlapsAny = (a, rects) => rects.some(b =>
+          a.left < b.left + b.width && a.left + a.width > b.left &&
+          a.top  < b.top  + b.height && a.top  + a.height > b.top
         );
         let colorRotationIndex = 0;
         for (const { os, kind } of fillJobs) {
@@ -1332,13 +1333,13 @@ export default function App() {
               } else {
                 // Colour comes from a style/theme reference Office.js can't read directly
                 const shapeRect = { left: os.left, top: os.top, width: os.width, height: os.height };
-                const behindTextBox = isContainerOf(shapeRect, textBoxRects);
-                if (behindTextBox) {
-                  // This shape contains a text box within its bounds — it's a background panel — clear the fill
+                const overlapsText = overlapsAny(shapeRect, textBoxRects);
+                if (overlapsText) {
+                  // Overlaps a text box — likely a background panel sitting under text — clear the fill
                   os.fill.clear();
                   totalFixes++;
                 } else if (themeColorValues.length > 0) {
-                  // Standalone or overlapping decorative shape (e.g. icon) — assign a theme colour, rotating through the palette
+                  // No text overlap — standalone or overlapping decorative shape (e.g. icon) — assign a theme colour, rotating through the palette
                   const chosen = themeColorValues[colorRotationIndex % themeColorValues.length];
                   colorRotationIndex++;
                   os.fill.setSolidColor(chosen.replace("#", ""));
