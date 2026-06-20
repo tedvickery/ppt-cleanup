@@ -1269,7 +1269,7 @@ export default function App() {
         for (const s of shapes.items) s.load(["id", "name", "type"]);
         await ctx.sync();
 
-        // Read the slide background colour, so it's never used as a font colour target
+        // Read the slide background colour, used to keep shape fills from landing on it
         let bgColor = null;
         try {
           const bgFill = slides.items[dupIndex - 1].background.fill;
@@ -1285,11 +1285,7 @@ export default function App() {
           }
         } catch (e) { /* background read not supported on this slide/host */ }
 
-        // Theme colours with the background colour removed, so font snapping never lands on it
-        const fontThemeColors = bgColor
-          ? Object.fromEntries(Object.entries(themeColors).filter(([, v]) => !v || v.toLowerCase() !== bgColor.toLowerCase()))
-          : themeColors;
-        const themeColorValues = Object.values(fontThemeColors).filter(Boolean);
+        const themeColorValues = Object.values(themeColors).filter(Boolean);
         const primaryThemeColor = themeColorValues[0];
         // All shapes: batch load colours via XML-matched IDs, then snap to nearest theme colour
         const colorJobs = [];
@@ -1309,9 +1305,10 @@ export default function App() {
             const effectiveColor = (shapeColor && shapeColor !== "#null" && shapeColor !== "#") ? shapeColor : xmlColor;
             let targetColor;
             if (!effectiveColor) {
+              // Font colour is null/unreadable — always fall back to the primary theme colour
               targetColor = primaryThemeColor;
             } else {
-              const nearest = snapToThemeColor(effectiveColor, fontThemeColors);
+              const nearest = snapToThemeColor(effectiveColor, themeColors);
               targetColor = nearest.toLowerCase() === effectiveColor.toLowerCase() ? null : nearest;
             }
             if (!targetColor) continue;
@@ -1332,10 +1329,16 @@ export default function App() {
           try { os.lineFormat.load(["color", "visible"]); fillJobs.push({ os, kind: "line" }); } catch (e) { /* no line */ }
         }
         try { await ctx.sync(); } catch (e) { /* ignore */ }
-        // Shape fills use the full, unfiltered theme palette (background exclusion only applies to font colour)
+        // Shape fills use the full theme palette for normal snapping
         const fillThemeColorValues = Object.values(themeColors).filter(Boolean);
         const fillPrimaryThemeColor = fillThemeColorValues[0];
-        const fallbackColoured = []; // shapes forced to fillPrimaryThemeColor due to unreadable fill
+        // For shapes with an unreadable (null) colour, pick a random theme colour that is
+        // neither the slide background nor the primary theme colour
+        const fillFallbackCandidates = fillThemeColorValues.filter(c =>
+          c.toLowerCase() !== fillPrimaryThemeColor?.toLowerCase() &&
+          (!bgColor || c.toLowerCase() !== bgColor.toLowerCase())
+        );
+        const fallbackColoured = []; // shapes forced to a fallback colour due to unreadable fill
         for (const { os, kind } of fillJobs) {
           try {
             if (kind === "fill") {
@@ -1347,11 +1350,16 @@ export default function App() {
                 if (nearest.toLowerCase() === liveFill.toLowerCase()) continue;
                 os.fill.setSolidColor(nearest.replace("#", ""));
                 totalFixes++;
-              } else if (fillPrimaryThemeColor) {
-                // Colour comes from a style/theme reference Office.js can't read directly — force the first theme colour
-                os.fill.setSolidColor(fillPrimaryThemeColor.replace("#", ""));
-                fallbackColoured.push(os);
-                totalFixes++;
+              } else {
+                // Colour comes from a style/theme reference Office.js can't read directly —
+                // assign a theme colour that isn't the background or the primary colour
+                const pool = fillFallbackCandidates.length > 0 ? fillFallbackCandidates : fillThemeColorValues;
+                if (pool.length > 0) {
+                  const chosen = pool[Math.floor(Math.random() * pool.length)];
+                  os.fill.setSolidColor(chosen.replace("#", ""));
+                  fallbackColoured.push(os);
+                  totalFixes++;
+                }
               }
             } else {
               if (!os.lineFormat.visible) continue;
