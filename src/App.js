@@ -1616,7 +1616,7 @@ export default function App() {
       addLog("✗ " + err.message);
       setStatus("error");
     }
-  }, []);
+  }, [titleOverrides]);
 
   const isRunning = status === "running";
 
