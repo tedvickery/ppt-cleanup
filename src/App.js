@@ -1318,7 +1318,7 @@ export default function App() {
           a.left < b.left + b.width && a.left + a.width > b.left &&
           a.top  < b.top  + b.height && a.top  + a.height > b.top
         );
-        addLog(`Colour step: ${textBoxRects.length} text-bearing rects found`);
+        addLog(`Colour step: ${textBoxRects.length} text-bearing rects found: ${textBearingBoxes.map(({os,tr}) => { let t=""; try{t=tr.text||"";}catch(e){} return `${os.name}="${t.substring(0,20)}"`; }).join(' | ')}`);
         let colorRotationIndex = 0;
         for (const { os, kind } of fillJobs) {
           try {
