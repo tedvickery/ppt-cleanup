@@ -739,15 +739,6 @@ function snapToThemeColor(hex, themeColors) {
   return nearest || hex;
 }
 
-// Lightens a hex colour toward white by the given amount (0-1)
-function lightenHex(hex, amount = 0.35) {
-  const { r, g, b } = hexToRgb(hex);
-  const lr = Math.round(r + (255 - r) * amount);
-  const lg = Math.round(g + (255 - g) * amount);
-  const lb = Math.round(b + (255 - b) * amount);
-  return "#" + [lr, lg, lb].map(v => v.toString(16).padStart(2, "0")).join("");
-}
-
 /* ── Apply fixes via Office JS ──────────────────────────────────────────── */
 
 async function applyFixes(slideIndex, fixes, themeColors = {}) {
@@ -1322,7 +1313,7 @@ export default function App() {
         const fillJobs = [];
         for (const os of shapes.items) {
           try {
-            os.load(["name", "type", "left", "top", "width", "height"]);
+            os.load(["name", "type"]);
             os.fill.load(["type", "color"]);
             fillJobs.push({ os, kind: "fill" });
           } catch (e) { /* no fill */ }
@@ -1338,7 +1329,6 @@ export default function App() {
           c.toLowerCase() !== fillPrimaryThemeColor?.toLowerCase() &&
           (!bgColor || c.toLowerCase() !== bgColor.toLowerCase())
         );
-        const fallbackColoured = []; // shapes forced to a fallback colour due to unreadable fill
         for (const { os, kind } of fillJobs) {
           try {
             if (kind === "fill") {
@@ -1357,7 +1347,6 @@ export default function App() {
                 if (pool.length > 0) {
                   const chosen = pool[Math.floor(Math.random() * pool.length)];
                   os.fill.setSolidColor(chosen.replace("#", ""));
-                  fallbackColoured.push(os);
                   totalFixes++;
                 }
               }
@@ -1373,33 +1362,6 @@ export default function App() {
           } catch (e) { /* skip */ }
         }
         try { await ctx.sync(); } catch (e) { /* ignore */ }
-        // Final check: if two shapes that both fell back to the primary colour overlap each other,
-        // they'd otherwise look identical — clear the larger one's fill (background) and
-        // assign the smaller one a random theme colour (foreground)
-        if (fallbackColoured.length > 1) {
-          const overlapsRect = (a, b) =>
-            a.left < b.left + b.width && a.left + a.width > b.left &&
-            a.top  < b.top  + b.height && a.top  + a.height > b.top;
-          for (let i = 0; i < fallbackColoured.length; i++) {
-            for (let j = i + 1; j < fallbackColoured.length; j++) {
-              const a = fallbackColoured[i], b = fallbackColoured[j];
-              if (!overlapsRect(a, b)) continue;
-              try {
-                const areaA = a.width * a.height, areaB = b.width * b.height;
-                const larger = areaA >= areaB ? a : b;
-                const smaller = larger === a ? b : a;
-                larger.fill.clear();
-                totalFixes++;
-                if (fillThemeColorValues.length > 0) {
-                  const randomColor = fillThemeColorValues[Math.floor(Math.random() * fillThemeColorValues.length)];
-                  smaller.fill.setSolidColor(randomColor.replace("#", ""));
-                  totalFixes++;
-                }
-              } catch (e) { /* skip */ }
-            }
-          }
-          try { await ctx.sync(); } catch (e) { /* ignore */ }
-        }
         for (const ss of pptxData.slideShapes) {
           if (!ss.isTable) continue;
           const os = shapes.items.find(s => String(s.id) === String(ss.id));
