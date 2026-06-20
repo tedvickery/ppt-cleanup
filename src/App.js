@@ -1323,6 +1323,10 @@ export default function App() {
         // Shape fills use the full theme palette for normal snapping
         const fillThemeColorValues = Object.values(themeColors).filter(Boolean);
         const fillPrimaryThemeColor = fillThemeColorValues[0];
+        // Theme colours with the background colour removed — shape fills never land on it
+        const fillThemeColorsNoBg = bgColor
+          ? Object.fromEntries(Object.entries(themeColors).filter(([, v]) => !v || v.toLowerCase() !== bgColor.toLowerCase()))
+          : themeColors;
         // For shapes with an unreadable (null) colour, pick a random theme colour that is
         // neither the slide background nor the primary theme colour
         const fillFallbackCandidates = fillThemeColorValues.filter(c =>
@@ -1336,7 +1340,7 @@ export default function App() {
               if (fillTypeStr !== "solid") continue; // skip none/gradient/picture fills
               const liveFill = os.fill.color ? (os.fill.color.startsWith("#") ? os.fill.color : `#${os.fill.color}`) : null;
               if (liveFill) {
-                const nearest = snapToThemeColor(liveFill, themeColors);
+                const nearest = snapToThemeColor(liveFill, fillThemeColorsNoBg);
                 if (nearest.toLowerCase() === liveFill.toLowerCase()) continue;
                 os.fill.setSolidColor(nearest.replace("#", ""));
                 totalFixes++;
