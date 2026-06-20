@@ -1296,7 +1296,7 @@ export default function App() {
           if (ss.isTable || ss.isGroup) continue;
           const os = shapes.items.find(s => String(s.id) === String(ss.id)) || shapes.items.find(s => s.name === ss.name);
           if (!os) continue;
-          try { os.fill.load("type"); fillJobs.push({ os, ss, kind: "fill" }); } catch (e) { /* no fill */ }
+          try { os.fill.load(["type", "color"]); fillJobs.push({ os, ss, kind: "fill" }); } catch (e) { /* no fill */ }
           try { os.lineFormat.load(["color", "visible"]); fillJobs.push({ os, ss, kind: "line" }); } catch (e) { /* no line */ }
         }
         try { await ctx.sync(); } catch (e) { /* ignore */ }
@@ -1304,15 +1304,18 @@ export default function App() {
           try {
             if (kind === "fill") {
               if (os.fill.type !== PowerPoint.ShapeFillType.solid) continue; // skip none/gradient/picture fills
+              // Prefer the live colour (covers style-referenced fills not present as explicit XML solidFill)
+              const liveFill = os.fill.color ? (os.fill.color.startsWith("#") ? os.fill.color : `#${os.fill.color}`) : null;
               const xmlFill = ss.shapeFill && ss.shapeFill !== "none" && !ss.shapeFill.startsWith("theme:") && !ss.shapeFill.includes("gradient") ? ss.shapeFill : null;
-              if (!xmlFill) continue;
-              const nearest = snapToThemeColor(xmlFill, themeColors);
-              if (nearest.toLowerCase() === xmlFill.toLowerCase()) continue;
+              const effectiveFill = liveFill || xmlFill;
+              if (!effectiveFill) continue;
+              const nearest = snapToThemeColor(effectiveFill, themeColors);
+              if (nearest.toLowerCase() === effectiveFill.toLowerCase()) continue;
               os.fill.setSolidColor(nearest.replace("#", ""));
               totalFixes++;
             } else {
               if (!os.lineFormat.visible) continue;
-              const cur = os.lineFormat.color ? `#${os.lineFormat.color}` : null;
+              const cur = os.lineFormat.color ? (os.lineFormat.color.startsWith("#") ? os.lineFormat.color : `#${os.lineFormat.color}`) : null;
               const xmlBorder = ss.shapeBorder && ss.shapeBorder !== "none" && !ss.shapeBorder.startsWith("theme:") ? ss.shapeBorder : null;
               const effective = cur || xmlBorder;
               if (!effective) continue;
