@@ -1339,7 +1339,8 @@ export default function App() {
         }
         try { await ctx.sync(); } catch (e) { /* ignore */ }
         // Final check: if two shapes that both fell back to the primary colour overlap each other,
-        // they'd otherwise look identical — clear the larger one's fill so it reads as background
+        // they'd otherwise look identical — clear the larger one's fill (background) and
+        // assign the smaller one a random theme colour (foreground)
         if (fallbackColoured.length > 1) {
           const overlapsRect = (a, b) =>
             a.left < b.left + b.width && a.left + a.width > b.left &&
@@ -1351,8 +1352,14 @@ export default function App() {
               try {
                 const areaA = a.width * a.height, areaB = b.width * b.height;
                 const larger = areaA >= areaB ? a : b;
+                const smaller = larger === a ? b : a;
                 larger.fill.clear();
                 totalFixes++;
+                if (themeColorValues.length > 0) {
+                  const randomColor = themeColorValues[Math.floor(Math.random() * themeColorValues.length)];
+                  smaller.fill.setSolidColor(randomColor.replace("#", ""));
+                  totalFixes++;
+                }
               } catch (e) { /* skip */ }
             }
           }
