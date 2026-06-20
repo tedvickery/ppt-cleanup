@@ -1292,34 +1292,13 @@ export default function App() {
         const fillJobs = [];
         for (const os of shapes.items) {
           try {
-            os.load(["name", "type", "left", "top", "width", "height"]);
+            os.load(["name", "type"]);
             os.fill.load(["type", "color"]);
             fillJobs.push({ os, kind: "fill" });
           } catch (e) { /* no fill */ }
           try { os.lineFormat.load(["color", "visible"]); fillJobs.push({ os, kind: "line" }); } catch (e) { /* no line */ }
         }
         try { await ctx.sync(); } catch (e) { /* ignore */ }
-        // Identify which live shapes have text, to test whether a colourless shape overlaps one
-        const textBearingBoxes = [];
-        for (const os of shapes.items) {
-          try {
-            const tr = os.textFrame.textRange;
-            tr.load("text");
-            os.load(["left", "top", "width", "height"]);
-            textBearingBoxes.push({ os, tr });
-          } catch (e) { /* no text frame */ }
-        }
-        try { await ctx.sync(); } catch (e) { /* ignore */ }
-        const textBoxRects = textBearingBoxes
-          .filter(({ tr }) => { try { return tr.text && tr.text.trim().length > 0; } catch (e) { return false; } })
-          .map(({ os }) => ({ left: os.left, top: os.top, width: os.width, height: os.height }));
-        // Simple rectangle overlap (not strict containment) — true if the two rects intersect at all
-        const overlapsAny = (a, rects) => rects.some(b =>
-          a.left < b.left + b.width && a.left + a.width > b.left &&
-          a.top  < b.top  + b.height && a.top  + a.height > b.top
-        );
-        addLog(`Colour step: ${textBoxRects.length} text-bearing rects found: ${textBearingBoxes.map(({os,tr}) => { let t=""; try{t=tr.text||"";}catch(e){} return `${os.name}="${t.substring(0,20)}"`; }).join(' | ')}`);
-        let colorRotationIndex = 0;
         for (const { os, kind } of fillJobs) {
           try {
             if (kind === "fill") {
@@ -1331,22 +1310,10 @@ export default function App() {
                 if (nearest.toLowerCase() === liveFill.toLowerCase()) continue;
                 os.fill.setSolidColor(nearest.replace("#", ""));
                 totalFixes++;
-              } else {
-                // Colour comes from a style/theme reference Office.js can't read directly
-                const shapeRect = { left: os.left, top: os.top, width: os.width, height: os.height };
-                const overlapsText = overlapsAny(shapeRect, textBoxRects);
-                addLog(`"${os.name}" rect=L${shapeRect.left.toFixed(0)},T${shapeRect.top.toFixed(0)},W${shapeRect.width.toFixed(0)},H${shapeRect.height.toFixed(0)} overlapsText=${overlapsText}`);
-                if (overlapsText) {
-                  // Overlaps a text box — likely a background panel sitting under text — clear the fill
-                  os.fill.clear();
-                  totalFixes++;
-                } else if (themeColorValues.length > 0) {
-                  // No text overlap — standalone or overlapping decorative shape (e.g. icon) — assign a theme colour, rotating through the palette
-                  const chosen = themeColorValues[colorRotationIndex % themeColorValues.length];
-                  colorRotationIndex++;
-                  os.fill.setSolidColor(chosen.replace("#", ""));
-                  totalFixes++;
-                }
+              } else if (primaryThemeColor) {
+                // Colour comes from a style/theme reference Office.js can't read directly — force the first theme colour
+                os.fill.setSolidColor(primaryThemeColor.replace("#", ""));
+                totalFixes++;
               }
             } else {
               if (!os.lineFormat.visible) continue;
@@ -1357,9 +1324,9 @@ export default function App() {
               os.lineFormat.color = nearest.replace("#", "");
               totalFixes++;
             }
-          } catch (e) { addLog(`⚠ write failed for "${os.name}": ${e.message}`); }
+          } catch (e) { /* skip */ }
         }
-        try { await ctx.sync(); } catch (e) { addLog(`⚠ sync after fill write failed: ${e.message}`); }
+        try { await ctx.sync(); } catch (e) { /* ignore */ }
         for (const ss of pptxData.slideShapes) {
           if (!ss.isTable) continue;
           const os = shapes.items.find(s => String(s.id) === String(ss.id));
@@ -1418,6 +1385,7 @@ export default function App() {
         }
       });
 
+      /* ─── POSITIONING DISABLED FOR NOW — keeping tool to font/colour/title scope ───
       // ─── STEP 4: Grid pipeline (looped until stable) ────────────────────────
       let skipAlignment = false;
       {
@@ -1676,6 +1644,7 @@ export default function App() {
         await ctx.sync();
       });
       }
+      */
 
       addLog(`✓ Done — ${totalFixes} fix${totalFixes !== 1 ? "es" : ""} applied`);
       setFixCount(totalFixes);
