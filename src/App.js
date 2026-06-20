@@ -1377,9 +1377,14 @@ export default function App() {
             }
 
             // Step 3: Resolve text-box overlaps — move one cell at a time
+            // Skip pairs where one shape is fully contained inside the other (intentional layering, e.g. icons)
+            const isContained = (x, y) =>
+              x.left >= y.left - cellW * 0.1 && x.left + x.width  <= y.left + y.width  + cellW * 0.1 &&
+              x.top  >= y.top  - cellH * 0.1 && x.top  + x.height <= y.top  + y.height + cellH * 0.1;
             for (let i = 0; i < nonTitleShapes.length; i++) {
               for (let j = i + 1; j < nonTitleShapes.length; j++) {
                 const a = positions[i], b = positions[j];
+                if (isContained(a, b) || isContained(b, a)) continue;
                 const overlapX = Math.min(a.left+a.width, b.left+b.width) - Math.max(a.left, b.left);
                 const overlapY = Math.min(a.top+a.height, b.top+b.height) - Math.max(a.top,  b.top);
                 if (overlapX > cellW * 0.1 && overlapY > cellH * 0.1) {
@@ -1512,11 +1517,15 @@ export default function App() {
         // Grid cell sizes based on slide area
         const gW = slideW / 50, gH = slideH / 50;
         let changed = true;
+        const isContainedLive = (x, y) =>
+          x.left >= y.left - gW * 0.5 && x.left + x.width  <= y.left + y.width  + gW * 0.5 &&
+          x.top  >= y.top  - gH * 0.5 && x.top  + x.height <= y.top  + y.height + gH * 0.5;
         for (let iter = 0; iter < 8 && changed; iter++) {
           changed = false;
           for (let i = 0; i < live.length; i++) {
             for (let j = i + 1; j < live.length; j++) {
               const a = live[i], b = live[j];
+              if (isContainedLive(a, b) || isContainedLive(b, a)) continue;
               const overX = a.left < b.left + b.width  - gW && a.left + a.width  > b.left + gW;
               const overY = a.top  < b.top  + b.height - gH && a.top  + a.height > b.top  + gH;
               if (!overX || !overY) continue;
