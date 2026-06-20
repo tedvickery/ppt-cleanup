@@ -1269,7 +1269,7 @@ export default function App() {
         for (const s of shapes.items) s.load(["id", "name", "type"]);
         await ctx.sync();
 
-        // Read the slide background colour, so font colours never get snapped to it (would be invisible)
+        // Read the slide background colour, so it's never used as a font colour target
         let bgColor = null;
         try {
           const bgFill = slides.items[dupIndex - 1].background.fill;
@@ -1285,17 +1285,12 @@ export default function App() {
           }
         } catch (e) { /* background read not supported on this slide/host */ }
 
-        // All shapes: snap font colour to nearest theme colour — iterate Office.js shapes directly
-        const themeColorValues = Object.values(themeColors).filter(Boolean);
+        // Theme colours with the background colour removed, so font snapping never lands on it
+        const fontThemeColors = bgColor
+          ? Object.fromEntries(Object.entries(themeColors).filter(([, v]) => !v || v.toLowerCase() !== bgColor.toLowerCase()))
+          : themeColors;
+        const themeColorValues = Object.values(fontThemeColors).filter(Boolean);
         const primaryThemeColor = themeColorValues[0];
-        // Picks the nearest theme colour to `hex`, skipping the slide background colour if it would otherwise be chosen
-        const snapAvoidingBackground = (hex) => {
-          const candidates = themeColorValues
-            .filter(c => !bgColor || c.toLowerCase() !== bgColor.toLowerCase())
-            .sort((a, b) => colourDistance(hex, a) - colourDistance(hex, b));
-          return candidates[0] || snapToThemeColor(hex, themeColors);
-        };
-        const primaryAvoidingBackground = themeColorValues.find(c => !bgColor || c.toLowerCase() !== bgColor.toLowerCase()) || primaryThemeColor;
         // All shapes: batch load colours via XML-matched IDs, then snap to nearest theme colour
         const colorJobs = [];
         for (const ss of pptxData.slideShapes) {
@@ -1314,9 +1309,9 @@ export default function App() {
             const effectiveColor = (shapeColor && shapeColor !== "#null" && shapeColor !== "#") ? shapeColor : xmlColor;
             let targetColor;
             if (!effectiveColor) {
-              targetColor = primaryAvoidingBackground;
+              targetColor = primaryThemeColor;
             } else {
-              const nearest = snapAvoidingBackground(effectiveColor);
+              const nearest = snapToThemeColor(effectiveColor, fontThemeColors);
               targetColor = nearest.toLowerCase() === effectiveColor.toLowerCase() ? null : nearest;
             }
             if (!targetColor) continue;
@@ -1337,7 +1332,10 @@ export default function App() {
           try { os.lineFormat.load(["color", "visible"]); fillJobs.push({ os, kind: "line" }); } catch (e) { /* no line */ }
         }
         try { await ctx.sync(); } catch (e) { /* ignore */ }
-        const fallbackColoured = []; // shapes forced to primaryThemeColor due to unreadable fill
+        // Shape fills use the full, unfiltered theme palette (background exclusion only applies to font colour)
+        const fillThemeColorValues = Object.values(themeColors).filter(Boolean);
+        const fillPrimaryThemeColor = fillThemeColorValues[0];
+        const fallbackColoured = []; // shapes forced to fillPrimaryThemeColor due to unreadable fill
         for (const { os, kind } of fillJobs) {
           try {
             if (kind === "fill") {
@@ -1349,9 +1347,9 @@ export default function App() {
                 if (nearest.toLowerCase() === liveFill.toLowerCase()) continue;
                 os.fill.setSolidColor(nearest.replace("#", ""));
                 totalFixes++;
-              } else if (primaryThemeColor) {
+              } else if (fillPrimaryThemeColor) {
                 // Colour comes from a style/theme reference Office.js can't read directly — force the first theme colour
-                os.fill.setSolidColor(primaryThemeColor.replace("#", ""));
+                os.fill.setSolidColor(fillPrimaryThemeColor.replace("#", ""));
                 fallbackColoured.push(os);
                 totalFixes++;
               }
@@ -1384,8 +1382,8 @@ export default function App() {
                 const smaller = larger === a ? b : a;
                 larger.fill.clear();
                 totalFixes++;
-                if (themeColorValues.length > 0) {
-                  const randomColor = themeColorValues[Math.floor(Math.random() * themeColorValues.length)];
+                if (fillThemeColorValues.length > 0) {
+                  const randomColor = fillThemeColorValues[Math.floor(Math.random() * fillThemeColorValues.length)];
                   smaller.fill.setSolidColor(randomColor.replace("#", ""));
                   totalFixes++;
                 }
