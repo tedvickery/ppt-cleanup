@@ -1292,13 +1292,31 @@ export default function App() {
         const fillJobs = [];
         for (const os of shapes.items) {
           try {
-            os.load(["name", "type"]);
+            os.load(["name", "type", "left", "top", "width", "height"]);
             os.fill.load(["type", "color"]);
             fillJobs.push({ os, kind: "fill" });
           } catch (e) { /* no fill */ }
           try { os.lineFormat.load(["color", "visible"]); fillJobs.push({ os, kind: "line" }); } catch (e) { /* no line */ }
         }
         try { await ctx.sync(); } catch (e) { /* ignore */ }
+        // Identify which live shapes have text, to test whether a colourless shape sits behind one
+        const textBearingBoxes = [];
+        for (const os of shapes.items) {
+          try {
+            const tr = os.textFrame.textRange;
+            tr.load("text");
+            textBearingBoxes.push({ os, tr });
+          } catch (e) { /* no text frame */ }
+        }
+        try { await ctx.sync(); } catch (e) { /* ignore */ }
+        const textBoxRects = textBearingBoxes
+          .filter(({ tr }) => { try { return tr.text && tr.text.trim().length > 0; } catch (e) { return false; } })
+          .map(({ os }) => ({ left: os.left, top: os.top, width: os.width, height: os.height }));
+        const isFullyContainedInAny = (r, rects) => rects.some(o =>
+          r.left >= o.left - 0.5 && r.left + r.width  <= o.left + o.width  + 0.5 &&
+          r.top  >= o.top  - 0.5 && r.top  + r.height <= o.top  + o.height + 0.5
+        );
+        let colorRotationIndex = 0;
         for (const { os, kind } of fillJobs) {
           try {
             if (kind === "fill") {
@@ -1310,10 +1328,21 @@ export default function App() {
                 if (nearest.toLowerCase() === liveFill.toLowerCase()) continue;
                 os.fill.setSolidColor(nearest.replace("#", ""));
                 totalFixes++;
-              } else if (primaryThemeColor) {
-                // Colour comes from a style/theme reference Office.js can't read directly — force it explicit
-                os.fill.setSolidColor(primaryThemeColor.replace("#", ""));
-                totalFixes++;
+              } else {
+                // Colour comes from a style/theme reference Office.js can't read directly
+                const shapeRect = { left: os.left, top: os.top, width: os.width, height: os.height };
+                const behindTextBox = isFullyContainedInAny(shapeRect, textBoxRects);
+                if (behindTextBox) {
+                  // Likely a background panel sitting under text — clear the fill
+                  os.fill.clear();
+                  totalFixes++;
+                } else if (themeColorValues.length > 0) {
+                  // Standalone or overlapping decorative shape (e.g. icon) — assign a theme colour, rotating through the palette
+                  const chosen = themeColorValues[colorRotationIndex % themeColorValues.length];
+                  colorRotationIndex++;
+                  os.fill.setSolidColor(chosen.replace("#", ""));
+                  totalFixes++;
+                }
               }
             } else {
               if (!os.lineFormat.visible) continue;
