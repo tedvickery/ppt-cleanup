@@ -1267,6 +1267,7 @@ export default function App() {
           try { const tr = os.textFrame.textRange; tr.font.load("color"); colorJobs.push({ tr, ss }); } catch (e) { /* no text frame */ }
         }
         try { await ctx.sync(); } catch (e) { /* ignore */ }
+        const fontFallbackColoured = []; // text shapes forced to primaryThemeColor due to unreadable colour
         for (const { tr, ss } of colorJobs) {
           try {
             const rawColor = tr.font.color;
@@ -1275,8 +1276,10 @@ export default function App() {
             const xmlColor = ss.current?.color && ss.current.color !== "(inherited)" && !ss.current.color.startsWith("theme:") ? ss.current.color : null;
             const effectiveColor = (shapeColor && shapeColor !== "#null" && shapeColor !== "#") ? shapeColor : xmlColor;
             let targetColor;
+            let isFallback = false;
             if (!effectiveColor) {
               targetColor = primaryThemeColor;
+              isFallback = true;
             } else {
               const nearest = snapToThemeColor(effectiveColor, themeColors);
               targetColor = nearest.toLowerCase() === effectiveColor.toLowerCase() ? null : nearest;
@@ -1284,21 +1287,44 @@ export default function App() {
             if (!targetColor) continue;
             tr.font.color = targetColor.replace("#", "");
             totalFixes++;
+            if (isFallback && ss.position) fontFallbackColoured.push({ tr, position: ss.position });
           } catch (e) { /* skip */ }
         }
         try { await ctx.sync(); } catch (e) { /* ignore */ }
+        // Final check: if two text shapes both fell back to the primary colour and overlap,
+        // they'd otherwise be indistinguishable — diversify by assigning the next theme colour
+        if (fontFallbackColoured.length > 1 && themeColorValues.length > 1) {
+          const overlapsRect = (a, b) =>
+            a.left < b.left + b.width && a.left + a.width > b.left &&
+            a.top  < b.top  + b.height && a.top  + a.height > b.top;
+          let rotation = 1;
+          for (let i = 0; i < fontFallbackColoured.length; i++) {
+            for (let j = i + 1; j < fontFallbackColoured.length; j++) {
+              const a = fontFallbackColoured[i].position, b = fontFallbackColoured[j].position;
+              if (!overlapsRect(a, b)) continue;
+              try {
+                const next = themeColorValues[rotation % themeColorValues.length];
+                rotation++;
+                fontFallbackColoured[j].tr.font.color = next.replace("#", "");
+                totalFixes++;
+              } catch (e) { /* skip */ }
+            }
+          }
+          try { await ctx.sync(); } catch (e) { /* ignore */ }
+        }
 
         // All shapes: snap fill colour and border/line colour to nearest theme colour
         const fillJobs = [];
         for (const os of shapes.items) {
           try {
-            os.load(["name", "type"]);
+            os.load(["name", "type", "left", "top", "width", "height"]);
             os.fill.load(["type", "color"]);
             fillJobs.push({ os, kind: "fill" });
           } catch (e) { /* no fill */ }
           try { os.lineFormat.load(["color", "visible"]); fillJobs.push({ os, kind: "line" }); } catch (e) { /* no line */ }
         }
         try { await ctx.sync(); } catch (e) { /* ignore */ }
+        const fallbackColoured = []; // shapes forced to primaryThemeColor due to unreadable fill
         for (const { os, kind } of fillJobs) {
           try {
             if (kind === "fill") {
@@ -1313,6 +1339,7 @@ export default function App() {
               } else if (primaryThemeColor) {
                 // Colour comes from a style/theme reference Office.js can't read directly — force the first theme colour
                 os.fill.setSolidColor(primaryThemeColor.replace("#", ""));
+                fallbackColoured.push(os);
                 totalFixes++;
               }
             } else {
@@ -1327,6 +1354,27 @@ export default function App() {
           } catch (e) { /* skip */ }
         }
         try { await ctx.sync(); } catch (e) { /* ignore */ }
+        // Final check: if two shapes that both fell back to the primary colour overlap each other,
+        // they'd otherwise look identical — diversify by assigning the next theme colour in rotation
+        if (fallbackColoured.length > 1 && themeColorValues.length > 1) {
+          const overlapsRect = (a, b) =>
+            a.left < b.left + b.width && a.left + a.width > b.left &&
+            a.top  < b.top  + b.height && a.top  + a.height > b.top;
+          let rotation = 1; // start at index 1 since index 0 (primary) is already used
+          for (let i = 0; i < fallbackColoured.length; i++) {
+            for (let j = i + 1; j < fallbackColoured.length; j++) {
+              const a = fallbackColoured[i], b = fallbackColoured[j];
+              if (!overlapsRect(a, b)) continue;
+              try {
+                const next = themeColorValues[rotation % themeColorValues.length];
+                rotation++;
+                b.fill.setSolidColor(next.replace("#", ""));
+                totalFixes++;
+              } catch (e) { /* skip */ }
+            }
+          }
+          try { await ctx.sync(); } catch (e) { /* ignore */ }
+        }
         for (const ss of pptxData.slideShapes) {
           if (!ss.isTable) continue;
           const os = shapes.items.find(s => String(s.id) === String(ss.id));
