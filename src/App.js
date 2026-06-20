@@ -1290,7 +1290,40 @@ export default function App() {
         }
         try { await ctx.sync(); } catch (e) { /* ignore */ }
 
-        // Tables: batch load all cell colours, sync once, write, sync once
+        // All shapes: snap fill colour and border/line colour to nearest theme colour
+        const fillJobs = [];
+        for (const ss of pptxData.slideShapes) {
+          if (ss.isTable || ss.isGroup) continue;
+          const os = shapes.items.find(s => String(s.id) === String(ss.id)) || shapes.items.find(s => s.name === ss.name);
+          if (!os) continue;
+          try { os.fill.load("type"); fillJobs.push({ os, ss, kind: "fill" }); } catch (e) { /* no fill */ }
+          try { os.lineFormat.load(["color", "visible"]); fillJobs.push({ os, ss, kind: "line" }); } catch (e) { /* no line */ }
+        }
+        try { await ctx.sync(); } catch (e) { /* ignore */ }
+        for (const { os, ss, kind } of fillJobs) {
+          try {
+            if (kind === "fill") {
+              if (os.fill.type !== PowerPoint.ShapeFillType.solid) continue; // skip none/gradient/picture fills
+              const xmlFill = ss.shapeFill && ss.shapeFill !== "none" && !ss.shapeFill.startsWith("theme:") && !ss.shapeFill.includes("gradient") ? ss.shapeFill : null;
+              if (!xmlFill) continue;
+              const nearest = snapToThemeColor(xmlFill, themeColors);
+              if (nearest.toLowerCase() === xmlFill.toLowerCase()) continue;
+              os.fill.setSolidColor(nearest.replace("#", ""));
+              totalFixes++;
+            } else {
+              if (!os.lineFormat.visible) continue;
+              const cur = os.lineFormat.color ? `#${os.lineFormat.color}` : null;
+              const xmlBorder = ss.shapeBorder && ss.shapeBorder !== "none" && !ss.shapeBorder.startsWith("theme:") ? ss.shapeBorder : null;
+              const effective = cur || xmlBorder;
+              if (!effective) continue;
+              const nearest = snapToThemeColor(effective, themeColors);
+              if (nearest.toLowerCase() === effective.toLowerCase()) continue;
+              os.lineFormat.color = nearest.replace("#", "");
+              totalFixes++;
+            }
+          } catch (e) { /* skip */ }
+        }
+        try { await ctx.sync(); } catch (e) { /* ignore */ }
         for (const ss of pptxData.slideShapes) {
           if (!ss.isTable) continue;
           const os = shapes.items.find(s => String(s.id) === String(ss.id));
