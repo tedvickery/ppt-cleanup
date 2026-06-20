@@ -1010,13 +1010,14 @@ export default function App() {
       const override = titleOverrides[slideIndex];
       if (override) {
         const alreadyTitle = pptxData.slideShapes.find(s => s.phType === "title" || s.phType === "ctrTitle");
-        if (alreadyTitle) alreadyTitle.phType = "body"; // demote previous auto-detected title
-        const target = pptxData.slideShapes.find(s => String(s.id) === String(override.id));
+        const target = pptxData.slideShapes.find(s => String(s.id) === String(override.id))
+          || pptxData.slideShapes.find(s => s.name === override.name);
         if (target) {
+          if (alreadyTitle && alreadyTitle !== target) alreadyTitle.phType = "body"; // demote previous auto-detected title
           target.phType = "title";
           addLog(`Using manual title override: "${target.name}"`);
         } else {
-          addLog(`⚠ Title override shape not found on this slide — using automatic detection`);
+          addLog(`⚠ Title override shape not found on this slide (looked for id="${override.id}" name="${override.name}") — using automatic detection`);
         }
       }
 
