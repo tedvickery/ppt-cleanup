@@ -1305,6 +1305,7 @@ export default function App() {
           try {
             const tr = os.textFrame.textRange;
             tr.load("text");
+            os.load(["left", "top", "width", "height"]);
             textBearingBoxes.push({ os, tr });
           } catch (e) { /* no text frame */ }
         }
