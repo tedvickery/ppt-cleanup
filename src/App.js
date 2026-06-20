@@ -1301,15 +1301,33 @@ export default function App() {
       });
 
       // ─── STEP 4: Grid pipeline (looped until stable) ────────────────────────
+      let skipAlignment = false;
       {
         const nonTitleShapes = pptxData.slideShapes.filter(s =>
           s.phType !== "title" && s.phType !== "ctrTitle" && s.phType !== "sldNum" && s.phType !== "ftr" && s.position
         );
         const SHAPE_COMPLEXITY_LIMIT = 25;
-        if (nonTitleShapes.length > SHAPE_COMPLEXITY_LIMIT) {
+        const tooManyShapes = nonTitleShapes.length > SHAPE_COMPLEXITY_LIMIT;
+        if (tooManyShapes) {
           addLog(`Slide has ${nonTitleShapes.length} shapes (limit ${SHAPE_COMPLEXITY_LIMIT}) — skipping position/size alignment, keeping fonts, colours and title position`);
         }
-        if (nonTitleShapes.length > 0 && nonTitleShapes.length <= SHAPE_COMPLEXITY_LIMIT && targetTitlePos) {
+
+        // Check original (pre-fix) positions for any overlap — if found, skip alignment entirely
+        let hasOverlap = false;
+        for (let i = 0; i < nonTitleShapes.length && !hasOverlap; i++) {
+          for (let j = i + 1; j < nonTitleShapes.length; j++) {
+            const a = nonTitleShapes[i].position, b = nonTitleShapes[j].position;
+            const overlapX = Math.min(a.left + a.width, b.left + b.width) - Math.max(a.left, b.left);
+            const overlapY = Math.min(a.top + a.height, b.top + b.height) - Math.max(a.top, b.top);
+            if (overlapX > 0 && overlapY > 0) { hasOverlap = true; break; }
+          }
+        }
+        if (hasOverlap && !tooManyShapes) {
+          addLog(`Slide has overlapping shapes — skipping position/size alignment, keeping fonts, colours and title position`);
+        }
+        skipAlignment = tooManyShapes || hasOverlap;
+
+        if (nonTitleShapes.length > 0 && !tooManyShapes && !hasOverlap && targetTitlePos) {
           const GRID = 50, MAX_CELLS = 5;
           const areaLeft = targetTitlePos.left, areaRight = targetTitlePos.left + targetTitlePos.width;
           const areaTop  = targetTitlePos.top + targetTitlePos.height + slideH * 0.013, areaBottom = slideH * 0.987;
@@ -1377,16 +1395,10 @@ export default function App() {
             }
 
             // Step 3: Resolve text-box overlaps — move one cell at a time
-            // Skip pairs where one shape is fully contained inside the other AND they're similarly sized
-            // (intentional layering, e.g. icon-on-background). A tiny shape inside a much larger one
-            // (e.g. an icon inside a wide text box) is treated as a real overlap, not layering.
-            const isContained = (x, y) => {
-              const fits = x.left >= y.left - cellW * 0.1 && x.left + x.width  <= y.left + y.width  + cellW * 0.1 &&
-                           x.top  >= y.top  - cellH * 0.1 && x.top  + x.height <= y.top  + y.height + cellH * 0.1;
-              if (!fits) return false;
-              const areaX = x.width * x.height, areaY = y.width * y.height;
-              return areaY > 0 && areaX / areaY >= 0.15; // x must be at least 15% of y's area to count as layering
-            };
+            // Skip pairs where one shape is fully contained inside the other (intentional layering, e.g. icons)
+            const isContained = (x, y) =>
+              x.left >= y.left - cellW * 0.1 && x.left + x.width  <= y.left + y.width  + cellW * 0.1 &&
+              x.top  >= y.top  - cellH * 0.1 && x.top  + x.height <= y.top  + y.height + cellH * 0.1;
             for (let i = 0; i < nonTitleShapes.length; i++) {
               for (let j = i + 1; j < nonTitleShapes.length; j++) {
                 const a = positions[i], b = positions[j];
@@ -1507,6 +1519,7 @@ export default function App() {
       }
 
       // ─── SAFETY NET: push any remaining text-box overlaps apart ─────────────
+      if (!skipAlignment) {
       await PowerPoint.run(async (ctx) => {
         const slides = ctx.presentation.slides;
         slides.load("items");
@@ -1523,13 +1536,9 @@ export default function App() {
         // Grid cell sizes based on slide area
         const gW = slideW / 50, gH = slideH / 50;
         let changed = true;
-        const isContainedLive = (x, y) => {
-          const fits = x.left >= y.left - gW * 0.5 && x.left + x.width  <= y.left + y.width  + gW * 0.5 &&
-                       x.top  >= y.top  - gH * 0.5 && x.top  + x.height <= y.top  + y.height + gH * 0.5;
-          if (!fits) return false;
-          const areaX = x.width * x.height, areaY = y.width * y.height;
-          return areaY > 0 && areaX / areaY >= 0.15;
-        };
+        const isContainedLive = (x, y) =>
+          x.left >= y.left - gW * 0.5 && x.left + x.width  <= y.left + y.width  + gW * 0.5 &&
+          x.top  >= y.top  - gH * 0.5 && x.top  + x.height <= y.top  + y.height + gH * 0.5;
         for (let iter = 0; iter < 8 && changed; iter++) {
           changed = false;
           for (let i = 0; i < live.length; i++) {
@@ -1548,6 +1557,7 @@ export default function App() {
         }
         await ctx.sync();
       });
+      }
 
       addLog(`✓ Done — ${totalFixes} fix${totalFixes !== 1 ? "es" : ""} applied`);
       setFixCount(totalFixes);
