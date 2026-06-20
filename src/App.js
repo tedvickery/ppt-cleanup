@@ -1318,6 +1318,7 @@ export default function App() {
           a.left < b.left + b.width && a.left + a.width > b.left &&
           a.top  < b.top  + b.height && a.top  + a.height > b.top
         );
+        addLog(`Colour step: ${textBoxRects.length} text-bearing rects found`);
         let colorRotationIndex = 0;
         for (const { os, kind } of fillJobs) {
           try {
@@ -1334,6 +1335,7 @@ export default function App() {
                 // Colour comes from a style/theme reference Office.js can't read directly
                 const shapeRect = { left: os.left, top: os.top, width: os.width, height: os.height };
                 const overlapsText = overlapsAny(shapeRect, textBoxRects);
+                addLog(`"${os.name}" rect=L${shapeRect.left.toFixed(0)},T${shapeRect.top.toFixed(0)},W${shapeRect.width.toFixed(0)},H${shapeRect.height.toFixed(0)} overlapsText=${overlapsText}`);
                 if (overlapsText) {
                   // Overlaps a text box — likely a background panel sitting under text — clear the fill
                   os.fill.clear();
