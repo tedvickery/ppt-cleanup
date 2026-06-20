@@ -1312,9 +1312,9 @@ export default function App() {
         const textBoxRects = textBearingBoxes
           .filter(({ tr }) => { try { return tr.text && tr.text.trim().length > 0; } catch (e) { return false; } })
           .map(({ os }) => ({ left: os.left, top: os.top, width: os.width, height: os.height }));
-        const isFullyContainedInAny = (r, rects) => rects.some(o =>
-          r.left >= o.left - 0.5 && r.left + r.width  <= o.left + o.width  + 0.5 &&
-          r.top  >= o.top  - 0.5 && r.top  + r.height <= o.top  + o.height + 0.5
+        const isContainerOf = (container, rects) => rects.some(inner =>
+          inner.left >= container.left - 0.5 && inner.left + inner.width  <= container.left + container.width  + 0.5 &&
+          inner.top  >= container.top  - 0.5 && inner.top  + inner.height <= container.top  + container.height + 0.5
         );
         let colorRotationIndex = 0;
         for (const { os, kind } of fillJobs) {
@@ -1331,9 +1331,9 @@ export default function App() {
               } else {
                 // Colour comes from a style/theme reference Office.js can't read directly
                 const shapeRect = { left: os.left, top: os.top, width: os.width, height: os.height };
-                const behindTextBox = isFullyContainedInAny(shapeRect, textBoxRects);
+                const behindTextBox = isContainerOf(shapeRect, textBoxRects);
                 if (behindTextBox) {
-                  // Likely a background panel sitting under text — clear the fill
+                  // This shape contains a text box within its bounds — it's a background panel — clear the fill
                   os.fill.clear();
                   totalFixes++;
                 } else if (themeColorValues.length > 0) {
