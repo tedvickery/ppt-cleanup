@@ -1276,7 +1276,6 @@ export default function App() {
           try { const tr = os.textFrame.textRange; tr.font.load("color"); colorJobs.push({ tr, ss }); } catch (e) { /* no text frame */ }
         }
         try { await ctx.sync(); } catch (e) { /* ignore */ }
-        const fontFallbackColoured = []; // text shapes forced to primaryThemeColor due to unreadable colour
         for (const { tr, ss } of colorJobs) {
           try {
             const rawColor = tr.font.color;
@@ -1285,10 +1284,8 @@ export default function App() {
             const xmlColor = ss.current?.color && ss.current.color !== "(inherited)" && !ss.current.color.startsWith("theme:") ? ss.current.color : null;
             const effectiveColor = (shapeColor && shapeColor !== "#null" && shapeColor !== "#") ? shapeColor : xmlColor;
             let targetColor;
-            let isFallback = false;
             if (!effectiveColor) {
               targetColor = primaryThemeColor;
-              isFallback = true;
             } else {
               const nearest = snapToThemeColor(effectiveColor, themeColors);
               targetColor = nearest.toLowerCase() === effectiveColor.toLowerCase() ? null : nearest;
@@ -1296,30 +1293,9 @@ export default function App() {
             if (!targetColor) continue;
             tr.font.color = targetColor.replace("#", "");
             totalFixes++;
-            if (isFallback && ss.position) fontFallbackColoured.push({ tr, position: ss.position });
           } catch (e) { /* skip */ }
         }
         try { await ctx.sync(); } catch (e) { /* ignore */ }
-        // Final check: if two text shapes both fell back to the primary colour and overlap,
-        // they'd otherwise be indistinguishable — lighten the larger one so it reads as secondary
-        if (fontFallbackColoured.length > 1) {
-          const overlapsRect = (a, b) =>
-            a.left < b.left + b.width && a.left + a.width > b.left &&
-            a.top  < b.top  + b.height && a.top  + a.height > b.top;
-          for (let i = 0; i < fontFallbackColoured.length; i++) {
-            for (let j = i + 1; j < fontFallbackColoured.length; j++) {
-              const a = fontFallbackColoured[i].position, b = fontFallbackColoured[j].position;
-              if (!overlapsRect(a, b)) continue;
-              try {
-                const areaA = a.width * a.height, areaB = b.width * b.height;
-                const larger = areaA >= areaB ? fontFallbackColoured[i] : fontFallbackColoured[j];
-                larger.tr.font.color = lightenHex(primaryThemeColor, 0.35).replace("#", "");
-                totalFixes++;
-              } catch (e) { /* skip */ }
-            }
-          }
-          try { await ctx.sync(); } catch (e) { /* ignore */ }
-        }
 
         // All shapes: snap fill colour and border/line colour to nearest theme colour
         const fillJobs = [];
@@ -1363,7 +1339,7 @@ export default function App() {
         }
         try { await ctx.sync(); } catch (e) { /* ignore */ }
         // Final check: if two shapes that both fell back to the primary colour overlap each other,
-        // they'd otherwise look identical — lighten the larger one so it reads as background
+        // they'd otherwise look identical — clear the larger one's fill so it reads as background
         if (fallbackColoured.length > 1) {
           const overlapsRect = (a, b) =>
             a.left < b.left + b.width && a.left + a.width > b.left &&
@@ -1375,7 +1351,7 @@ export default function App() {
               try {
                 const areaA = a.width * a.height, areaB = b.width * b.height;
                 const larger = areaA >= areaB ? a : b;
-                larger.fill.setSolidColor(lightenHex(primaryThemeColor, 0.35).replace("#", ""));
+                larger.fill.clear();
                 totalFixes++;
               } catch (e) { /* skip */ }
             }
