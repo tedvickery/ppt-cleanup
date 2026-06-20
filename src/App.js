@@ -1312,17 +1312,22 @@ export default function App() {
         }
         try { await ctx.sync(); } catch (e) { /* ignore */ }
         // Shape fills: assign a random theme colour, excluding the background, the primary
-        // colour, and anything close to the primary colour (so text stays readable against it)
+        // colour, and anything close to the primary colour (so text stays readable against it).
+        // If no candidates pass at the starting threshold, relax it by 50 at a time until some do.
         const fillThemeColorValues = Object.values(themeColors).filter(Boolean);
         const fillPrimaryThemeColor = fillThemeColorValues[0];
-        const NEAR_PRIMARY_THRESHOLD = 120; // colourDistance units — tune if too strict/loose
-        const fillCandidates = fillThemeColorValues.filter(c => {
+        const buildFillCandidates = (threshold) => fillThemeColorValues.filter(c => {
           if (!fillPrimaryThemeColor) return true;
           if (c.toLowerCase() === fillPrimaryThemeColor.toLowerCase()) return false;
           if (bgColor && c.toLowerCase() === bgColor.toLowerCase()) return false;
-          if (colourDistance(c, fillPrimaryThemeColor) < NEAR_PRIMARY_THRESHOLD) return false;
+          if (colourDistance(c, fillPrimaryThemeColor) < threshold) return false;
           return true;
         });
+        let fillCandidates = [];
+        for (let threshold = 400; threshold >= 0; threshold -= 50) {
+          fillCandidates = buildFillCandidates(threshold);
+          if (fillCandidates.length > 0) break;
+        }
         const fillPool = fillCandidates.length > 0 ? fillCandidates : fillThemeColorValues;
         for (const { os, kind } of fillJobs) {
           try {
