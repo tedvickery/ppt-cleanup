@@ -1305,7 +1305,11 @@ export default function App() {
         const nonTitleShapes = pptxData.slideShapes.filter(s =>
           s.phType !== "title" && s.phType !== "ctrTitle" && s.phType !== "sldNum" && s.phType !== "ftr" && s.position
         );
-        if (nonTitleShapes.length > 0 && targetTitlePos) {
+        const SHAPE_COMPLEXITY_LIMIT = 25;
+        if (nonTitleShapes.length > SHAPE_COMPLEXITY_LIMIT) {
+          addLog(`Slide has ${nonTitleShapes.length} shapes (limit ${SHAPE_COMPLEXITY_LIMIT}) — skipping position/size alignment, keeping fonts, colours and title position`);
+        }
+        if (nonTitleShapes.length > 0 && nonTitleShapes.length <= SHAPE_COMPLEXITY_LIMIT && targetTitlePos) {
           const GRID = 50, MAX_CELLS = 5;
           const areaLeft = targetTitlePos.left, areaRight = targetTitlePos.left + targetTitlePos.width;
           const areaTop  = targetTitlePos.top + targetTitlePos.height + slideH * 0.013, areaBottom = slideH * 0.987;
