@@ -696,6 +696,20 @@ function getSelectedSlideIndex() {
   });
 }
 
+// Captures the currently selected shape on the slide, for manual title override
+async function captureSelectedShape() {
+  return PowerPoint.run(async (ctx) => {
+    const sel = ctx.presentation.getSelectedShapes();
+    sel.load("items");
+    await ctx.sync();
+    if (sel.items.length === 0) return null;
+    const shape = sel.items[0];
+    shape.load(["id", "name"]);
+    await ctx.sync();
+    return { id: shape.id, name: shape.name };
+  });
+}
+
 /* ── Colour utilities ────────────────────────────────────────────────────── */
 
 function hexToRgb(hex) {
@@ -911,6 +925,10 @@ export default function App() {
   const [detectedTheme, setDetectedTheme] = useState(null);
   const [detectedMaster, setDetectedMaster] = useState([]);
 
+  // Manual title override, per slide, for this session only — { [slideIndex]: { id, name } }
+  const [titleOverrides, setTitleOverrides] = useState({});
+  const [overrideStatus, setOverrideStatus] = useState(null); // transient feedback message
+
   // Cached file data — loaded once in background, reused for every Fix click
   const [fileReady, setFileReady]   = useState(false);
   const [fileError, setFileError]   = useState(null);
@@ -940,6 +958,22 @@ export default function App() {
     time: new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }),
     msg,
   }]);
+
+  const handleSetTitleOverride = useCallback(async () => {
+    setOverrideStatus(null);
+    try {
+      const slideIndex = await getSelectedSlideIndex();
+      const shape = await captureSelectedShape();
+      if (!shape) {
+        setOverrideStatus({ ok: false, msg: "No shape selected — click a shape on the slide first" });
+        return;
+      }
+      setTitleOverrides(prev => ({ ...prev, [slideIndex]: shape }));
+      setOverrideStatus({ ok: true, msg: `"${shape.name}" set as title for slide ${slideIndex}` });
+    } catch (e) {
+      setOverrideStatus({ ok: false, msg: e.message });
+    }
+  }, []);
 
   const handleCleanup = useCallback(async () => {
     setStatus("running");
@@ -971,6 +1005,20 @@ export default function App() {
       const pptxData = await readSlideWithMaster(zip, masters, primaryMaster.index, slideIndex);
       setDetectedTheme(pptxData.theme);
       setDetectedMaster(pptxData.masterPlaceholders);
+
+      // Apply manual title override for this slide, if one was set this session
+      const override = titleOverrides[slideIndex];
+      if (override) {
+        const alreadyTitle = pptxData.slideShapes.find(s => s.phType === "title" || s.phType === "ctrTitle");
+        if (alreadyTitle) alreadyTitle.phType = "body"; // demote previous auto-detected title
+        const target = pptxData.slideShapes.find(s => String(s.id) === String(override.id));
+        if (target) {
+          target.phType = "title";
+          addLog(`Using manual title override: "${target.name}"`);
+        } else {
+          addLog(`⚠ Title override shape not found on this slide — using automatic detection`);
+        }
+      }
 
       // ─── PRE-STEP: Strip paragraph overrides directly in zip XML ────────────
       addLog("Resetting paragraph formatting…");
@@ -1633,6 +1681,18 @@ export default function App() {
                 <span style={{ fontSize: 11, color: "#374151", lineHeight: 1.4 }}>{text}</span>
               </div>
             ))}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={handleSetTitleOverride} disabled={isRunning}
+            style={{ flex: 1, padding: "8px 0", background: "#fff", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+            Use selected shape as title
+          </button>
+        </div>
+        {overrideStatus && (
+          <div style={{ background: overrideStatus.ok ? "#f0fdf4" : "#fef2f2", border: `1px solid ${overrideStatus.ok ? "#bbf7d0" : "#fecaca"}`, borderRadius: 8, padding: "8px 12px", fontSize: 11, color: overrideStatus.ok ? "#166534" : "#991b1b" }}>
+            {overrideStatus.msg}
           </div>
         )}
 
