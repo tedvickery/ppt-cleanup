@@ -739,6 +739,15 @@ function snapToThemeColor(hex, themeColors) {
   return nearest || hex;
 }
 
+// Lightens a hex colour toward white by the given amount (0-1)
+function lightenHex(hex, amount = 0.35) {
+  const { r, g, b } = hexToRgb(hex);
+  const lr = Math.round(r + (255 - r) * amount);
+  const lg = Math.round(g + (255 - g) * amount);
+  const lb = Math.round(b + (255 - b) * amount);
+  return "#" + [lr, lg, lb].map(v => v.toString(16).padStart(2, "0")).join("");
+}
+
 /* ── Apply fixes via Office JS ──────────────────────────────────────────── */
 
 async function applyFixes(slideIndex, fixes, themeColors = {}) {
@@ -1292,20 +1301,19 @@ export default function App() {
         }
         try { await ctx.sync(); } catch (e) { /* ignore */ }
         // Final check: if two text shapes both fell back to the primary colour and overlap,
-        // they'd otherwise be indistinguishable — diversify by assigning the next theme colour
-        if (fontFallbackColoured.length > 1 && themeColorValues.length > 1) {
+        // they'd otherwise be indistinguishable — lighten the larger one so it reads as secondary
+        if (fontFallbackColoured.length > 1) {
           const overlapsRect = (a, b) =>
             a.left < b.left + b.width && a.left + a.width > b.left &&
             a.top  < b.top  + b.height && a.top  + a.height > b.top;
-          let rotation = 1;
           for (let i = 0; i < fontFallbackColoured.length; i++) {
             for (let j = i + 1; j < fontFallbackColoured.length; j++) {
               const a = fontFallbackColoured[i].position, b = fontFallbackColoured[j].position;
               if (!overlapsRect(a, b)) continue;
               try {
-                const next = themeColorValues[rotation % themeColorValues.length];
-                rotation++;
-                fontFallbackColoured[j].tr.font.color = next.replace("#", "");
+                const areaA = a.width * a.height, areaB = b.width * b.height;
+                const larger = areaA >= areaB ? fontFallbackColoured[i] : fontFallbackColoured[j];
+                larger.tr.font.color = lightenHex(primaryThemeColor, 0.35).replace("#", "");
                 totalFixes++;
               } catch (e) { /* skip */ }
             }
@@ -1355,20 +1363,19 @@ export default function App() {
         }
         try { await ctx.sync(); } catch (e) { /* ignore */ }
         // Final check: if two shapes that both fell back to the primary colour overlap each other,
-        // they'd otherwise look identical — diversify by assigning the next theme colour in rotation
-        if (fallbackColoured.length > 1 && themeColorValues.length > 1) {
+        // they'd otherwise look identical — lighten the larger one so it reads as background
+        if (fallbackColoured.length > 1) {
           const overlapsRect = (a, b) =>
             a.left < b.left + b.width && a.left + a.width > b.left &&
             a.top  < b.top  + b.height && a.top  + a.height > b.top;
-          let rotation = 1; // start at index 1 since index 0 (primary) is already used
           for (let i = 0; i < fallbackColoured.length; i++) {
             for (let j = i + 1; j < fallbackColoured.length; j++) {
               const a = fallbackColoured[i], b = fallbackColoured[j];
               if (!overlapsRect(a, b)) continue;
               try {
-                const next = themeColorValues[rotation % themeColorValues.length];
-                rotation++;
-                b.fill.setSolidColor(next.replace("#", ""));
+                const areaA = a.width * a.height, areaB = b.width * b.height;
+                const larger = areaA >= areaB ? a : b;
+                larger.fill.setSolidColor(lightenHex(primaryThemeColor, 0.35).replace("#", ""));
                 totalFixes++;
               } catch (e) { /* skip */ }
             }
