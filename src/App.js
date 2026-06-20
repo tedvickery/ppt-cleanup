@@ -1260,8 +1260,9 @@ export default function App() {
         for (const s of shapes.items) s.load(["id", "name", "type"]);
         await ctx.sync();
 
-        // Read the slide background colour, used to keep shape fills from landing on it
-        let bgColor = null;
+        // Read the slide background colour, used to keep shape fills from landing on it.
+        // Falls back to white if it can't be determined (most common default background).
+        let bgColor = "#FFFFFF";
         try {
           const bgFill = slides.items[dupIndex - 1].background.fill;
           bgFill.load("type");
@@ -1274,7 +1275,7 @@ export default function App() {
               if (!solid.isNullObject && solid.color) bgColor = solid.color.startsWith("#") ? solid.color : `#${solid.color}`;
             }
           }
-        } catch (e) { /* background read not supported on this slide/host */ }
+        } catch (e) { /* background read not supported on this slide/host — keep white default */ }
 
         const themeColorValues = Object.values(themeColors).filter(Boolean);
         const primaryThemeColor = themeColorValues[0];
@@ -1314,7 +1315,7 @@ export default function App() {
         // colour, and anything close to the primary colour (so text stays readable against it)
         const fillThemeColorValues = Object.values(themeColors).filter(Boolean);
         const fillPrimaryThemeColor = fillThemeColorValues[0];
-        const NEAR_PRIMARY_THRESHOLD = 60; // colourDistance units — tune if too strict/loose
+        const NEAR_PRIMARY_THRESHOLD = 120; // colourDistance units — tune if too strict/loose
         const fillCandidates = fillThemeColorValues.filter(c => {
           if (!fillPrimaryThemeColor) return true;
           if (c.toLowerCase() === fillPrimaryThemeColor.toLowerCase()) return false;
