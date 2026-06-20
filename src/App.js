@@ -1291,38 +1291,30 @@ export default function App() {
         try { await ctx.sync(); } catch (e) { /* ignore */ }
 
         // All shapes: snap fill colour and border/line colour to nearest theme colour
+        // Simple rule — iterate every live shape on the slide directly, no XML cross-referencing
         const fillJobs = [];
-        for (const ss of pptxData.slideShapes) {
-          if (ss.isTable || ss.isGroup) continue;
-          const os = shapes.items.find(s => String(s.id) === String(ss.id)) || shapes.items.find(s => s.name === ss.name);
-          if (!os) continue;
-          try { os.fill.load(["type", "color"]); fillJobs.push({ os, ss, kind: "fill" }); } catch (e) { /* no fill */ }
-          try { os.lineFormat.load(["color", "visible"]); fillJobs.push({ os, ss, kind: "line" }); } catch (e) { /* no line */ }
+        for (const os of shapes.items) {
+          try { os.fill.load(["type", "color"]); fillJobs.push({ os, kind: "fill" }); } catch (e) { /* no fill */ }
+          try { os.lineFormat.load(["color", "visible"]); fillJobs.push({ os, kind: "line" }); } catch (e) { /* no line */ }
         }
         try { await ctx.sync(); } catch (e) { /* ignore */ }
-        for (const { os, ss, kind } of fillJobs) {
+        for (const { os, kind } of fillJobs) {
           try {
             if (kind === "fill") {
               const fillTypeStr = String(os.fill.type).toLowerCase();
-              const liveFill = os.fill.color ? (os.fill.color.startsWith("#") ? os.fill.color : `#${os.fill.color}`) : null;
-              addLog(`Shape "${ss.name}" fill: type=${fillTypeStr} live=${liveFill} xml=${ss.shapeFill}`);
               if (fillTypeStr !== "solid") continue; // skip none/gradient/picture fills
-              // Prefer the live colour (covers style-referenced fills not present as explicit XML solidFill)
-              const xmlFill = ss.shapeFill && ss.shapeFill !== "none" && !ss.shapeFill.startsWith("theme:") && !ss.shapeFill.includes("gradient") ? ss.shapeFill : null;
-              const effectiveFill = liveFill || xmlFill;
-              if (!effectiveFill) continue;
-              const nearest = snapToThemeColor(effectiveFill, themeColors);
-              if (nearest.toLowerCase() === effectiveFill.toLowerCase()) continue;
+              const liveFill = os.fill.color ? (os.fill.color.startsWith("#") ? os.fill.color : `#${os.fill.color}`) : null;
+              if (!liveFill) continue;
+              const nearest = snapToThemeColor(liveFill, themeColors);
+              if (nearest.toLowerCase() === liveFill.toLowerCase()) continue;
               os.fill.setSolidColor(nearest.replace("#", ""));
               totalFixes++;
             } else {
               if (!os.lineFormat.visible) continue;
               const cur = os.lineFormat.color ? (os.lineFormat.color.startsWith("#") ? os.lineFormat.color : `#${os.lineFormat.color}`) : null;
-              const xmlBorder = ss.shapeBorder && ss.shapeBorder !== "none" && !ss.shapeBorder.startsWith("theme:") ? ss.shapeBorder : null;
-              const effective = cur || xmlBorder;
-              if (!effective) continue;
-              const nearest = snapToThemeColor(effective, themeColors);
-              if (nearest.toLowerCase() === effective.toLowerCase()) continue;
+              if (!cur) continue;
+              const nearest = snapToThemeColor(cur, themeColors);
+              if (nearest.toLowerCase() === cur.toLowerCase()) continue;
               os.lineFormat.color = nearest.replace("#", "");
               totalFixes++;
             }
