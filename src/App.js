@@ -1084,13 +1084,18 @@ export default function App() {
           Math.abs(cur.height - targetTitlePos.height) > targetTitlePos.height * 0.005;
         const fontNeedsFix = titleShape.current.fontName !== "(inherited)" && titleShape.current.fontName !== titleShape.masterTarget?.fontName;
         const fillNeedsFix = titleShape.shapeFill && titleShape.shapeFill !== "none" && titleShape.masterTarget?.fill === "none";
-        if (posNeedsFix || fontNeedsFix || fillNeedsFix) {
+        const primaryThemeColorForTitle = themeColorList[0];
+        const titleColorNeedsFix = primaryThemeColorForTitle &&
+          titleShape.current.color !== "(inherited)" &&
+          titleShape.current.color?.toLowerCase() !== primaryThemeColorForTitle.toLowerCase();
+        if (posNeedsFix || fontNeedsFix || fillNeedsFix || titleColorNeedsFix) {
           addLog("Step 1: Title position & font…");
           await applyFixes(dupIndex, [{
             shapeName: titleShape.name, shapeId: titleShape.id, _slideShape: titleShape,
             shapeFill: fillNeedsFix ? "none" : (titleShape.shapeFill || null),
             ...(posNeedsFix  ? { position: targetTitlePos } : {}),
             ...(fontNeedsFix ? { font: { name: titleShape.masterTarget?.fontName } } : {}),
+            ...(titleColorNeedsFix ? { font: { ...(fontNeedsFix ? { name: titleShape.masterTarget?.fontName } : {}), color: primaryThemeColorForTitle } } : {}),
           }], themeColors);
           totalFixes++;
         }
@@ -1264,9 +1269,33 @@ export default function App() {
         for (const s of shapes.items) s.load(["id", "name", "type"]);
         await ctx.sync();
 
+        // Read the slide background colour, so font colours never get snapped to it (would be invisible)
+        let bgColor = null;
+        try {
+          const bgFill = slides.items[dupIndex - 1].background.fill;
+          bgFill.load("type");
+          await ctx.sync();
+          if (String(bgFill.type).toLowerCase() === "solid") {
+            const solid = bgFill.getSolidColorOrNullObject ? bgFill.getSolidColorOrNullObject() : null;
+            if (solid) {
+              solid.load("color");
+              await ctx.sync();
+              if (!solid.isNullObject && solid.color) bgColor = solid.color.startsWith("#") ? solid.color : `#${solid.color}`;
+            }
+          }
+        } catch (e) { /* background read not supported on this slide/host */ }
+
         // All shapes: snap font colour to nearest theme colour — iterate Office.js shapes directly
         const themeColorValues = Object.values(themeColors).filter(Boolean);
         const primaryThemeColor = themeColorValues[0];
+        // Picks the nearest theme colour to `hex`, skipping the slide background colour if it would otherwise be chosen
+        const snapAvoidingBackground = (hex) => {
+          const candidates = themeColorValues
+            .filter(c => !bgColor || c.toLowerCase() !== bgColor.toLowerCase())
+            .sort((a, b) => colourDistance(hex, a) - colourDistance(hex, b));
+          return candidates[0] || snapToThemeColor(hex, themeColors);
+        };
+        const primaryAvoidingBackground = themeColorValues.find(c => !bgColor || c.toLowerCase() !== bgColor.toLowerCase()) || primaryThemeColor;
         // All shapes: batch load colours via XML-matched IDs, then snap to nearest theme colour
         const colorJobs = [];
         for (const ss of pptxData.slideShapes) {
@@ -1285,9 +1314,9 @@ export default function App() {
             const effectiveColor = (shapeColor && shapeColor !== "#null" && shapeColor !== "#") ? shapeColor : xmlColor;
             let targetColor;
             if (!effectiveColor) {
-              targetColor = primaryThemeColor;
+              targetColor = primaryAvoidingBackground;
             } else {
-              const nearest = snapToThemeColor(effectiveColor, themeColors);
+              const nearest = snapAvoidingBackground(effectiveColor);
               targetColor = nearest.toLowerCase() === effectiveColor.toLowerCase() ? null : nearest;
             }
             if (!targetColor) continue;
