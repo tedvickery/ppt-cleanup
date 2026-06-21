@@ -1279,19 +1279,25 @@ export default function App() {
 
         const themeColorValues = Object.values(themeColors).filter(Boolean);
 
-        // Split theme colours into "shape" and "font" pools based on background brightness.
-        // Light background → lightest colours for shapes, two darkest for fonts (readable on light bg).
-        // Dark background  → darkest colours for shapes, two lightest for fonts (readable on dark bg).
+        // Step 1: fix the font colour pool first — two darkest (light bg) or two lightest (dark bg)
         const bgIsLight = hexLuminance(bgColor) > 0.5;
         const sortedByLuminance = [...themeColorValues].sort((a, b) => hexLuminance(b) - hexLuminance(a)); // lightest first
-        const halfCount = Math.max(1, Math.ceil(sortedByLuminance.length / 2));
-        const lightestColors = sortedByLuminance.slice(0, halfCount);
-        const darkestColors  = sortedByLuminance.slice(-halfCount);
-        const shapeColorPool = bgIsLight ? lightestColors : darkestColors;
-        const fontColorPool  = bgIsLight
-          ? darkestColors.slice(0, 2)
-          : lightestColors.slice(0, 2);
+        const fontColorPool = bgIsLight
+          ? sortedByLuminance.slice(-2)  // two darkest
+          : sortedByLuminance.slice(0, 2); // two lightest
         const fontPrimaryColor = fontColorPool[0] || themeColorValues[0];
+
+        // Step 2: build the shape colour pool from whatever's left, requiring each candidate to be
+        // at least 350 colourDistance from every font pool colour. Relax by 50 at a time if none qualify.
+        const remainingColors = themeColorValues.filter(c => !fontColorPool.some(f => f.toLowerCase() === c.toLowerCase()));
+        const minDistanceToFontPool = (c) => Math.min(...fontColorPool.map(f => colourDistance(c, f)));
+        const buildShapePool = (threshold) => remainingColors.filter(c => minDistanceToFontPool(c) >= threshold);
+        let shapeColorPool = [];
+        for (let threshold = 350; threshold >= 0; threshold -= 50) {
+          shapeColorPool = buildShapePool(threshold);
+          if (shapeColorPool.length > 0) break;
+        }
+        if (shapeColorPool.length === 0) shapeColorPool = remainingColors.length > 0 ? remainingColors : themeColorValues;
 
         // Builds a theme-colour map restricted to the font pool, for use with snapToThemeColor
         const fontThemeColors = Object.fromEntries(
