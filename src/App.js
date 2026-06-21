@@ -1352,7 +1352,7 @@ export default function App() {
         for (const os of shapes.items) {
           try {
             os.load(["name", "type"]);
-            os.fill.load(["type"]);
+            os.fill.load(["type", "color"]);
             fillJobs.push({ os, kind: "fill" });
           } catch (e) { /* no fill */ }
           try { os.lineFormat.load(["color", "visible"]); fillJobs.push({ os, kind: "line" }); } catch (e) { /* no line */ }
@@ -1364,6 +1364,10 @@ export default function App() {
             if (kind === "fill") {
               const fillTypeStr = String(os.fill.type).toLowerCase();
               if (fillTypeStr !== "solid") continue; // skip none/gradient/picture fills
+              const liveFill = os.fill.color ? (os.fill.color.startsWith("#") ? os.fill.color : `#${os.fill.color}`) : null;
+              // Already an allowed shape colour — leave it alone
+              if (liveFill && fillPool.some(c => c.toLowerCase() === liveFill.toLowerCase())) continue;
+              // Colour is unreadable, or matches the background, or isn't one of the allowed shape colours — reassign
               if (fillPool.length > 0) {
                 const chosen = fillPool[Math.floor(Math.random() * fillPool.length)];
                 os.fill.setSolidColor(chosen.replace("#", ""));
