@@ -1277,7 +1277,15 @@ export default function App() {
           }
         } catch (e) { /* background read not supported on this slide/host — keep white default */ }
 
-        const themeColorValues = Object.values(themeColors).filter(Boolean);
+        // Theme colour map with the background colour removed — used wherever we snap to "any" theme colour
+        const themeColorsNoBg = Object.fromEntries(
+          Object.entries(themeColors).filter(([, v]) => !v || v.toLowerCase() !== bgColor.toLowerCase())
+        );
+
+        // Any theme colour matching the background can't be used for either fonts or shapes
+        const themeColorValues = Object.values(themeColors)
+          .filter(Boolean)
+          .filter(c => c.toLowerCase() !== bgColor.toLowerCase());
 
         // Step 1: fix the font colour pool first — two darkest (light bg) or two lightest (dark bg)
         const bgIsLight = hexLuminance(bgColor) > 0.5;
@@ -1365,7 +1373,7 @@ export default function App() {
               if (!os.lineFormat.visible) continue;
               const cur = os.lineFormat.color ? (os.lineFormat.color.startsWith("#") ? os.lineFormat.color : `#${os.lineFormat.color}`) : null;
               if (!cur) continue;
-              const nearest = snapToThemeColor(cur, themeColors);
+              const nearest = snapToThemeColor(cur, themeColorsNoBg);
               if (nearest.toLowerCase() === cur.toLowerCase()) continue;
               os.lineFormat.color = nearest.replace("#", "");
               totalFixes++;
@@ -1395,7 +1403,7 @@ export default function App() {
                 const cur = tr.font.color ? `#${tr.font.color}` : null;
                 if (!cur || cur === "#null" || cur === "#") continue;
                 if (themeColorList.some(c => c && cur.toLowerCase() === c.toLowerCase())) continue;
-                const nearest = snapToThemeColor(cur, themeColors);
+                const nearest = snapToThemeColor(cur, themeColorsNoBg);
                 if (nearest.toLowerCase() !== cur.toLowerCase()) { tr.font.color = nearest.replace("#", ""); totalFixes++; }
               } catch (e) { /* empty cell */ }
             }
@@ -1422,7 +1430,7 @@ export default function App() {
                 const cur = tr.font.color ? `#${tr.font.color}` : null;
                 if (!cur || cur === "#null" || cur === "#") continue;
                 if (themeColorList.some(c => c && cur.toLowerCase() === c.toLowerCase())) continue;
-                const nearest = snapToThemeColor(cur, themeColors);
+                const nearest = snapToThemeColor(cur, themeColorsNoBg);
                 if (nearest.toLowerCase() !== cur.toLowerCase()) { tr.font.color = nearest.replace("#", ""); totalFixes++; }
               } catch (e) { /* no text */ }
             }
