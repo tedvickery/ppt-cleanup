@@ -1279,7 +1279,7 @@ export default function App() {
 
         const themeColorValues = Object.values(themeColors).filter(Boolean);
         const primaryThemeColor = themeColorValues[0];
-        // All shapes: batch load colours via XML-matched IDs, then force to the primary theme colour
+        // All shapes: batch load colours via XML-matched IDs, then snap to nearest theme colour
         const colorJobs = [];
         for (const ss of pptxData.slideShapes) {
           if (ss.isTable || ss.isGroup) continue;
@@ -1290,11 +1290,21 @@ export default function App() {
         try { await ctx.sync(); } catch (e) { /* ignore */ }
         for (const { tr, ss } of colorJobs) {
           try {
-            if (!primaryThemeColor) continue;
             const rawColor = tr.font.color;
-            const shapeColor = rawColor ? `#${rawColor}` : null;
-            if (shapeColor && shapeColor.toLowerCase() === primaryThemeColor.toLowerCase()) continue; // already correct
-            tr.font.color = primaryThemeColor.replace("#", "");
+            // Office.js resolved colour — most reliable source when present
+            const officeColor = (rawColor && rawColor !== "null") ? `#${rawColor}` : null;
+            // Explicit colour from the XML parse (skip "(inherited)" and theme: references — those aren't real values)
+            const xmlExplicit = ss.current?.color && ss.current.color !== "(inherited)" && !ss.current.color.startsWith("theme:")
+              ? ss.current.color : null;
+            // Master placeholder colour — what PowerPoint actually renders when nothing is overridden
+            const masterColor = ss.masterTarget?.color && ss.masterTarget.color !== "(inherited)" ? ss.masterTarget.color : null;
+
+            const effectiveColor = officeColor || xmlExplicit || masterColor;
+            if (!effectiveColor) continue; // genuinely can't determine current colour — leave it alone
+
+            const nearest = snapToThemeColor(effectiveColor, themeColors);
+            if (nearest.toLowerCase() === effectiveColor.toLowerCase()) continue; // already correct
+            tr.font.color = nearest.replace("#", "");
             totalFixes++;
           } catch (e) { /* skip */ }
         }
