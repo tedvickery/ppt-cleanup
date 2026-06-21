@@ -1278,8 +1278,27 @@ export default function App() {
         } catch (e) { /* background read not supported on this slide/host — keep white default */ }
 
         const themeColorValues = Object.values(themeColors).filter(Boolean);
-        const primaryThemeColor = themeColorValues[0];
-        // All shapes: batch load colours via XML-matched IDs, then snap to nearest theme colour
+
+        // Split theme colours into "shape" and "font" pools based on background brightness.
+        // Light background → lightest colours for shapes, two darkest for fonts (readable on light bg).
+        // Dark background  → darkest colours for shapes, two lightest for fonts (readable on dark bg).
+        const bgIsLight = hexLuminance(bgColor) > 0.5;
+        const sortedByLuminance = [...themeColorValues].sort((a, b) => hexLuminance(b) - hexLuminance(a)); // lightest first
+        const halfCount = Math.max(1, Math.ceil(sortedByLuminance.length / 2));
+        const lightestColors = sortedByLuminance.slice(0, halfCount);
+        const darkestColors  = sortedByLuminance.slice(-halfCount);
+        const shapeColorPool = bgIsLight ? lightestColors : darkestColors;
+        const fontColorPool  = bgIsLight
+          ? darkestColors.slice(0, 2)
+          : lightestColors.slice(0, 2);
+        const fontPrimaryColor = fontColorPool[0] || themeColorValues[0];
+
+        // Builds a theme-colour map restricted to the font pool, for use with snapToThemeColor
+        const fontThemeColors = Object.fromEntries(
+          Object.entries(themeColors).filter(([, v]) => v && fontColorPool.some(c => c.toLowerCase() === v.toLowerCase()))
+        );
+
+        // All shapes: batch load colours via XML-matched IDs, then snap to nearest allowed font colour
         const colorJobs = [];
         for (const ss of pptxData.slideShapes) {
           if (ss.isTable || ss.isGroup) continue;
@@ -1300,17 +1319,21 @@ export default function App() {
             const masterColor = ss.masterTarget?.color && ss.masterTarget.color !== "(inherited)" ? ss.masterTarget.color : null;
 
             const effectiveColor = officeColor || xmlExplicit || masterColor;
-            if (!effectiveColor) continue; // genuinely can't determine current colour — leave it alone
-
-            const nearest = snapToThemeColor(effectiveColor, themeColors);
-            if (nearest.toLowerCase() === effectiveColor.toLowerCase()) continue; // already correct
-            tr.font.color = nearest.replace("#", "");
+            let targetColor;
+            if (!effectiveColor) {
+              targetColor = fontPrimaryColor; // can't determine current colour — use the allowed primary
+            } else {
+              const nearest = snapToThemeColor(effectiveColor, fontThemeColors);
+              targetColor = nearest.toLowerCase() === effectiveColor.toLowerCase() ? null : nearest;
+            }
+            if (!targetColor) continue;
+            tr.font.color = targetColor.replace("#", "");
             totalFixes++;
           } catch (e) { /* skip */ }
         }
         try { await ctx.sync(); } catch (e) { /* ignore */ }
 
-        // All shapes: assign fill colour (excluding primary/background) and snap border to nearest theme colour
+        // All shapes: assign fill colour (from the shape pool, light/dark aware) and snap border to nearest theme colour
         const fillJobs = [];
         for (const os of shapes.items) {
           try {
@@ -1321,24 +1344,7 @@ export default function App() {
           try { os.lineFormat.load(["color", "visible"]); fillJobs.push({ os, kind: "line" }); } catch (e) { /* no line */ }
         }
         try { await ctx.sync(); } catch (e) { /* ignore */ }
-        // Shape fills: assign a random theme colour, excluding the background, the primary
-        // colour, and anything close to the primary colour (so text stays readable against it).
-        // If no candidates pass at the starting threshold, relax it by 50 at a time until some do.
-        const fillThemeColorValues = Object.values(themeColors).filter(Boolean);
-        const fillPrimaryThemeColor = fillThemeColorValues[0];
-        const buildFillCandidates = (threshold) => fillThemeColorValues.filter(c => {
-          if (!fillPrimaryThemeColor) return true;
-          if (c.toLowerCase() === fillPrimaryThemeColor.toLowerCase()) return false;
-          if (bgColor && c.toLowerCase() === bgColor.toLowerCase()) return false;
-          if (colourDistance(c, fillPrimaryThemeColor) < threshold) return false;
-          return true;
-        });
-        let fillCandidates = [];
-        for (let threshold = 400; threshold >= 0; threshold -= 50) {
-          fillCandidates = buildFillCandidates(threshold);
-          if (fillCandidates.length > 0) break;
-        }
-        const fillPool = fillCandidates.length > 0 ? fillCandidates : fillThemeColorValues;
+        const fillPool = shapeColorPool.length > 0 ? shapeColorPool : themeColorValues;
         for (const { os, kind } of fillJobs) {
           try {
             if (kind === "fill") {
