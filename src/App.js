@@ -1805,7 +1805,7 @@ export default function App() {
         {status === "idle" && !detectedTheme && (
           <div style={{ background: "#fff", borderRadius: 10, border: "1px solid #e5e7eb", padding: "12px 14px" }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>What cleanup does</div>
-            {["Snaps title to master position & size", "Fixes fonts to match the template", "Normalises font sizes", "Resets colours to theme palette", "Aligns shapes to a clean grid"].map(text => (
+            {["Snaps title to master position & size", "Fixes fonts to match the template", "Normalises font sizes", "Snaps colours to theme palette", "Corrects shape fill colours"].map(text => (
               <div key={text} style={{ display: "flex", gap: 8, marginBottom: 5, alignItems: "flex-start" }}>
                 <span style={{ fontSize: 11, color: "#111111", flexShrink: 0, width: 16, textAlign: "center" }}>✓</span>
                 <span style={{ fontSize: 11, color: "#374151", lineHeight: 1.4 }}>{text}</span>
