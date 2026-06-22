@@ -1029,6 +1029,15 @@ export default function App() {
         }
       }
 
+      // If no title shape is detected (by placeholder type or manual override), warn and stop —
+      // the tool can't snap the title without knowing which shape it is
+      const resolvedTitle = pptxData.slideShapes.find(s => s.phType === "title" || s.phType === "ctrTitle");
+      if (!resolvedTitle) {
+        setError("No title box found on this slide. Select the title shape and click \"Use selected shape as title\", then try again.");
+        setStatus("idle");
+        return;
+      }
+
       // ─── PRE-STEP: Strip paragraph overrides directly in zip XML ────────────
       addLog("Resetting paragraph formatting…");
       try {
