@@ -932,8 +932,9 @@ export default function App() {
   // Cached file data — loaded once in background, reused for every Fix click
   const [fileReady, setFileReady]   = useState(false);
   const [fileError, setFileError]   = useState(null);
-  const cachedZip     = useRef(null);
-  const cachedMasters = useRef(null);
+  const cachedZip       = useRef(null);
+  const cachedMasters   = useRef(null);
+  const cachedPptxData  = useRef({}); // keyed by slideIndex — slide shapes cached between runs
 
   // Load the file in the background as soon as the add-in opens
   useEffect(() => {
@@ -989,20 +990,27 @@ export default function App() {
       const slideW = 13.33, slideH = 7.5; // standard WIDE layout inches
       addLog(`Slide ${slideIndex} selected`);
 
-      // Always read the file fresh so we get current slide positions.
-      // Masters are cached since they don't change between runs.
+      // Use cached zip and masters — re-read only if the cache is empty (first run or refresh)
       addLog("Reading .pptx file…");
-      let zip, masters;
-      ({ zip, masters } = await readPptxFile());
-      if (cachedMasters.current) {
-        masters = cachedMasters.current; // reuse parsed masters, fresh zip
-      } else {
+      let zip = cachedZip.current;
+      let masters = cachedMasters.current;
+      if (!zip || !masters) {
+        ({ zip, masters } = await readPptxFile());
+        cachedZip.current     = zip;
         cachedMasters.current = masters;
       }
 
       if (masters.length === 0) throw new Error("No slide masters found in this file");
       const primaryMaster = masters[0];
-      const pptxData = await readSlideWithMaster(zip, masters, primaryMaster.index, slideIndex);
+
+      // Use cached pptxData for this slide — re-parse only if slide changed since last run
+      let pptxData = cachedPptxData.current[slideIndex];
+      if (!pptxData) {
+        pptxData = await readSlideWithMaster(zip, masters, primaryMaster.index, slideIndex);
+        cachedPptxData.current[slideIndex] = pptxData;
+      } else {
+        addLog(`Using cached template data for slide ${slideIndex}`);
+      }
       setDetectedTheme(pptxData.theme);
       setDetectedMaster(pptxData.masterPlaceholders);
 
@@ -1645,14 +1653,14 @@ export default function App() {
         {fileReady && status === "idle" && (
           <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "8px 12px", fontSize: 11, color: "#166534", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <span>✓ Template ready: <strong>{cachedMasters.current?.[0]?.name}</strong></span>
-            <button onClick={async () => { setFileReady(false); setFileError(null); try { const { zip, masters } = await readPptxFile(); cachedZip.current = zip; cachedMasters.current = masters; setFileReady(true); } catch (e) { setFileError(e.message); } }}
+            <button onClick={async () => { setFileReady(false); setFileError(null); try { const { zip, masters } = await readPptxFile(); cachedZip.current = zip; cachedMasters.current = masters; cachedPptxData.current = {}; setFileReady(true); } catch (e) { setFileError(e.message); } }}
               style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#15803d", textDecoration: "underline", padding: 0 }}>↺ Reload</button>
           </div>
         )}
         {fileError && (
           <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "8px 12px", fontSize: 11, color: "#991b1b", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <span>⚠ {fileError}</span>
-            <button onClick={async () => { setFileReady(false); setFileError(null); try { const { zip, masters } = await readPptxFile(); cachedZip.current = zip; cachedMasters.current = masters; setFileReady(true); } catch (e) { setFileError(e.message); } }}
+            <button onClick={async () => { setFileReady(false); setFileError(null); try { const { zip, masters } = await readPptxFile(); cachedZip.current = zip; cachedMasters.current = masters; cachedPptxData.current = {}; setFileReady(true); } catch (e) { setFileError(e.message); } }}
               style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#991b1b", textDecoration: "underline", padding: 0 }}>↺ Retry</button>
           </div>
         )}
