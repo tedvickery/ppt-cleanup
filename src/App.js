@@ -1092,8 +1092,8 @@ export default function App() {
         }
       }
 
-      // ─── STEP 2: Fonts — correct font name, normalise sizes, expand text boxes ─
-      addLog("Step 2: Fonts…");
+      // ─── STEPS 2 + 3: Fonts, sizes, colours — single PowerPoint.run ────────────
+      addLog("Step 2: Fonts & colours…");
       await PowerPoint.run(async (ctx) => {
         const slides = ctx.presentation.slides;
         slides.load("items");
@@ -1105,127 +1105,74 @@ export default function App() {
         for (const s of shapes.items) s.load(["id", "name", "type"]);
         await ctx.sync();
 
+        // ── Font step: compute normalised size, then batch load all text ranges ──
         const nonTitleSizes = pptxData.slideShapes
           .filter(ss => ss.phType !== "title" && ss.phType !== "ctrTitle" && typeof ss.current.fontSize === "number")
           .map(ss => ss.current.fontSize);
         const sizeFreq = nonTitleSizes.reduce((acc, s) => { acc[s] = (acc[s] || 0) + 1; return acc; }, {});
         const normalisedSize = nonTitleSizes.length > 0 ? parseInt(Object.entries(sizeFreq).sort((a, b) => b[1] - a[1])[0][0]) : null;
+        const bodyFont = pptxData.masterPlaceholders.find(p => p.type === "body")?.font;
 
+        // Batch: load all regular shape text ranges at once
+        const fontJobs = [];
         for (const ss of pptxData.slideShapes) {
-          if (ss.isTable) {
-            const os = shapes.items.find(s => String(s.id) === String(ss.id)) || shapes.items.find(s => s.name === ss.name);
-            if (!os) continue;
-            try {
-              const table = os.table;
-              table.load("rowCount,columnCount");
-              await ctx.sync();
-              const masterFont = pptxData.masterPlaceholders.find(p => p.type === "body")?.font;
-              const cells = [];
-              for (let r = 0; r < table.rowCount; r++)
-                for (let c = 0; c < table.columnCount; c++) {
-                  const cell = table.getCell(r, c);
-                  const tr = cell.textFrame.textRange;
-                  tr.font.load(["name", "size"]);
-                  cells.push({ tr });
-                }
-              await ctx.sync();
-              for (const { tr } of cells) {
-                try {
-                  if (masterFont?.name && tr.font.name !== masterFont.name) tr.font.name = masterFont.name;
-                  if (normalisedSize && typeof ss.current.fontSize === "number" && Math.abs(ss.current.fontSize - normalisedSize) <= 3) tr.font.size = normalisedSize;
-                } catch (e) { /* empty cell */ }
-              }
-              await ctx.sync();
-            } catch (e) { /* no table */ }
-            continue;
-          }
-          if (ss.isGroup) {
-            const os = shapes.items.find(s => String(s.id) === String(ss.id)) || shapes.items.find(s => s.name === ss.name);
-            if (!os) continue;
-            try {
-              const masterFont = pptxData.masterPlaceholders.find(p => p.type === "body")?.font;
-              const groupShapes = os.shapes;
-              groupShapes.load("items");
-              await ctx.sync();
-              const trs = [];
-              for (const child of groupShapes.items) {
-                try { const tr = child.textFrame.textRange; tr.font.load(["name", "size"]); trs.push({ tr }); } catch (e) { /* no text */ }
-              }
-              await ctx.sync();
-              for (const { tr } of trs) {
-                try {
-                  if (masterFont?.name && tr.font.name !== masterFont.name) tr.font.name = masterFont.name;
-                  if (normalisedSize && typeof ss.current.fontSize === "number" && Math.abs(ss.current.fontSize - normalisedSize) <= 3) tr.font.size = normalisedSize;
-                } catch (e) { /* no text */ }
-              }
-              await ctx.sync();
-            } catch (e) { /* no group */ }
-            continue;
-          }
-          const osShape = shapes.items.find(s => String(s.id) === String(ss.id)) || shapes.items.find(s => s.name === ss.name);
-          if (!osShape) continue;
-          try {
-            const tr = osShape.textFrame.textRange;
-            tr.font.load(["name", "size"]);
-            try { await ctx.sync(); } catch (e) { continue; }
-            const isTitle = ss.phType === "title" || ss.phType === "ctrTitle";
-            if (isTitle) continue;
-            const bodyFont = pptxData.masterPlaceholders.find(p => p.type === "body")?.font;
-            const targetFont = ss.masterTarget?.fontName || bodyFont?.name;
-            if (!targetFont) continue;
-            let changed = false;
-            if (tr.font.name !== targetFont) { tr.font.name = targetFont; changed = true; }
-            const currentSize = typeof ss.current.fontSize === "number" ? ss.current.fontSize : tr.font.size;
-            if (normalisedSize && currentSize !== null && Math.abs(currentSize - normalisedSize) <= 3 && tr.font.size !== normalisedSize) { tr.font.size = normalisedSize; changed = true; }
-            if (changed) { await ctx.sync(); totalFixes++; }
-          } catch (e) { /* shape may not support font ops */ }
-        }
-
-        // Expand text boxes to fit content
-        for (const ss of pptxData.slideShapes) {
-          if (!ss.position || !ss.textContent) continue;
-          if (ss.isTable || ss.isGroup) continue;
-          const os = shapes.items.find(s => String(s.id) === String(ss.id));
+          if (ss.isTable || ss.isGroup || ss.phType === "title" || ss.phType === "ctrTitle") continue;
+          const os = shapes.items.find(s => String(s.id) === String(ss.id)) || shapes.items.find(s => s.name === ss.name);
           if (!os) continue;
-          // Skip shapes without text frames (connectors, images, etc.)
-          if (os.type && !["GeometricShape", "Placeholder"].some(t => os.type.toString().includes(t))) continue;
+          try { const tr = os.textFrame.textRange; tr.font.load(["name", "size"]); fontJobs.push({ tr, ss }); } catch (e) { /* no text frame */ }
+        }
+        // Batch: load all table dimensions at once
+        const tableJobs = [];
+        for (const ss of pptxData.slideShapes) {
+          if (!ss.isTable) continue;
+          const os = shapes.items.find(s => String(s.id) === String(ss.id)) || shapes.items.find(s => s.name === ss.name);
+          if (!os) continue;
+          try { const table = os.table; table.load("rowCount,columnCount"); tableJobs.push({ table, ss }); } catch (e) { /* no table */ }
+        }
+        // Batch: load all group children at once
+        const groupJobs = [];
+        for (const ss of pptxData.slideShapes) {
+          if (!ss.isGroup) continue;
+          const os = shapes.items.find(s => String(s.id) === String(ss.id)) || shapes.items.find(s => s.name === ss.name);
+          if (!os) continue;
+          try { os.shapes.load("items"); groupJobs.push({ os, ss }); } catch (e) { /* no group */ }
+        }
+        await ctx.sync(); // ONE sync for all shape/table/group loads
+
+        // Load table cells now that we know dimensions
+        const tableCellJobs = [];
+        for (const { table, ss } of tableJobs) {
           try {
-            os.load(["left", "top", "width", "height"]);
-            os.textFrame.load("autoSizeSetting");
-            try { await ctx.sync(); } catch (e) { continue; }
-            os.textFrame.autoSizeSetting = PowerPoint.ShapeAutoSize.autoSizeShapeToFitText;
-            await ctx.sync();
-            os.load(["width", "height"]);
-            await ctx.sync();
-            const neededW = os.width / 72, neededH = os.height / 72;
-            os.textFrame.autoSizeSetting = PowerPoint.ShapeAutoSize.autoSizeNone;
-            await ctx.sync();
-            const { left: origLeft, top: origTop, width: origW, height: origH } = ss.position;
-            const stepW = slideW / 100, stepH = slideH / 100;
-            if (neededW <= origW + stepW * 0.1 && neededH <= origH + stepH * 0.1) continue;
-            const maxW = slideW - origLeft, maxH = slideH - origTop;
-            let curW = origW, curH = origH;
-            while ((curW < neededW - stepW * 0.1 || curH < neededH - stepH * 0.1) && (curW < maxW - stepW * 0.1 || curH < maxH - stepH * 0.1)) {
-              if (curW < neededW - stepW * 0.1 && curW < maxW) curW = Math.min(curW + stepW, maxW);
-              if (curH < neededH - stepH * 0.1 && curH < maxH) curH = Math.min(curH + stepH, maxH);
+            for (let r = 0; r < table.rowCount; r++)
+              for (let c = 0; c < table.columnCount; c++) {
+                const tr = table.getCell(r, c).textFrame.textRange;
+                tr.font.load(["name", "size"]);
+                tableCellJobs.push({ tr, ss });
+              }
+          } catch (e) { /* empty table */ }
+        }
+        // Load group child text ranges
+        const groupTrJobs = [];
+        for (const { os, ss } of groupJobs) {
+          try {
+            for (const child of os.shapes.items) {
+              try { const tr = child.textFrame.textRange; tr.font.load(["name", "size"]); groupTrJobs.push({ tr, ss }); } catch (e) { /* no text */ }
             }
-            let overlaps = false;
-            for (const other of pptxData.slideShapes) {
-              if (String(other.id) === String(ss.id) || !other.position) continue;
-              const o = other.position;
-              if (origLeft < o.left + o.width && origLeft + curW > o.left && origTop < o.top + o.height && origTop + curH > o.top) { overlaps = true; break; }
-            }
-            if (overlaps || origLeft + curW > slideW + stepW * 0.5 || origTop + curH > slideH + stepH * 0.5) {
-              os.textFrame.autoSizeSetting = PowerPoint.ShapeAutoSize.autoSizeTextToFitShape;
-            } else {
-              os.width = curW * 72; os.height = curH * 72;
-            }
-            await ctx.sync();
-            totalFixes++;
-          } catch (e) { /* ignore */ }
+          } catch (e) { /* no children */ }
+        }
+        await ctx.sync(); // ONE sync for all cell/group-child loads
+
+        // Write all font/size changes — no syncs inside
+        for (const { tr, ss } of [...fontJobs, ...tableCellJobs, ...groupTrJobs]) {
+          try {
+            const targetFont = ss.masterTarget?.fontName || bodyFont?.name;
+            if (targetFont && tr.font.name !== targetFont) { tr.font.name = targetFont; totalFixes++; }
+            const currentSize = typeof ss.current.fontSize === "number" ? ss.current.fontSize : tr.font.size;
+            if (normalisedSize && currentSize !== null && Math.abs(currentSize - normalisedSize) <= 3 && tr.font.size !== normalisedSize) { tr.font.size = normalisedSize; totalFixes++; }
+          } catch (e) { /* skip */ }
         }
 
-        // Normalise similarly-sized shape groups
+        // Normalise similarly-sized shape groups (no syncs needed — pure in-memory writes)
         const textShapes = pptxData.slideShapes.filter(ss => ss.phType !== "title" && ss.phType !== "ctrTitle" && ss.position && typeof ss.current.fontSize === "number" && !ss.isTable && !ss.isGroup);
         for (let i = 0; i < textShapes.length; i++) {
           const a = textShapes[i];
@@ -1233,7 +1180,7 @@ export default function App() {
           for (let j = 0; j < textShapes.length; j++) {
             if (i === j) continue;
             const b = textShapes[j];
-            if (Math.abs(a.position.width  - b.position.width)  / a.position.width  <= 0.15 &&
+            if (Math.abs(a.position.width - b.position.width) / a.position.width <= 0.15 &&
                 Math.abs(a.position.height - b.position.height) / a.position.height <= 0.15) group.push(b);
           }
           if (group.length < 2) continue;
@@ -1243,27 +1190,13 @@ export default function App() {
             if (ss.current.fontSize === groupSize || Math.abs(ss.current.fontSize - groupSize) > 3) continue;
             const os = shapes.items.find(s => String(s.id) === String(ss.id));
             if (!os) continue;
-            try { const tr = os.textFrame.textRange; tr.font.load("size"); await ctx.sync(); tr.font.size = groupSize; await ctx.sync(); totalFixes++; } catch (e) { /* ignore */ }
+            try { os.textFrame.textRange.font.size = groupSize; totalFixes++; } catch (e) { /* ignore */ }
           }
         }
-      });
+        await ctx.sync(); // ONE sync for all font/size writes
 
-      // ─── STEP 3: Colours — snap text to nearest theme colour ──────────────────
-      addLog("Step 3: Colours…");
-      await PowerPoint.run(async (ctx) => {
-        const slides = ctx.presentation.slides;
-        slides.load("items");
-        await ctx.sync();
-        const shapes = slides.items[dupIndex - 1].shapes;
-        shapes.load("items");
-        await ctx.sync();
-        for (const s of shapes.items) s.load(["id", "name", "type"]);
-        await ctx.sync();
-
-        // Read the slide background colour, used to keep shape fills from landing on it.
-        // Also read the master background — if the slide background is close to the master's,
-        // snap it to the master's (small drift correction). If clearly different (intentional dark
-        // slide in a light deck etc.) leave it alone. Falls back to white if nothing can be read.
+        // ── Colour step ──────────────────────────────────────────────────────────
+        addLog("Step 3: Colours…");
         let bgColor = "#FFFFFF";
         let masterBgColor = "#FFFFFF";
         try {
@@ -1275,11 +1208,7 @@ export default function App() {
           await ctx.sync();
           if (String(masterBgFill.type).toLowerCase() === "solid") {
             const solid = masterBgFill.getSolidColorOrNullObject ? masterBgFill.getSolidColorOrNullObject() : null;
-            if (solid) {
-              solid.load("color");
-              await ctx.sync();
-              if (!solid.isNullObject && solid.color) masterBgColor = solid.color.startsWith("#") ? solid.color : `#${solid.color}`;
-            }
+            if (solid) { solid.load("color"); await ctx.sync(); if (!solid.isNullObject && solid.color) masterBgColor = solid.color.startsWith("#") ? solid.color : `#${solid.color}`; }
           }
         } catch (e) { /* master background read not supported */ }
         try {
@@ -1288,64 +1217,31 @@ export default function App() {
           await ctx.sync();
           if (String(bgFill.type).toLowerCase() === "solid") {
             const solid = bgFill.getSolidColorOrNullObject ? bgFill.getSolidColorOrNullObject() : null;
-            if (solid) {
-              solid.load("color");
-              await ctx.sync();
-              if (!solid.isNullObject && solid.color) bgColor = solid.color.startsWith("#") ? solid.color : `#${solid.color}`;
-            }
+            if (solid) { solid.load("color"); await ctx.sync(); if (!solid.isNullObject && solid.color) bgColor = solid.color.startsWith("#") ? solid.color : `#${solid.color}`; }
           }
-        } catch (e) { /* slide background read not supported — keep master default */ }
-        // If slide background is close to master (small drift), snap it to master and use master colour.
-        // If clearly different (intentional design), leave it alone and use the slide's own colour.
+        } catch (e) { /* slide background read not supported */ }
         const BG_DRIFT_THRESHOLD = 80;
         if (colourDistance(bgColor, masterBgColor) < BG_DRIFT_THRESHOLD && bgColor !== masterBgColor) {
-          try {
-            const slideBg = slides.items[dupIndex - 1].background.fill;
-            slideBg.setSolidColor(masterBgColor.replace("#", ""));
-            await ctx.sync();
-            bgColor = masterBgColor;
-            addLog(`Background snapped to master: ${masterBgColor}`);
-          } catch (e) { /* can't write background on this host */ }
+          try { slides.items[dupIndex - 1].background.fill.setSolidColor(masterBgColor.replace("#", "")); await ctx.sync(); bgColor = masterBgColor; addLog(`Background snapped to master: ${masterBgColor}`); } catch (e) { /* can't write */ }
         } else if (colourDistance(bgColor, masterBgColor) >= BG_DRIFT_THRESHOLD) {
-          addLog(`Background differs from master (intentional) — leaving slide background unchanged`);
+          addLog(`Background differs from master (intentional) — leaving unchanged`);
         }
 
-        // Theme colour map with the background colour removed — used wherever we snap to "any" theme colour
-        const themeColorsNoBg = Object.fromEntries(
-          Object.entries(themeColors).filter(([, v]) => !v || v.toLowerCase() !== bgColor.toLowerCase())
-        );
-
-        // Any theme colour matching the background can't be used for either fonts or shapes
-        const themeColorValues = Object.values(themeColors)
-          .filter(Boolean)
-          .filter(c => c.toLowerCase() !== bgColor.toLowerCase());
-
-        // Step 1: fix the font colour pool first — two darkest (light bg) or two lightest (dark bg)
+        // Build colour pools
+        const themeColorsNoBg = Object.fromEntries(Object.entries(themeColors).filter(([, v]) => !v || v.toLowerCase() !== bgColor.toLowerCase()));
+        const themeColorValues = Object.values(themeColors).filter(Boolean).filter(c => c.toLowerCase() !== bgColor.toLowerCase());
         const bgIsLight = hexLuminance(bgColor) > 0.5;
-        const sortedByLuminance = [...themeColorValues].sort((a, b) => hexLuminance(b) - hexLuminance(a)); // lightest first
-        const fontColorPool = bgIsLight
-          ? sortedByLuminance.slice(-2)  // two darkest
-          : sortedByLuminance.slice(0, 2); // two lightest
+        const sortedByLuminance = [...themeColorValues].sort((a, b) => hexLuminance(b) - hexLuminance(a));
+        const fontColorPool = bgIsLight ? sortedByLuminance.slice(-2) : sortedByLuminance.slice(0, 2);
         const fontPrimaryColor = fontColorPool[0] || themeColorValues[0];
-
-        // Step 2: build the shape colour pool from whatever's left, requiring each candidate to be
-        // at least 350 colourDistance from every font pool colour. Relax by 50 at a time if none qualify.
         const remainingColors = themeColorValues.filter(c => !fontColorPool.some(f => f.toLowerCase() === c.toLowerCase()));
-        const minDistanceToFontPool = (c) => Math.min(...fontColorPool.map(f => colourDistance(c, f)));
-        const buildShapePool = (threshold) => remainingColors.filter(c => minDistanceToFontPool(c) >= threshold);
+        const minDistToFont = (c) => Math.min(...fontColorPool.map(f => colourDistance(c, f)));
         let shapeColorPool = [];
-        for (let threshold = 350; threshold >= 0; threshold -= 50) {
-          shapeColorPool = buildShapePool(threshold);
-          if (shapeColorPool.length > 0) break;
-        }
+        for (let t = 350; t >= 0; t -= 50) { shapeColorPool = remainingColors.filter(c => minDistToFont(c) >= t); if (shapeColorPool.length > 0) break; }
         if (shapeColorPool.length === 0) shapeColorPool = remainingColors.length > 0 ? remainingColors : themeColorValues;
+        const fontThemeColors = Object.fromEntries(Object.entries(themeColors).filter(([, v]) => v && fontColorPool.some(c => c.toLowerCase() === v.toLowerCase())));
 
-        // Builds a theme-colour map restricted to the font pool, for use with snapToThemeColor
-        const fontThemeColors = Object.fromEntries(
-          Object.entries(themeColors).filter(([, v]) => v && fontColorPool.some(c => c.toLowerCase() === v.toLowerCase()))
-        );
-
-        // All shapes: batch load colours via XML-matched IDs, then snap to nearest allowed font colour
+        // Batch load all font colours and fill colours at once
         const colorJobs = [];
         for (const ss of pptxData.slideShapes) {
           if (ss.isTable || ss.isGroup) continue;
@@ -1353,128 +1249,89 @@ export default function App() {
           if (!os) continue;
           try { const tr = os.textFrame.textRange; tr.font.load("color"); colorJobs.push({ tr, ss }); } catch (e) { /* no text frame */ }
         }
-        try { await ctx.sync(); } catch (e) { /* ignore */ }
+        const fillJobs = [];
+        for (const os of shapes.items) {
+          try { os.load(["name", "type"]); os.fill.load(["type", "color"]); fillJobs.push({ os, kind: "fill" }); } catch (e) { /* no fill */ }
+          try { os.lineFormat.load(["color", "visible"]); fillJobs.push({ os, kind: "line" }); } catch (e) { /* no line */ }
+        }
+        // Load table colour jobs
+        const tableColorJobs = [];
+        for (const ss of pptxData.slideShapes) {
+          if (!ss.isTable) continue;
+          const os = shapes.items.find(s => String(s.id) === String(ss.id));
+          if (!os) continue;
+          try { const table = os.table; table.load("rowCount,columnCount"); tableColorJobs.push({ table, ss }); } catch (e) { /* no table */ }
+        }
+        await ctx.sync(); // ONE sync for all colour reads (font + fill + table dims)
+
+        // Load table cell colours now we know dimensions
+        const tableCellColorJobs = [];
+        for (const { table, ss } of tableColorJobs) {
+          try {
+            for (let r = 0; r < table.rowCount; r++)
+              for (let c = 0; c < table.columnCount; c++) {
+                const tr = table.getCell(r, c).textFrame.textRange; tr.font.load("color"); tableCellColorJobs.push({ tr });
+              }
+          } catch (e) { /* empty table */ }
+        }
+        // Load group child colours (groupJobs already loaded children above)
+        const groupColorJobs = [];
+        for (const { os } of groupJobs) {
+          try {
+            for (const child of os.shapes.items) {
+              try { const tr = child.textFrame.textRange; tr.font.load("color"); groupColorJobs.push({ tr }); } catch (e) { /* no text */ }
+            }
+          } catch (e) { /* no children */ }
+        }
+        await ctx.sync(); // ONE sync for table cell / group child colour reads
+
+        // Write all font colours
         for (const { tr, ss } of colorJobs) {
           try {
             const rawColor = tr.font.color;
-            // Office.js resolved colour — most reliable source when present
             const officeColor = (rawColor && rawColor !== "null") ? `#${rawColor}` : null;
-            // Explicit colour from the XML parse (skip "(inherited)" and theme: references — those aren't real values)
-            const xmlExplicit = ss.current?.color && ss.current.color !== "(inherited)" && !ss.current.color.startsWith("theme:")
-              ? ss.current.color : null;
-            // Master placeholder colour — what PowerPoint actually renders when nothing is overridden
+            const xmlExplicit = ss.current?.color && ss.current.color !== "(inherited)" && !ss.current.color.startsWith("theme:") ? ss.current.color : null;
             const masterColor = ss.masterTarget?.color && ss.masterTarget.color !== "(inherited)" ? ss.masterTarget.color : null;
-
             const effectiveColor = officeColor || xmlExplicit || masterColor;
             let targetColor;
-            if (!effectiveColor) {
-              targetColor = fontPrimaryColor; // can't determine current colour — use the allowed primary
-            } else {
-              const nearest = snapToThemeColor(effectiveColor, fontThemeColors);
-              targetColor = nearest.toLowerCase() === effectiveColor.toLowerCase() ? null : nearest;
-            }
+            if (!effectiveColor) { targetColor = fontPrimaryColor; }
+            else { const nearest = snapToThemeColor(effectiveColor, fontThemeColors); targetColor = nearest.toLowerCase() === effectiveColor.toLowerCase() ? null : nearest; }
             if (!targetColor) continue;
-            tr.font.color = targetColor.replace("#", "");
-            totalFixes++;
+            tr.font.color = targetColor.replace("#", ""); totalFixes++;
           } catch (e) { /* skip */ }
         }
-        try { await ctx.sync(); } catch (e) { /* ignore */ }
 
-        // All shapes: assign fill colour (from the shape pool, light/dark aware) and snap border to nearest theme colour
-        const fillJobs = [];
-        for (const os of shapes.items) {
-          try {
-            os.load(["name", "type"]);
-            os.fill.load(["type", "color"]);
-            fillJobs.push({ os, kind: "fill" });
-          } catch (e) { /* no fill */ }
-          try { os.lineFormat.load(["color", "visible"]); fillJobs.push({ os, kind: "line" }); } catch (e) { /* no line */ }
-        }
-        try { await ctx.sync(); } catch (e) { /* ignore */ }
+        // Write all fill/border colours
         const fillPool = shapeColorPool.length > 0 ? shapeColorPool : themeColorValues;
         for (const { os, kind } of fillJobs) {
           try {
             if (kind === "fill") {
-              const fillTypeStr = String(os.fill.type).toLowerCase();
-              if (fillTypeStr !== "solid") continue; // skip none/gradient/picture fills
+              if (String(os.fill.type).toLowerCase() !== "solid") continue;
               const liveFill = os.fill.color ? (os.fill.color.startsWith("#") ? os.fill.color : `#${os.fill.color}`) : null;
-              // Already an allowed shape colour — leave it alone
               if (liveFill && fillPool.some(c => c.toLowerCase() === liveFill.toLowerCase())) continue;
-              // Colour is unreadable, or matches the background, or isn't one of the allowed shape colours — reassign
-              if (fillPool.length > 0) {
-                const chosen = fillPool[Math.floor(Math.random() * fillPool.length)];
-                os.fill.setSolidColor(chosen.replace("#", ""));
-                totalFixes++;
-              }
+              if (fillPool.length > 0) { os.fill.setSolidColor(fillPool[Math.floor(Math.random() * fillPool.length)].replace("#", "")); totalFixes++; }
             } else {
               if (!os.lineFormat.visible) continue;
               const cur = os.lineFormat.color ? (os.lineFormat.color.startsWith("#") ? os.lineFormat.color : `#${os.lineFormat.color}`) : null;
               if (!cur) continue;
               const nearest = snapToThemeColor(cur, themeColorsNoBg);
-              if (nearest.toLowerCase() === cur.toLowerCase()) continue;
-              os.lineFormat.color = nearest.replace("#", "");
-              totalFixes++;
+              if (nearest.toLowerCase() !== cur.toLowerCase()) { os.lineFormat.color = nearest.replace("#", ""); totalFixes++; }
             }
           } catch (e) { /* skip */ }
         }
-        try { await ctx.sync(); } catch (e) { /* ignore */ }
-        for (const ss of pptxData.slideShapes) {
-          if (!ss.isTable) continue;
-          const os = shapes.items.find(s => String(s.id) === String(ss.id));
-          if (!os) continue;
+
+        // Write table and group cell/child colours
+        for (const { tr } of [...tableCellColorJobs, ...groupColorJobs]) {
           try {
-            const table = os.table;
-            table.load("rowCount,columnCount");
-            await ctx.sync();
-            const cellJobs = [];
-            for (let r = 0; r < table.rowCount; r++)
-              for (let c = 0; c < table.columnCount; c++) {
-                const cell = table.getCell(r, c);
-                const tr = cell.textFrame.textRange;
-                tr.font.load("color");
-                cellJobs.push({ tr });
-              }
-            await ctx.sync();
-            for (const { tr } of cellJobs) {
-              try {
-                const cur = tr.font.color ? `#${tr.font.color}` : null;
-                if (!cur || cur === "#null" || cur === "#") continue;
-                if (themeColorList.some(c => c && cur.toLowerCase() === c.toLowerCase())) continue;
-                const nearest = snapToThemeColor(cur, themeColorsNoBg);
-                if (nearest.toLowerCase() !== cur.toLowerCase()) { tr.font.color = nearest.replace("#", ""); totalFixes++; }
-              } catch (e) { /* empty cell */ }
-            }
-            await ctx.sync();
-          } catch (e) { /* no table */ }
+            const cur = tr.font.color ? `#${tr.font.color}` : null;
+            if (!cur) continue;
+            const nearest = snapToThemeColor(cur, themeColorsNoBg);
+            if (nearest.toLowerCase() !== cur.toLowerCase()) { tr.font.color = nearest.replace("#", ""); totalFixes++; }
+          } catch (e) { /* skip */ }
         }
 
-        // Groups: batch load all child colours, sync once, write, sync once
-        for (const ss of pptxData.slideShapes) {
-          if (!ss.isGroup) continue;
-          const os = shapes.items.find(s => String(s.id) === String(ss.id));
-          if (!os) continue;
-          try {
-            const groupShapes = os.shapes;
-            groupShapes.load("items");
-            await ctx.sync();
-            const trs = [];
-            for (const child of groupShapes.items) {
-              try { const tr = child.textFrame.textRange; tr.font.load("color"); trs.push({ tr }); } catch (e) { /* no text */ }
-            }
-            await ctx.sync();
-            for (const { tr } of trs) {
-              try {
-                const cur = tr.font.color ? `#${tr.font.color}` : null;
-                if (!cur || cur === "#null" || cur === "#") continue;
-                if (themeColorList.some(c => c && cur.toLowerCase() === c.toLowerCase())) continue;
-                const nearest = snapToThemeColor(cur, themeColorsNoBg);
-                if (nearest.toLowerCase() !== cur.toLowerCase()) { tr.font.color = nearest.replace("#", ""); totalFixes++; }
-              } catch (e) { /* no text */ }
-            }
-            await ctx.sync();
-          } catch (e) { /* no group */ }
-        }
-      });
+        await ctx.sync(); // final write sync
+      });;
 
       /* ─── POSITIONING DISABLED FOR NOW — keeping tool to font/colour/title scope ───
       // ─── STEP 4: Grid pipeline (looped until stable) ────────────────────────
