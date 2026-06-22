@@ -1261,8 +1261,27 @@ export default function App() {
         await ctx.sync();
 
         // Read the slide background colour, used to keep shape fills from landing on it.
-        // Falls back to white if it can't be determined (most common default background).
+        // Also read the master background — if the slide background is close to the master's,
+        // snap it to the master's (small drift correction). If clearly different (intentional dark
+        // slide in a light deck etc.) leave it alone. Falls back to white if nothing can be read.
         let bgColor = "#FFFFFF";
+        let masterBgColor = "#FFFFFF";
+        try {
+          const masters = ctx.presentation.slideMasters;
+          masters.load("items");
+          await ctx.sync();
+          const masterBgFill = masters.items[0].background.fill;
+          masterBgFill.load("type");
+          await ctx.sync();
+          if (String(masterBgFill.type).toLowerCase() === "solid") {
+            const solid = masterBgFill.getSolidColorOrNullObject ? masterBgFill.getSolidColorOrNullObject() : null;
+            if (solid) {
+              solid.load("color");
+              await ctx.sync();
+              if (!solid.isNullObject && solid.color) masterBgColor = solid.color.startsWith("#") ? solid.color : `#${solid.color}`;
+            }
+          }
+        } catch (e) { /* master background read not supported */ }
         try {
           const bgFill = slides.items[dupIndex - 1].background.fill;
           bgFill.load("type");
@@ -1275,7 +1294,21 @@ export default function App() {
               if (!solid.isNullObject && solid.color) bgColor = solid.color.startsWith("#") ? solid.color : `#${solid.color}`;
             }
           }
-        } catch (e) { /* background read not supported on this slide/host — keep white default */ }
+        } catch (e) { /* slide background read not supported — keep master default */ }
+        // If slide background is close to master (small drift), snap it to master and use master colour.
+        // If clearly different (intentional design), leave it alone and use the slide's own colour.
+        const BG_DRIFT_THRESHOLD = 80;
+        if (colourDistance(bgColor, masterBgColor) < BG_DRIFT_THRESHOLD && bgColor !== masterBgColor) {
+          try {
+            const slideBg = slides.items[dupIndex - 1].background.fill;
+            slideBg.setSolidColor(masterBgColor.replace("#", ""));
+            await ctx.sync();
+            bgColor = masterBgColor;
+            addLog(`Background snapped to master: ${masterBgColor}`);
+          } catch (e) { /* can't write background on this host */ }
+        } else if (colourDistance(bgColor, masterBgColor) >= BG_DRIFT_THRESHOLD) {
+          addLog(`Background differs from master (intentional) — leaving slide background unchanged`);
+        }
 
         // Theme colour map with the background colour removed — used wherever we snap to "any" theme colour
         const themeColorsNoBg = Object.fromEntries(
