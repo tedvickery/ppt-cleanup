@@ -774,10 +774,11 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
         if (phType === "body" || phType === "obj") hasBody = true;
       }
       firstLayoutDone = true;
-      if (layoutTitlePos && hasBody && !isCtrTitle) {
-        titlePositions.push(layoutTitlePos); // may be "inherited" or a position object
-        if (layoutTitlePos !== "inherited") console.log(`Layout title candidate: w=${layoutTitlePos.width.toFixed(2)},h=${layoutTitlePos.height.toFixed(2)},t=${layoutTitlePos.top.toFixed(2)}`);
-        else console.log(`Layout title candidate: inherited from master`);
+      if (layoutTitlePos && layoutTitlePos !== "inherited") {
+        titlePositions.push(layoutTitlePos);
+        console.log(`Layout title candidate: w=${layoutTitlePos.width.toFixed(2)},h=${layoutTitlePos.height.toFixed(2)},t=${layoutTitlePos.top.toFixed(2)} hasBody=${hasBody} isCtrTitle=${isCtrTitle}`);
+      } else if (layoutTitlePos === "inherited") {
+        console.log(`Layout title candidate: inherited hasBody=${hasBody} isCtrTitle=${isCtrTitle}`);
       }
     }
 
@@ -790,12 +791,13 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
       for (const sp of masterDoc.getElementsByTagNameNS("*", "sp")) {
         const ph = sp.getElementsByTagNameNS("*", "ph")[0];
         if (!ph) continue;
-        const phType = ph.getAttribute("type") || "";
-        if (phType !== "title" && phType !== "ctrTitle") continue;
+        const phType = ph.getAttribute("type") || "body";
+        const phIdx  = ph.getAttribute("idx") || "0";
         const xfrm = sp.getElementsByTagNameNS("*", "xfrm")[0];
         const off  = xfrm?.getElementsByTagNameNS("*", "off")[0];
         const ext  = xfrm?.getElementsByTagNameNS("*", "ext")[0];
-        if (off && ext) {
+        console.log(`Master ph: type="${phType}" idx="${phIdx}" hasXfrm=${!!xfrm} hasOff=${!!off} hasExt=${!!ext}${off && ext ? ` w=${emuToInches(ext.getAttribute("cx")).toFixed(2)} h=${emuToInches(ext.getAttribute("cy")).toFixed(2)} t=${emuToInches(off.getAttribute("y")).toFixed(2)}` : ""}`);
+        if ((phType === "title" || phType === "ctrTitle") && off && ext) {
           masterTitlePos = {
             left:   emuToInches(off.getAttribute("x")),
             top:    emuToInches(off.getAttribute("y")),
