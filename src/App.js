@@ -744,10 +744,10 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
       }
     }
 
-    // Title position: use the most common position across all layouts (mode vote).
-    // Standard content layouts outnumber title/agenda/section layouts, so the mode
-    // naturally picks the correct content-slide title position.
-    const titlePositionsToUse = titlePositions;
+    // Mode vote — filter to titles that are wide (>= 5 inches) to exclude narrow agenda/section layouts.
+    // Falls back to unfiltered if nothing passes.
+    const wideTitlePositions  = titlePositions.filter(p => p.width >= 5);
+    const titlePositionsToUse = wideTitlePositions.length > 0 ? wideTitlePositions : titlePositions;
     const masterTitlePh = masters.find(m => m.index === 1)?.placeholders?.find(p => p.type === "title" || p.type === "ctrTitle");
     if (masterTitlePh?.position) {
       layoutPositions["title:0"] = masterTitlePh.position;
