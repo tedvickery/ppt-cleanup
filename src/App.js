@@ -752,8 +752,10 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
       layoutPositions["title:0"] = masterTitlePh.position;
       console.log(`Title position from master: ${JSON.stringify(masterTitlePh.position)}`);
     } else if (titlePositions.length > 0) {
-      const wideTitlePositions = titlePositions.filter(p => p.width >= 5);
-      const candidates = wideTitlePositions.length > 0 ? wideTitlePositions : titlePositions;
+      const SLIDE_W = 10, SLIDE_H = 7.5;
+      const strictPositions = titlePositions.filter(p => p.width > SLIDE_W * 0.5 && p.top < SLIDE_H * 0.25);
+      const widePositions   = titlePositions.filter(p => p.width > SLIDE_W * 0.5);
+      const candidates = strictPositions.length > 0 ? strictPositions : widePositions.length > 0 ? widePositions : titlePositions;
       const freq = {};
       for (const p of candidates) {
         const k = `${p.left.toFixed(2)},${p.top.toFixed(2)},${p.width.toFixed(2)},${p.height.toFixed(2)}`;
