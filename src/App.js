@@ -1247,7 +1247,11 @@ export default function App() {
         for (const { tr, ss } of [...fontJobs, ...tableCellJobs, ...groupTrJobs]) {
           try {
             const targetFont = ss.masterTarget?.fontName || bodyFont?.name;
-            if (targetFont && tr.font.name !== targetFont) { tr.font.name = targetFont; totalFixes++; }
+            if (targetFont && tr.font.name !== targetFont) {
+              tr.font.name = targetFont; // sets at textRange (paragraph) level
+              try { tr.getSubstring(0).font.name = targetFont; } catch (e) { /* substring not supported */ } // override run-level rPr
+              totalFixes++;
+            }
             const currentSize = typeof ss.current.fontSize === "number" ? ss.current.fontSize : tr.font.size;
             if (normalisedSize && currentSize !== null && Math.abs(currentSize - normalisedSize) <= 3 && tr.font.size !== normalisedSize) { tr.font.size = normalisedSize; totalFixes++; }
           } catch (e) { /* skip */ }
