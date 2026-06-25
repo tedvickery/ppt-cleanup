@@ -1161,14 +1161,16 @@ export default function App() {
           titleShape.current.color?.toLowerCase() !== primaryThemeColorForTitle.toLowerCase();
         if (posNeedsFix || fontNeedsFix || fillNeedsFix || titleColorNeedsFix) {
           addLog("Step 1: Title position & font…");
-          await applyFixes(dupIndex, [{
-            shapeName: titleShape.name, shapeId: titleShape.id, _slideShape: titleShape,
-            shapeFill: fillNeedsFix ? "none" : (titleShape.shapeFill || null),
-            ...(posNeedsFix  ? { position: targetTitlePos } : {}),
-            ...(fontNeedsFix ? { font: { name: titleShape.masterTarget?.fontName } } : {}),
-            ...(titleColorNeedsFix ? { font: { ...(fontNeedsFix ? { name: titleShape.masterTarget?.fontName } : {}), color: primaryThemeColorForTitle } } : {}),
-          }], themeColors);
-          totalFixes++;
+          try {
+            await applyFixes(dupIndex, [{
+              shapeName: titleShape.name, shapeId: titleShape.id, _slideShape: titleShape,
+              shapeFill: fillNeedsFix ? "none" : (titleShape.shapeFill || null),
+              ...(posNeedsFix  ? { position: targetTitlePos } : {}),
+              ...(fontNeedsFix ? { font: { name: titleShape.masterTarget?.fontName } } : {}),
+              ...(titleColorNeedsFix ? { font: { ...(fontNeedsFix ? { name: titleShape.masterTarget?.fontName } : {}), color: primaryThemeColorForTitle } } : {}),
+            }], themeColors);
+            totalFixes++;
+          } catch (e) { addLog(`⚠ Step 1 error: ${e.message}`); }
         }
       }
 
