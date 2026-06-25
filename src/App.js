@@ -705,6 +705,32 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
   // Always use master 1's layouts — ignore whatever imported layout the slide references
   let layoutPositions = {};
 
+  // Read master title placeholder position directly from master XML (for resolving inherited positions)
+  let masterTitleXfrmPos = null;
+  const masterXmlFile = zip.file("ppt/slideMasters/slideMaster1.xml");
+  if (masterXmlFile) {
+    const masterXmlDoc = parseXml(await masterXmlFile.async("string"));
+    for (const sp of masterXmlDoc.getElementsByTagNameNS("*", "sp")) {
+      const ph = sp.getElementsByTagNameNS("*", "ph")[0];
+      const phType = ph?.getAttribute("type");
+      if (phType === "title" || phType === "ctrTitle" || (!phType && ph)) {
+        const xfrm = sp.getElementsByTagNameNS("*", "xfrm")[0];
+        const off  = xfrm?.getElementsByTagNameNS("*", "off")[0];
+        const ext  = xfrm?.getElementsByTagNameNS("*", "ext")[0];
+        if (off && ext) {
+          masterTitleXfrmPos = {
+            left:   emuToInches(off.getAttribute("x")),
+            top:    emuToInches(off.getAttribute("y")),
+            width:  emuToInches(ext.getAttribute("cx")),
+            height: emuToInches(ext.getAttribute("cy")),
+          };
+          if (phType === "title") break; // prefer explicit title over default body
+        }
+      }
+    }
+    if (masterTitleXfrmPos) console.log(`Master title xfrm: ${JSON.stringify(masterTitleXfrmPos)}`);
+  }
+
   const masterRelsFile = zip.file("ppt/slideMasters/_rels/slideMaster1.xml.rels");
   if (masterRelsFile) {
     const masterRelsXml = await masterRelsFile.async("string");
@@ -734,42 +760,75 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
           width: emuToInches(ext.getAttribute("cx")), height: emuToInches(ext.getAttribute("cy")),
         };
         if (!firstLayoutDone && phType !== "title" && phType !== "ctrTitle") layoutPositions[`${phType}:${phIdx}`] = pos;
-        if (phType === "title" || phType === "ctrTitle") { layoutTitlePos = pos; isCtrTitle = phType === "ctrTitle"; }
+        if (phType === "title" || phType === "ctrTitle") {
+          isCtrTitle = phType === "ctrTitle";
+          if (off && ext) {
+            layoutTitlePos = {
+              left: emuToInches(off.getAttribute("x")), top: emuToInches(off.getAttribute("y")),
+              width: emuToInches(ext.getAttribute("cx")), height: emuToInches(ext.getAttribute("cy")),
+            };
+          } else {
+            layoutTitlePos = "inherited"; // no explicit position — inherits from master
+          }
+        }
         if (phType === "body" || phType === "obj") hasBody = true;
       }
       firstLayoutDone = true;
-      // Exclude ctrTitle layouts (title slides) — only content layouts with a body area count
       if (layoutTitlePos && hasBody && !isCtrTitle) {
-        titlePositions.push(layoutTitlePos);
-        console.log(`Layout title candidate: w=${layoutTitlePos.width.toFixed(2)},h=${layoutTitlePos.height.toFixed(2)},t=${layoutTitlePos.top.toFixed(2)}`);
+        titlePositions.push(layoutTitlePos); // may be "inherited" or a position object
+        if (layoutTitlePos !== "inherited") console.log(`Layout title candidate: w=${layoutTitlePos.width.toFixed(2)},h=${layoutTitlePos.height.toFixed(2)},t=${layoutTitlePos.top.toFixed(2)}`);
+        else console.log(`Layout title candidate: inherited from master`);
       }
     }
 
-    // Title position: mode vote among wide layout titles (width > 50% of slide = 5+ inches).
-    // Narrow agenda/section titles are excluded; the most common wide title wins.
-    const masterTitlePh = masters.find(m => m.index === 1)?.placeholders?.find(p => p.type === "title" || p.type === "ctrTitle");
-    if (masterTitlePh?.position) {
-      layoutPositions["title:0"] = masterTitlePh.position;
-      console.log(`Title position from master: ${JSON.stringify(masterTitlePh.position)}`);
+    // Title position: read directly from master XML first — most authoritative.
+    // Layouts that inherit (no explicit xfrm) defer to this position, which is what PowerPoint uses.
+    const masterFile = zip.file(`ppt/slideMasters/slideMaster1.xml`);
+    let masterTitlePos = null;
+    if (masterFile) {
+      const masterDoc = parseXml(await masterFile.async("string"));
+      for (const sp of masterDoc.getElementsByTagNameNS("*", "sp")) {
+        const ph = sp.getElementsByTagNameNS("*", "ph")[0];
+        if (!ph) continue;
+        const phType = ph.getAttribute("type") || "";
+        if (phType !== "title" && phType !== "ctrTitle") continue;
+        const xfrm = sp.getElementsByTagNameNS("*", "xfrm")[0];
+        const off  = xfrm?.getElementsByTagNameNS("*", "off")[0];
+        const ext  = xfrm?.getElementsByTagNameNS("*", "ext")[0];
+        if (off && ext) {
+          masterTitlePos = {
+            left:   emuToInches(off.getAttribute("x")),
+            top:    emuToInches(off.getAttribute("y")),
+            width:  emuToInches(ext.getAttribute("cx")),
+            height: emuToInches(ext.getAttribute("cy")),
+          };
+          console.log(`Title position from master XML: ${masterTitlePos.left},${masterTitlePos.top},${masterTitlePos.width},${masterTitlePos.height}`);
+          break;
+        }
+      }
+    }
+
+    if (masterTitlePos) {
+      layoutPositions["title:0"] = masterTitlePos;
     } else if (titlePositions.length > 0) {
+      // Fall back to mode vote among wide layout titles
+      const resolvedPositions = titlePositions.filter(p => p !== "inherited");
       const SLIDE_W = 10, SLIDE_H = 7.5;
-      const strictPositions = titlePositions.filter(p => p.width > SLIDE_W * 0.5 && p.top < SLIDE_H * 0.25);
-      const widePositions   = titlePositions.filter(p => p.width > SLIDE_W * 0.5);
-      const candidates = strictPositions.length > 0 ? strictPositions : widePositions.length > 0 ? widePositions : titlePositions;
+      const strictPositions = resolvedPositions.filter(p => p.width > SLIDE_W * 0.5 && p.top < SLIDE_H * 0.25);
+      const widePositions   = resolvedPositions.filter(p => p.width > SLIDE_W * 0.5);
+      const candidates = strictPositions.length > 0 ? strictPositions : widePositions.length > 0 ? widePositions : resolvedPositions;
       const freq = {};
       for (const p of candidates) {
         const k = `${p.left.toFixed(2)},${p.top.toFixed(2)},${p.width.toFixed(2)},${p.height.toFixed(2)}`;
         freq[k] = (freq[k] || 0) + 1;
       }
       const topKey = Object.entries(freq).sort((a, b) => {
-        if (b[1] !== a[1]) return b[1] - a[1]; // most frequent first
-        const aTop = parseFloat(a[0].split(",")[1]);
-        const bTop = parseFloat(b[0].split(",")[1]);
-        return aTop - bTop; // tiebreak: higher on slide (smaller top) wins
+        if (b[1] !== a[1]) return b[1] - a[1];
+        return parseFloat(a[0].split(",")[1]) - parseFloat(b[0].split(",")[1]);
       })[0][0];
       const [left, top, width, height] = topKey.split(",").map(Number);
       layoutPositions["title:0"] = { left, top, width, height };
-      console.log(`Title position from ${candidates.length} wide layout candidates: ${topKey}`);
+      console.log(`Title position from layout vote: ${topKey}`);
     }
   }
 
