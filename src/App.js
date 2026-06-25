@@ -1114,6 +1114,10 @@ export default function App() {
           xml = xml.replace(/<a:buAutoNum[^/]*\/>/g, "");
           xml = xml.replace(/(<a:pPr[^>]*?)\s+indent="[^"]*"/g, "$1");
           xml = xml.replace(/(<a:pPr[^>]*?)\s+marL="[^"]*"/g, "$1");
+          // Strip run-level latin font overrides — these take priority over paragraph-level
+          // font writes from Office.js and prevent the master font from being applied correctly
+          xml = xml.replace(/<a:latin[^>]*typeface="[^"]*"[^>]*\/>/g, "");
+          xml = xml.replace(/<a:latin[^>]*typeface="[^"]*"[^>]*>[\s\S]*?<\/a:latin>/g, "");
           if (xml !== before) {
             zip.file(slidePath, xml);
             addLog("✓ Paragraph formatting reset — saving…");
@@ -1243,13 +1247,13 @@ export default function App() {
         await ctx.sync(); // ONE sync for all cell/group-child loads
         addLog("  2e: cell/group loads done");
 
-        // Write all font/size changes — no syncs inside
+        // Write all font/size changes — unconditionally force master font to override run-level rPr
         for (const { tr, ss } of [...fontJobs, ...tableCellJobs, ...groupTrJobs]) {
           try {
             const targetFont = ss.masterTarget?.fontName || bodyFont?.name;
-            if (targetFont && tr.font.name !== targetFont) {
-              tr.font.name = targetFont; // sets at textRange (paragraph) level
-              try { tr.getSubstring(0).font.name = targetFont; } catch (e) { /* substring not supported */ } // override run-level rPr
+            if (targetFont) {
+              tr.font.name = targetFont;
+              try { tr.getSubstring(0).font.name = targetFont; } catch (e) { /* substring not supported */ }
               totalFixes++;
             }
             const currentSize = typeof ss.current.fontSize === "number" ? ss.current.fontSize : tr.font.size;
