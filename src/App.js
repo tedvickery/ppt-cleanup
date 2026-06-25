@@ -735,7 +735,7 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
         };
         if (!firstLayoutDone && phType !== "title" && phType !== "ctrTitle") layoutPositions[`${phType}:${phIdx}`] = pos;
         if (phType === "title" || phType === "ctrTitle") layoutTitlePos = pos;
-        if (phType === "body" || phType === "obj" || phIdx === "1") hasBody = true;
+        if (phType === "body" || phType === "obj") hasBody = true;
       }
       firstLayoutDone = true;
       if (layoutTitlePos && hasBody) titlePositions.push(layoutTitlePos);
