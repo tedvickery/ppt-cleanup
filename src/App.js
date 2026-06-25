@@ -760,79 +760,24 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
           width: emuToInches(ext.getAttribute("cx")), height: emuToInches(ext.getAttribute("cy")),
         };
         if (!firstLayoutDone && phType !== "title" && phType !== "ctrTitle") layoutPositions[`${phType}:${phIdx}`] = pos;
-        if (phType === "title" || phType === "ctrTitle") {
-          isCtrTitle = phType === "ctrTitle";
-          if (off && ext) {
-            layoutTitlePos = {
-              left: emuToInches(off.getAttribute("x")), top: emuToInches(off.getAttribute("y")),
-              width: emuToInches(ext.getAttribute("cx")), height: emuToInches(ext.getAttribute("cy")),
-            };
-          } else {
-            layoutTitlePos = "inherited"; // no explicit position — inherits from master
-          }
-        }
+        if (phType === "title" || phType === "ctrTitle") { layoutTitlePos = pos; isCtrTitle = phType === "ctrTitle"; }
         if (phType === "body" || phType === "obj") hasBody = true;
       }
       firstLayoutDone = true;
-      if (layoutTitlePos && layoutTitlePos !== "inherited") {
-        titlePositions.push(layoutTitlePos);
-        console.log(`Layout title candidate: w=${layoutTitlePos.width.toFixed(2)},h=${layoutTitlePos.height.toFixed(2)},t=${layoutTitlePos.top.toFixed(2)} hasBody=${hasBody} isCtrTitle=${isCtrTitle}`);
-      } else if (layoutTitlePos === "inherited") {
-        console.log(`Layout title candidate: inherited hasBody=${hasBody} isCtrTitle=${isCtrTitle}`);
-      }
+      if (layoutTitlePos && hasBody && !isCtrTitle) titlePositions.push(layoutTitlePos);
     }
 
-    // Title position: read directly from master XML first — most authoritative.
-    // Layouts that inherit (no explicit xfrm) defer to this position, which is what PowerPoint uses.
-    const masterFile = zip.file(`ppt/slideMasters/slideMaster1.xml`);
-    let masterTitlePos = null;
-    if (masterFile) {
-      const masterDoc = parseXml(await masterFile.async("string"));
-      const allSps = masterDoc.getElementsByTagNameNS("*", "sp");
-      console.log(`Master XML: found ${allSps.length} sp elements`);
-      for (const sp of allSps) {
-        const ph = sp.getElementsByTagNameNS("*", "ph")[0];
-        const phType = ph?.getAttribute("type") || (ph ? "body" : "none");
-        const phIdx  = ph?.getAttribute("idx") || "0";
-        const xfrm = sp.getElementsByTagNameNS("*", "xfrm")[0];
-        const off  = xfrm?.getElementsByTagNameNS("*", "off")[0];
-        const ext  = xfrm?.getElementsByTagNameNS("*", "ext")[0];
-        const dims = (off && ext) ? ` w=${emuToInches(ext.getAttribute("cx")).toFixed(2)} h=${emuToInches(ext.getAttribute("cy")).toFixed(2)} t=${emuToInches(off.getAttribute("y")).toFixed(2)}` : " no-xfrm";
-        console.log(`Master sp: ph=${phType} idx=${phIdx}${dims}`);
-        if ((phType === "title" || phType === "ctrTitle") && off && ext) {
-          masterTitlePos = {
-            left:   emuToInches(off.getAttribute("x")),
-            top:    emuToInches(off.getAttribute("y")),
-            width:  emuToInches(ext.getAttribute("cx")),
-            height: emuToInches(ext.getAttribute("cy")),
-          };
-        }
-      }
-      if (masterTitlePos) console.log(`Master title pos: ${JSON.stringify(masterTitlePos)}`);
-      else console.log(`Master title pos: NOT FOUND`);
-    }
-
-    if (masterTitlePos) {
-      layoutPositions["title:0"] = masterTitlePos;
-    } else if (titlePositions.length > 0) {
-      // Fall back to mode vote among wide layout titles
-      const resolvedPositions = titlePositions.filter(p => p !== "inherited");
-      const SLIDE_W = 10, SLIDE_H = 7.5;
-      const strictPositions = resolvedPositions.filter(p => p.width > SLIDE_W * 0.5 && p.top < SLIDE_H * 0.25);
-      const widePositions   = resolvedPositions.filter(p => p.width > SLIDE_W * 0.5);
-      const candidates = strictPositions.length > 0 ? strictPositions : widePositions.length > 0 ? widePositions : resolvedPositions;
+    // Simple mode vote — most common title position across all content layouts wins
+    if (titlePositions.length > 0) {
       const freq = {};
-      for (const p of candidates) {
+      for (const p of titlePositions) {
         const k = `${p.left.toFixed(2)},${p.top.toFixed(2)},${p.width.toFixed(2)},${p.height.toFixed(2)}`;
         freq[k] = (freq[k] || 0) + 1;
       }
-      const topKey = Object.entries(freq).sort((a, b) => {
-        if (b[1] !== a[1]) return b[1] - a[1];
-        return parseFloat(a[0].split(",")[1]) - parseFloat(b[0].split(",")[1]);
-      })[0][0];
+      const topKey = Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0];
       const [left, top, width, height] = topKey.split(",").map(Number);
       layoutPositions["title:0"] = { left, top, width, height };
-      console.log(`Title position from layout vote: ${topKey}`);
+      console.log(`Title position from ${titlePositions.length} layouts: ${topKey}`);
     }
   }
 
@@ -1251,10 +1196,8 @@ export default function App() {
       if (titleShape && targetTitlePos) {
         const cur = titleShape.position;
         const posNeedsFix = !cur ||
-          Math.abs(cur.left   - targetTitlePos.left)   > targetTitlePos.width  * 0.005 ||
-          Math.abs(cur.top    - targetTitlePos.top)    > targetTitlePos.height * 0.005 ||
-          Math.abs(cur.width  - targetTitlePos.width)  > targetTitlePos.width  * 0.005 ||
-          Math.abs(cur.height - targetTitlePos.height) > targetTitlePos.height * 0.005;
+          Math.abs(cur.left - targetTitlePos.left) > 0.05 ||
+          Math.abs(cur.top  - targetTitlePos.top)  > 0.05;
         const headingFontForTitle = pptxData.theme.fonts.heading;
         const fontNeedsFix = headingFontForTitle &&
           titleShape.current.fontName !== "(inherited)" &&
@@ -1267,10 +1210,17 @@ export default function App() {
         if (posNeedsFix || fontNeedsFix || fillNeedsFix || titleColorNeedsFix) {
           addLog("Step 1: Title position & font…");
           try {
+            // Pass position with only left/top from target — preserve current width/height
+            const posFix = posNeedsFix ? {
+              left:   targetTitlePos.left,
+              top:    targetTitlePos.top,
+              width:  cur?.width  || targetTitlePos.width,
+              height: cur?.height || targetTitlePos.height,
+            } : undefined;
             await applyFixes(dupIndex, [{
               shapeName: titleShape.name, shapeId: titleShape.id, _slideShape: titleShape,
               shapeFill: fillNeedsFix ? "none" : (titleShape.shapeFill || null),
-              ...(posNeedsFix  ? { position: targetTitlePos } : {}),
+              ...(posNeedsFix ? { position: posFix } : {}),
               ...(fontNeedsFix || titleColorNeedsFix ? { font: {
                 ...(fontNeedsFix ? { name: headingFontForTitle } : {}),
                 ...(titleColorNeedsFix ? { color: primaryThemeColorForTitle } : {}),
