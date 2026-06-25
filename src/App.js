@@ -738,7 +738,10 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
         if (phType === "body" || phType === "obj") hasBody = true;
       }
       firstLayoutDone = true;
-      if (layoutTitlePos && hasBody) titlePositions.push(layoutTitlePos);
+      if (layoutTitlePos && hasBody) {
+        titlePositions.push(layoutTitlePos);
+        console.log(`Layout title candidate: w=${layoutTitlePos.width.toFixed(2)},h=${layoutTitlePos.height.toFixed(2)},t=${layoutTitlePos.top.toFixed(2)}`);
+      }
     }
 
     // Title position: use the most common position across all layouts (mode vote).
