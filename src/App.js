@@ -1177,7 +1177,10 @@ export default function App() {
           Math.abs(cur.top    - targetTitlePos.top)    > targetTitlePos.height * 0.005 ||
           Math.abs(cur.width  - targetTitlePos.width)  > targetTitlePos.width  * 0.005 ||
           Math.abs(cur.height - targetTitlePos.height) > targetTitlePos.height * 0.005;
-        const fontNeedsFix = titleShape.current.fontName !== "(inherited)" && titleShape.current.fontName !== titleShape.masterTarget?.fontName;
+        const headingFontForTitle = pptxData.theme.fonts.heading;
+        const fontNeedsFix = headingFontForTitle &&
+          titleShape.current.fontName !== "(inherited)" &&
+          titleShape.current.fontName !== headingFontForTitle;
         const fillNeedsFix = titleShape.shapeFill && titleShape.shapeFill !== "none" && titleShape.masterTarget?.fill === "none";
         const primaryThemeColorForTitle = themeColorList[0];
         const titleColorNeedsFix = primaryThemeColorForTitle &&
@@ -1190,8 +1193,10 @@ export default function App() {
               shapeName: titleShape.name, shapeId: titleShape.id, _slideShape: titleShape,
               shapeFill: fillNeedsFix ? "none" : (titleShape.shapeFill || null),
               ...(posNeedsFix  ? { position: targetTitlePos } : {}),
-              ...(fontNeedsFix ? { font: { name: titleShape.masterTarget?.fontName } } : {}),
-              ...(titleColorNeedsFix ? { font: { ...(fontNeedsFix ? { name: titleShape.masterTarget?.fontName } : {}), color: primaryThemeColorForTitle } } : {}),
+              ...(fontNeedsFix || titleColorNeedsFix ? { font: {
+                ...(fontNeedsFix ? { name: headingFontForTitle } : {}),
+                ...(titleColorNeedsFix ? { color: primaryThemeColorForTitle } : {}),
+              } } : {}),
             }], themeColors);
             totalFixes++;
           } catch (e) { addLog(`⚠ Step 1 error: ${e.message}`); }
