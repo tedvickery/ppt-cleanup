@@ -253,6 +253,30 @@ function parseMasterXml(xml, theme) {
 
     placeholders.push({ type: phType, idx: phIdx, font: { name: fontName, size: fontSize, color, bold }, alignment, position, fill: masterFill, paraFormat });
   }
+
+  // Fallback: if no placeholders found, try reading font from <p:txStyles> which some
+  // modern masters use instead of placeholder shapes to define default text formatting
+  if (placeholders.length === 0) {
+    const txStyles = doc.getElementsByTagNameNS("*", "txStyles")[0];
+    if (txStyles) {
+      const styleMap = { titleStyle: "title", bodyStyle: "body", otherStyle: "body" };
+      for (const [elName, phType] of Object.entries(styleMap)) {
+        const styleEl = txStyles.getElementsByTagNameNS("*", elName)[0];
+        if (!styleEl) continue;
+        const lvl1pPr    = styleEl.getElementsByTagNameNS("*", "lvl1pPr")[0];
+        const lvl1DefRPr = lvl1pPr?.getElementsByTagNameNS("*", "defRPr")[0];
+        const fontName   = getEffectiveFont(null, null, lvl1DefRPr, theme, phType === "title");
+        const color      = getEffectiveColour(null, null, lvl1DefRPr, theme, phType === "title");
+        let fontSize = null;
+        if (lvl1DefRPr) { const sz = lvl1DefRPr.getAttribute("sz"); if (sz) fontSize = parseInt(sz, 10) / 100; }
+        if (!fontSize) fontSize = phType === "title" ? 36 : 18;
+        if (!placeholders.find(p => p.type === phType)) {
+          placeholders.push({ type: phType, idx: "0", font: { name: fontName, size: fontSize, color, bold: phType === "title" }, alignment: "left", position: null, fill: null, paraFormat: {} });
+        }
+      }
+    }
+  }
+
   return placeholders;
 }
 
@@ -1190,13 +1214,14 @@ export default function App() {
         await ctx.sync();
         addLog("  2c: shape IDs loaded");
 
-        // ── Font step: compute normalised size, then batch load all text ranges ──
+        // ── Font step: use theme fonts directly — most reliable source ──────────
         const nonTitleSizes = pptxData.slideShapes
           .filter(ss => ss.phType !== "title" && ss.phType !== "ctrTitle" && typeof ss.current.fontSize === "number")
           .map(ss => ss.current.fontSize);
         const sizeFreq = nonTitleSizes.reduce((acc, s) => { acc[s] = (acc[s] || 0) + 1; return acc; }, {});
         const normalisedSize = nonTitleSizes.length > 0 ? parseInt(Object.entries(sizeFreq).sort((a, b) => b[1] - a[1])[0][0]) : null;
-        const bodyFont = pptxData.masterPlaceholders.find(p => p.type === "body")?.font;
+        const bodyFont = pptxData.theme.fonts.body;   // minor font = body text
+        const headingFont = pptxData.theme.fonts.heading; // major font = titles
 
         // Batch: load all regular shape text ranges — only need size (name write is unconditional)
         const fontJobs = [];
@@ -1252,12 +1277,11 @@ export default function App() {
         // Write all font/size changes
         const firstFontJob = fontJobs[0];
         if (firstFontJob) {
-          const targetFont = firstFontJob.ss.masterTarget?.fontName || bodyFont?.name;
-          addLog(`  Font target: "${targetFont}" (masterTarget: "${firstFontJob.ss.masterTarget?.fontName}", bodyFont: "${bodyFont?.name}")`);
+          addLog(`  Font target: body="${bodyFont}" heading="${headingFont}"`);
         }
         for (const { tr, ss } of [...fontJobs, ...tableCellJobs, ...groupTrJobs]) {
           try {
-            const targetFont = ss.masterTarget?.fontName || bodyFont?.name;
+            const targetFont = bodyFont;
             if (targetFont) { tr.font.name = targetFont; totalFixes++; }
             const currentSize = typeof ss.current.fontSize === "number" ? ss.current.fontSize : tr.font.size;
             if (normalisedSize && currentSize !== null && Math.abs(currentSize - normalisedSize) <= 3 && tr.font.size !== normalisedSize) { tr.font.size = normalisedSize; totalFixes++; }
