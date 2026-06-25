@@ -718,7 +718,7 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
       const layoutFile = zip.file(`ppt/slideLayouts/slideLayout${layoutMatch[1]}.xml`);
       if (!layoutFile) continue;
       const layoutDoc = parseXml(await layoutFile.async("string"));
-      let layoutTitlePos = null, hasBody = false;
+      let layoutTitlePos = null, hasBody = false, isCtrTitle = false;
 
       for (const sp of layoutDoc.getElementsByTagNameNS("*", "sp")) {
         const ph = sp.getElementsByTagNameNS("*", "ph")[0];
@@ -734,34 +734,35 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
           width: emuToInches(ext.getAttribute("cx")), height: emuToInches(ext.getAttribute("cy")),
         };
         if (!firstLayoutDone && phType !== "title" && phType !== "ctrTitle") layoutPositions[`${phType}:${phIdx}`] = pos;
-        if (phType === "title" || phType === "ctrTitle") layoutTitlePos = pos;
+        if (phType === "title" || phType === "ctrTitle") { layoutTitlePos = pos; isCtrTitle = phType === "ctrTitle"; }
         if (phType === "body" || phType === "obj") hasBody = true;
       }
       firstLayoutDone = true;
-      if (layoutTitlePos && hasBody) {
+      // Exclude ctrTitle layouts (title slides) — only content layouts with a body area count
+      if (layoutTitlePos && hasBody && !isCtrTitle) {
         titlePositions.push(layoutTitlePos);
         console.log(`Layout title candidate: w=${layoutTitlePos.width.toFixed(2)},h=${layoutTitlePos.height.toFixed(2)},t=${layoutTitlePos.top.toFixed(2)}`);
       }
     }
 
-    // Mode vote — filter to titles that are wide (>= 5 inches) to exclude narrow agenda/section layouts.
-    // Falls back to unfiltered if nothing passes.
-    const wideTitlePositions  = titlePositions.filter(p => p.width >= 5);
-    const titlePositionsToUse = wideTitlePositions.length > 0 ? wideTitlePositions : titlePositions;
+    // Title position: mode vote among wide layout titles (width > 50% of slide = 5+ inches).
+    // Narrow agenda/section titles are excluded; the most common wide title wins.
     const masterTitlePh = masters.find(m => m.index === 1)?.placeholders?.find(p => p.type === "title" || p.type === "ctrTitle");
     if (masterTitlePh?.position) {
       layoutPositions["title:0"] = masterTitlePh.position;
       console.log(`Title position from master: ${JSON.stringify(masterTitlePh.position)}`);
-    } else if (titlePositionsToUse.length > 0) {
+    } else if (titlePositions.length > 0) {
+      const wideTitlePositions = titlePositions.filter(p => p.width >= 5);
+      const candidates = wideTitlePositions.length > 0 ? wideTitlePositions : titlePositions;
       const freq = {};
-      for (const p of titlePositionsToUse) {
+      for (const p of candidates) {
         const k = `${p.left.toFixed(2)},${p.top.toFixed(2)},${p.width.toFixed(2)},${p.height.toFixed(2)}`;
         freq[k] = (freq[k] || 0) + 1;
       }
       const topKey = Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0];
       const [left, top, width, height] = topKey.split(",").map(Number);
       layoutPositions["title:0"] = { left, top, width, height };
-      console.log(`Title position from ${titlePositionsToUse.length} layouts: ${topKey}`);
+      console.log(`Title position from ${candidates.length} wide layout candidates: ${topKey}`);
     }
   }
 
