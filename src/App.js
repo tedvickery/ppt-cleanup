@@ -1198,13 +1198,13 @@ export default function App() {
         const normalisedSize = nonTitleSizes.length > 0 ? parseInt(Object.entries(sizeFreq).sort((a, b) => b[1] - a[1])[0][0]) : null;
         const bodyFont = pptxData.masterPlaceholders.find(p => p.type === "body")?.font;
 
-        // Batch: load all regular shape text ranges at once
+        // Batch: load all regular shape text ranges — only need size (name write is unconditional)
         const fontJobs = [];
         for (const ss of pptxData.slideShapes) {
           if (ss.isTable || ss.isGroup || ss.phType === "title" || ss.phType === "ctrTitle") continue;
           const os = shapes.items.find(s => String(s.id) === String(ss.id)) || shapes.items.find(s => s.name === ss.name);
           if (!os) continue;
-          try { const tr = os.textFrame.textRange; tr.font.load(["name", "size"]); fontJobs.push({ tr, ss }); } catch (e) { /* no text frame */ }
+          try { const tr = os.textFrame.textRange; tr.font.load("size"); fontJobs.push({ tr, ss, os }); } catch (e) { /* no text frame */ }
         }
         // Batch: load all table dimensions at once
         const tableJobs = [];
@@ -1232,7 +1232,7 @@ export default function App() {
             for (let r = 0; r < table.rowCount; r++)
               for (let c = 0; c < table.columnCount; c++) {
                 const tr = table.getCell(r, c).textFrame.textRange;
-                tr.font.load(["name", "size"]);
+                tr.font.load("size");
                 tableCellJobs.push({ tr, ss });
               }
           } catch (e) { /* empty table */ }
@@ -1242,22 +1242,18 @@ export default function App() {
         for (const { os, ss } of groupJobs) {
           try {
             for (const child of os.shapes.items) {
-              try { const tr = child.textFrame.textRange; tr.font.load(["name", "size"]); groupTrJobs.push({ tr, ss }); } catch (e) { /* no text */ }
+              try { const tr = child.textFrame.textRange; tr.font.load("size"); groupTrJobs.push({ tr, ss }); } catch (e) { /* no text */ }
             }
           } catch (e) { /* no children */ }
         }
         await ctx.sync(); // ONE sync for all cell/group-child loads
         addLog("  2e: cell/group loads done");
 
-        // Write all font/size changes — unconditionally force master font to override run-level rPr
+        // Write all font/size changes
         for (const { tr, ss } of [...fontJobs, ...tableCellJobs, ...groupTrJobs]) {
           try {
             const targetFont = ss.masterTarget?.fontName || bodyFont?.name;
-            if (targetFont) {
-              tr.font.name = targetFont;
-              try { tr.getSubstring(0).font.name = targetFont; } catch (e) { /* substring not supported */ }
-              totalFixes++;
-            }
+            if (targetFont) { tr.font.name = targetFont; totalFixes++; }
             const currentSize = typeof ss.current.fontSize === "number" ? ss.current.fontSize : tr.font.size;
             if (normalisedSize && currentSize !== null && Math.abs(currentSize - normalisedSize) <= 3 && tr.font.size !== normalisedSize) { tr.font.size = normalisedSize; totalFixes++; }
           } catch (e) { /* skip */ }
