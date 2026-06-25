@@ -759,7 +759,12 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
         const k = `${p.left.toFixed(2)},${p.top.toFixed(2)},${p.width.toFixed(2)},${p.height.toFixed(2)}`;
         freq[k] = (freq[k] || 0) + 1;
       }
-      const topKey = Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0];
+      const topKey = Object.entries(freq).sort((a, b) => {
+        if (b[1] !== a[1]) return b[1] - a[1]; // most frequent first
+        const aTop = parseFloat(a[0].split(",")[1]);
+        const bTop = parseFloat(b[0].split(",")[1]);
+        return aTop - bTop; // tiebreak: higher on slide (smaller top) wins
+      })[0][0];
       const [left, top, width, height] = topKey.split(",").map(Number);
       layoutPositions["title:0"] = { left, top, width, height };
       console.log(`Title position from ${candidates.length} wide layout candidates: ${topKey}`);
