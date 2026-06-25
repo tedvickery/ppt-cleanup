@@ -1327,7 +1327,7 @@ export default function App() {
         }
         const fillJobs = [];
         for (const os of shapes.items) {
-          try { os.load(["name", "type"]); os.fill.load(["type", "color"]); fillJobs.push({ os, kind: "fill" }); } catch (e) { /* no fill */ }
+          try { os.load(["name", "type"]); os.fill.load(["type", "color", "foregroundColor"]); fillJobs.push({ os, kind: "fill" }); } catch (e) { /* no fill */ }
           try { os.lineFormat.load(["color", "visible"]); fillJobs.push({ os, kind: "line" }); } catch (e) { /* no line */ }
         }
         // Load table colour jobs
@@ -1383,11 +1383,12 @@ export default function App() {
           try {
             if (kind === "fill") {
               if (String(os.fill.type).toLowerCase() !== "solid") continue;
-              // Try Office.js live colour first, then XML-parsed shapeFill as fallback
-              const liveRaw = os.fill.color ? (os.fill.color.startsWith("#") ? os.fill.color : `#${os.fill.color}`) : null;
+              // Try color first, then foregroundColor, then XML-parsed shapeFill
+              const liveColor = os.fill.color ? (os.fill.color.startsWith("#") ? os.fill.color : `#${os.fill.color}`) : null;
+              const liveFg    = os.fill.foregroundColor ? (os.fill.foregroundColor.startsWith("#") ? os.fill.foregroundColor : `#${os.fill.foregroundColor}`) : null;
               const ss = pptxData.slideShapes.find(s => String(s.id) === String(os.id) || s.name === os.name);
               const xmlFill = ss?.shapeFill && !ss.shapeFill.startsWith("theme:") && ss.shapeFill !== "none" && !ss.shapeFill.includes("gradient") ? ss.shapeFill : null;
-              const effectiveFill = liveRaw || xmlFill;
+              const effectiveFill = liveColor || liveFg || xmlFill;
               if (effectiveFill) {
                 // We know the current colour — snap to nearest theme colour
                 if (fillPool.some(c => c.toLowerCase() === effectiveFill.toLowerCase())) continue; // already correct
