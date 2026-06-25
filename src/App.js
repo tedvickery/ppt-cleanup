@@ -1298,16 +1298,8 @@ export default function App() {
         addLog("  3b: building colour pools…");
         const themeColorsNoBg = Object.fromEntries(Object.entries(themeColors).filter(([, v]) => !v || v.toLowerCase() !== bgColor.toLowerCase()));
         const themeColorValues = Object.values(themeColors).filter(Boolean).filter(c => c.toLowerCase() !== bgColor.toLowerCase());
-        const bgIsLight = hexLuminance(bgColor) > 0.5;
-        const sortedByLuminance = [...themeColorValues].sort((a, b) => hexLuminance(b) - hexLuminance(a));
-        const fontColorPool = bgIsLight ? sortedByLuminance.slice(-2) : sortedByLuminance.slice(0, 2);
-        const fontPrimaryColor = fontColorPool[0] || themeColorValues[0];
-        const remainingColors = themeColorValues.filter(c => !fontColorPool.some(f => f.toLowerCase() === c.toLowerCase()));
-        const minDistToFont = (c) => Math.min(...fontColorPool.map(f => colourDistance(c, f)));
-        let shapeColorPool = [];
-        for (let t = 350; t >= 0; t -= 50) { shapeColorPool = remainingColors.filter(c => minDistToFont(c) >= t); if (shapeColorPool.length > 0) break; }
-        if (shapeColorPool.length === 0) shapeColorPool = remainingColors.length > 0 ? remainingColors : themeColorValues;
-        const fontThemeColors = Object.fromEntries(Object.entries(themeColors).filter(([, v]) => v && fontColorPool.some(c => c.toLowerCase() === v.toLowerCase())));
+        const fontPrimaryColor = themeColorValues[0];
+        const fontThemeColors = themeColorsNoBg; // snap font colours against full palette (minus background)
 
         // Batch load all font colours and fill colours at once
         const colorJobs = [];
@@ -1370,7 +1362,7 @@ export default function App() {
         }
 
         // Write all fill/border colours
-        const fillPool = shapeColorPool.length > 0 ? shapeColorPool : themeColorValues;
+        const fillPool = themeColorValues.length > 0 ? themeColorValues : Object.values(themeColors).filter(Boolean);
         for (const { os, kind } of fillJobs) {
           try {
             if (kind === "fill") {
