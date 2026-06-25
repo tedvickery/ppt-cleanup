@@ -1175,6 +1175,7 @@ export default function App() {
       const titleMaster   = pptxData.masterPlaceholders.find(p => p.type === "title" || p.type === "ctrTitle");
       const layoutTitlePos = pptxData.layoutPositions?.["title:0"];
       const targetTitlePos = layoutTitlePos || titleMaster?.position;
+      addLog(`  Title: shape="${titleShape?.name}" targetPos=${JSON.stringify(targetTitlePos)}`);
 
       if (titleShape && targetTitlePos) {
         const cur = titleShape.position;
