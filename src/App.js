@@ -1158,12 +1158,15 @@ export default function App() {
         const slides = ctx.presentation.slides;
         slides.load("items");
         await ctx.sync();
+        addLog("  2a: slides loaded");
         const slide  = slides.items[dupIndex - 1];
         const shapes = slide.shapes;
         shapes.load("items");
         await ctx.sync();
+        addLog("  2b: shapes loaded");
         for (const s of shapes.items) s.load(["id", "name", "type"]);
         await ctx.sync();
+        addLog("  2c: shape IDs loaded");
 
         // ── Font step: compute normalised size, then batch load all text ranges ──
         const nonTitleSizes = pptxData.slideShapes
@@ -1198,6 +1201,7 @@ export default function App() {
           try { os.shapes.load("items"); groupJobs.push({ os, ss }); } catch (e) { /* no group */ }
         }
         await ctx.sync(); // ONE sync for all shape/table/group loads
+        addLog("  2d: font loads queued");
 
         // Load table cells now that we know dimensions
         const tableCellJobs = [];
@@ -1221,6 +1225,7 @@ export default function App() {
           } catch (e) { /* no children */ }
         }
         await ctx.sync(); // ONE sync for all cell/group-child loads
+        addLog("  2e: cell/group loads done");
 
         // Write all font/size changes — no syncs inside
         for (const { tr, ss } of [...fontJobs, ...tableCellJobs, ...groupTrJobs]) {
@@ -1254,9 +1259,11 @@ export default function App() {
           }
         }
         await ctx.sync(); // ONE sync for all font/size writes
+        addLog("  2f: font writes done");
 
         // ── Colour step ──────────────────────────────────────────────────────────
         addLog("Step 3: Colours…");
+        addLog("  3a: reading backgrounds…");
         let bgColor = "#FFFFFF";
         let masterBgColor = "#FFFFFF";
         try {
@@ -1288,6 +1295,7 @@ export default function App() {
         }
 
         // Build colour pools
+        addLog("  3b: building colour pools…");
         const themeColorsNoBg = Object.fromEntries(Object.entries(themeColors).filter(([, v]) => !v || v.toLowerCase() !== bgColor.toLowerCase()));
         const themeColorValues = Object.values(themeColors).filter(Boolean).filter(c => c.toLowerCase() !== bgColor.toLowerCase());
         const bgIsLight = hexLuminance(bgColor) > 0.5;
