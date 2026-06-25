@@ -741,11 +741,10 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
       if (layoutTitlePos && hasBody) titlePositions.push(layoutTitlePos);
     }
 
-    // Title position: master placeholder is most authoritative, fall back to layout vote
-    // Filter: only include title positions that are wide enough to be a real content title
-    // (narrow titles < 4 inches are likely agenda/divider/section layouts, not standard content)
-    const validTitlePositions = titlePositions.filter(p => p.width >= 4);
-    const titlePositionsToUse = validTitlePositions.length > 0 ? validTitlePositions : titlePositions;
+    // Title position: use the most common position across all layouts (mode vote).
+    // Standard content layouts outnumber title/agenda/section layouts, so the mode
+    // naturally picks the correct content-slide title position.
+    const titlePositionsToUse = titlePositions;
     const masterTitlePh = masters.find(m => m.index === 1)?.placeholders?.find(p => p.type === "title" || p.type === "ctrTitle");
     if (masterTitlePh?.position) {
       layoutPositions["title:0"] = masterTitlePh.position;
