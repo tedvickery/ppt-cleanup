@@ -1081,6 +1081,117 @@ export default function App() {
     }
   }, []);
 
+  // ── Rebuild slide: fresh shell from layout + copied content shapes ────────
+  const handleRebuildSlide = useCallback(async () => {
+    setStatus("running");
+    setLog([]);
+    setError(null);
+    addLog("Rebuilding slide from master…");
+    try {
+      const zip = cachedZip.current;
+      if (!zip) throw new Error("No file loaded — run cleanup first to load the file");
+
+      // Get current slide index
+      const slideIndex = await getSelectedSlideIndex();
+      const slidePath = `ppt/slides/slide${slideIndex}.xml`;
+      const slideRelsPath = `ppt/slides/_rels/slide${slideIndex}.xml.rels`;
+
+      const slideFile = zip.file(slidePath);
+      const slideRelsFile = zip.file(slideRelsPath);
+      if (!slideFile || !slideRelsFile) throw new Error("Slide files not found in ZIP");
+
+      const slideXml = await slideFile.async("string");
+      const slideRelsXml = await slideRelsFile.async("string");
+
+      // Find which layout this slide references
+      const slideRelsDoc = parseXml(slideRelsXml);
+      const rels = slideRelsDoc.getElementsByTagNameNS("*", "Relationship");
+      let layoutRId = null, layoutPath = null;
+      for (const rel of rels) {
+        const type = rel.getAttribute("Type") || "";
+        if (type.includes("slideLayout")) {
+          layoutRId = rel.getAttribute("Id");
+          const target = rel.getAttribute("Target") || "";
+          layoutPath = target.startsWith("../") ? "ppt/" + target.slice(3) : "ppt/slides/" + target;
+          break;
+        }
+      }
+      if (!layoutPath) throw new Error("Could not find layout reference in slide rels");
+      addLog(`Layout: ${layoutPath}`);
+
+      // Extract content shapes from current slide (non-placeholder shapes only)
+      const slideDoc = parseXml(slideXml);
+      const spTree = slideDoc.getElementsByTagNameNS("*", "spTree")[0];
+      if (!spTree) throw new Error("No spTree found in slide");
+
+      // Collect content nodes: shapes without ph, pictures, graphic frames, groups
+      const contentNodes = [];
+      for (const child of Array.from(spTree.childNodes)) {
+        const localName = child.localName;
+        if (!localName) continue;
+        if (localName === "sp") {
+          // Only include if it has NO placeholder (ph) element
+          const ph = child.getElementsByTagNameNS?.("*", "ph")?.[0];
+          if (!ph) contentNodes.push(child);
+        } else if (["pic", "graphicFrame", "grpSp", "sp"].includes(localName)) {
+          contentNodes.push(child);
+        }
+      }
+      addLog(`Found ${contentNodes.length} content shapes to carry over`);
+
+      // Build fresh slide XML — minimal shell referencing same layout
+      // The layout inheritance brings in footer, page number, date placeholders automatically
+      const freshSlideXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+       xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+       xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <p:cSld>
+    <p:spTree>
+      <p:nvGrpSpPr>
+        <p:cNvPr id="1" name=""/>
+        <p:cNvGrpSpPr/>
+        <p:nvPr/>
+      </p:nvGrpSpPr>
+      <p:grpSpPr>
+        <a:xfrm>
+          <a:off x="0" y="0"/>
+          <a:ext cx="0" cy="0"/>
+          <a:chOff x="0" y="0"/>
+          <a:chExt cx="0" cy="0"/>
+        </a:xfrm>
+      </p:grpSpPr>
+      ${contentNodes.map(n => {
+        const s = new XMLSerializer();
+        return s.serializeToString(n);
+      }).join("\n      ")}
+    </p:spTree>
+  </p:cSld>
+  <p:clrMapOvr>
+    <a:masterClrMapping/>
+  </p:clrMapOvr>
+</p:sld>`;
+
+      zip.file(slidePath, freshSlideXml);
+
+      // Save back to PowerPoint
+      const newPptxBytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+      await new Promise((resolve, reject) => {
+        Office.context.document.setFileAsync(newPptxBytes.buffer, { fileType: Office.FileType.Compressed }, (result) => {
+          result.status === Office.AsyncResultStatus.Succeeded ? resolve() : reject(new Error(result.error?.message || "setFileAsync failed"));
+        });
+      });
+
+      // Invalidate cache for this slide
+      if (cachedPptxData.current[slideIndex]) delete cachedPptxData.current[slideIndex];
+
+      addLog(`✓ Slide rebuilt — ${contentNodes.length} shapes carried over`);
+      setStatus("done");
+    } catch (e) {
+      addLog(`⚠ Rebuild failed: ${e.message}`);
+      setStatus("idle");
+    }
+  }, [addLog]);
+
   const handleCleanup = useCallback(async () => {
     setStatus("running");
     setLog([]);
@@ -1227,6 +1338,41 @@ export default function App() {
               } } : {}),
             }], themeColors);
             totalFixes++;
+
+            // ── Squeeze content shapes to fit new available space below title ──
+            if (posNeedsFix && cur) {
+              const SLIDE_H = 7.5;
+              const titleH = cur.height || (targetTitlePos.height || 0.5);
+              const oldTitleBottom = cur.top + titleH;
+              const newTitleBottom = targetTitlePos.top + titleH;
+              const oldAvail = SLIDE_H - oldTitleBottom;
+              const newAvail = SLIDE_H - newTitleBottom;
+
+              if (oldAvail > 0 && newAvail > 0 && Math.abs(oldAvail - newAvail) > 0.05) {
+                const ratio = newAvail / oldAvail;
+                addLog(`  Squeezing content: ratio=${ratio.toFixed(3)} (${oldAvail.toFixed(2)}" → ${newAvail.toFixed(2)}")`);
+
+                // Find all non-title shapes that were below the old title bottom
+                const shapesToSqueeze = pptxData.slideShapes.filter(ss =>
+                  ss.phType !== "title" && ss.phType !== "ctrTitle" &&
+                  ss.position && ss.position.top >= oldTitleBottom - 0.05
+                );
+
+                if (shapesToSqueeze.length > 0) {
+                  await applyFixes(dupIndex, shapesToSqueeze.map(ss => ({
+                    shapeName: ss.name, shapeId: ss.id, _slideShape: ss,
+                    position: {
+                      left:   ss.position.left,
+                      top:    newTitleBottom + (ss.position.top - oldTitleBottom) * ratio,
+                      width:  ss.position.width,
+                      height: ss.position.height * ratio,
+                    },
+                  })), themeColors);
+                  totalFixes += shapesToSqueeze.length;
+                  addLog(`  ✓ Squeezed ${shapesToSqueeze.length} shapes`);
+                }
+              }
+            }
           } catch (e) { addLog(`⚠ Step 1 error: ${e.message}`); }
         }
       }
@@ -1844,6 +1990,11 @@ export default function App() {
           {isRunning ? (
             <><span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.3)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block" }} />Working…</>
           ) : status === "done" ? "✓ Done — clean another?" : "SnapBack"}
+        </button>
+
+        <button onClick={handleRebuildSlide} disabled={isRunning}
+          style={{ width: "100%", padding: "10px 0", background: "none", color: "#374151", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", marginTop: 6 }}>
+          ↺ Rebuild from master
         </button>
 
         {status === "done" && fixCount > 0  && <FixBadge count={fixCount} />}
