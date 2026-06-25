@@ -1250,6 +1250,11 @@ export default function App() {
         addLog("  2e: cell/group loads done");
 
         // Write all font/size changes
+        const firstFontJob = fontJobs[0];
+        if (firstFontJob) {
+          const targetFont = firstFontJob.ss.masterTarget?.fontName || bodyFont?.name;
+          addLog(`  Font target: "${targetFont}" (masterTarget: "${firstFontJob.ss.masterTarget?.fontName}", bodyFont: "${bodyFont?.name}")`);
+        }
         for (const { tr, ss } of [...fontJobs, ...tableCellJobs, ...groupTrJobs]) {
           try {
             const targetFont = ss.masterTarget?.fontName || bodyFont?.name;
