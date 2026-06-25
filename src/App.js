@@ -742,20 +742,24 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
     }
 
     // Title position: master placeholder is most authoritative, fall back to layout vote
+    // Filter: only include title positions that are wide enough to be a real content title
+    // (narrow titles < 4 inches are likely agenda/divider/section layouts, not standard content)
+    const validTitlePositions = titlePositions.filter(p => p.width >= 4);
+    const titlePositionsToUse = validTitlePositions.length > 0 ? validTitlePositions : titlePositions;
     const masterTitlePh = masters.find(m => m.index === 1)?.placeholders?.find(p => p.type === "title" || p.type === "ctrTitle");
     if (masterTitlePh?.position) {
       layoutPositions["title:0"] = masterTitlePh.position;
       console.log(`Title position from master: ${JSON.stringify(masterTitlePh.position)}`);
-    } else if (titlePositions.length > 0) {
+    } else if (titlePositionsToUse.length > 0) {
       const freq = {};
-      for (const p of titlePositions) {
+      for (const p of titlePositionsToUse) {
         const k = `${p.left.toFixed(2)},${p.top.toFixed(2)},${p.width.toFixed(2)},${p.height.toFixed(2)}`;
         freq[k] = (freq[k] || 0) + 1;
       }
       const topKey = Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0];
       const [left, top, width, height] = topKey.split(",").map(Number);
       layoutPositions["title:0"] = { left, top, width, height };
-      console.log(`Title position from ${titlePositions.length} layouts: ${topKey}`);
+      console.log(`Title position from ${titlePositionsToUse.length} layouts: ${topKey}`);
     }
   }
 
