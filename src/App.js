@@ -101,6 +101,53 @@ function parseThemeXml(xml) {
   };
 }
 
+/* ── Colour / font extraction helpers ───────────────────────────────────── */
+
+// Extract a resolved colour from a single rPr/defRPr element, or null if none
+function extractColourFromRPr(rPr, theme) {
+  if (!rPr) return null;
+  const solidFill = rPr.getElementsByTagNameNS("*", "solidFill")[0];
+  if (!solidFill) return null;
+  const srgb   = solidFill.getElementsByTagNameNS("*", "srgbClr")[0];
+  const scheme = solidFill.getElementsByTagNameNS("*", "schemeClr")[0];
+  const sys    = solidFill.getElementsByTagNameNS("*", "sysClr")[0];
+  if (srgb)    return "#" + srgb.getAttribute("val");
+  if (sys)     return "#" + (sys.getAttribute("lastClr") || "000000");
+  if (scheme)  return resolveThemeColor(scheme.getAttribute("val"), theme.colors) || null;
+  return null;
+}
+
+// Extract a font name from a single rPr/defRPr element, resolving +mj/+mn theme references
+function extractFontFromRPr(rPr, theme) {
+  if (!rPr) return null;
+  const latin = rPr.getElementsByTagNameNS("*", "latin")[0];
+  const tf = latin?.getAttribute("typeface");
+  if (!tf) return null;
+  if (tf.startsWith("+mj")) return theme.fonts.heading;
+  if (tf.startsWith("+mn")) return theme.fonts.body;
+  return tf;
+}
+
+// Walk the full OOXML inheritance chain for colour: run → para defRPr → lstStyle lvl1pPr → fallback
+function getEffectiveColour(runRPr, paraDefRPr, lvl1DefRPr, theme, isTitle) {
+  return (
+    extractColourFromRPr(runRPr,    theme) ||
+    extractColourFromRPr(paraDefRPr, theme) ||
+    extractColourFromRPr(lvl1DefRPr, theme) ||
+    (isTitle ? (theme.colors.dark1 || "#000000") : (theme.colors.dark2 || theme.colors.dark1 || "#000000"))
+  );
+}
+
+// Walk the full OOXML inheritance chain for font name
+function getEffectiveFont(runRPr, paraDefRPr, lvl1DefRPr, theme, isTitle) {
+  return (
+    extractFontFromRPr(runRPr,    theme) ||
+    extractFontFromRPr(paraDefRPr, theme) ||
+    extractFontFromRPr(lvl1DefRPr, theme) ||
+    (isTitle ? theme.fonts.heading : theme.fonts.body)
+  );
+}
+
 /* ── Parse slide master XML ─────────────────────────────────────────────── */
 
 function parseMasterXml(xml, theme) {
@@ -121,50 +168,33 @@ function parseMasterXml(xml, theme) {
       height: emuToInches(ext.getAttribute("cy")),
     } : null;
 
-    const txBody   = sp.getElementsByTagNameNS("*", "txBody")[0];
-    const lstStyle = txBody?.getElementsByTagNameNS("*", "lstStyle")[0];
-    const lvl1pPr  = lstStyle?.getElementsByTagNameNS("*", "lvl1pPr")[0];
-    const defRPr   = lvl1pPr?.getElementsByTagNameNS("*", "defRPr")[0];
-    const firstPara = txBody?.getElementsByTagNameNS("*", "p")[0];
-    const pPr       = firstPara?.getElementsByTagNameNS("*", "pPr")[0];
-    const firstRPr  = firstPara?.getElementsByTagNameNS("*", "r")[0]?.getElementsByTagNameNS("*", "rPr")[0];
-    const rPr = defRPr || firstRPr;
+    const txBody    = sp.getElementsByTagNameNS("*", "txBody")[0];
+    const lstStyle  = txBody?.getElementsByTagNameNS("*", "lstStyle")[0];
+    const lvl1pPr   = lstStyle?.getElementsByTagNameNS("*", "lvl1pPr")[0];
+    const lvl1DefRPr = lvl1pPr?.getElementsByTagNameNS("*", "defRPr")[0];
+    const firstPara  = txBody?.getElementsByTagNameNS("*", "p")[0];
+    const pPr        = firstPara?.getElementsByTagNameNS("*", "pPr")[0];
+    const paraDefRPr = pPr?.getElementsByTagNameNS("*", "defRPr")[0];
+    const runRPr     = firstPara?.getElementsByTagNameNS("*", "r")[0]?.getElementsByTagNameNS("*", "rPr")[0];
+    const isTitle    = phType === "title" || phType === "ctrTitle";
 
-    // Font name
-    let fontName = null;
-    if (rPr) {
-      const latin = rPr.getElementsByTagNameNS("*", "latin")[0];
-      const tf = latin?.getAttribute("typeface");
-      if (tf?.startsWith("+mj")) fontName = theme.fonts.heading;
-      else if (tf?.startsWith("+mn")) fontName = theme.fonts.body;
-      else if (tf) fontName = tf;
-    }
-    if (!fontName) fontName = (phType === "title" || phType === "ctrTitle") ? theme.fonts.heading : theme.fonts.body;
+    // Font name — full inheritance walk: run → para defRPr → lstStyle lvl1pPr → theme
+    const fontName = getEffectiveFont(runRPr, paraDefRPr, lvl1DefRPr, theme, isTitle);
 
-    // Font size
+    // Font size — check lvl1DefRPr first, then run rPr, then defaults
     let fontSize = null;
-    if (defRPr) { const sz = defRPr.getAttribute("sz"); if (sz) fontSize = parseInt(sz, 10) / 100; }
-    if (!fontSize) fontSize = (phType === "title" || phType === "ctrTitle") ? 36 : 18;
+    const szEl = lvl1DefRPr || runRPr;
+    if (szEl) { const sz = szEl.getAttribute("sz"); if (sz) fontSize = parseInt(sz, 10) / 100; }
+    if (!fontSize) fontSize = isTitle ? 36 : 18;
 
-    // Colour
-    let color = null;
-    if (rPr) {
-      const solidFill = rPr.getElementsByTagNameNS("*", "solidFill")[0];
-      if (solidFill) {
-        const srgb   = solidFill.getElementsByTagNameNS("*", "srgbClr")[0];
-        const scheme = solidFill.getElementsByTagNameNS("*", "schemeClr")[0];
-        const sys    = solidFill.getElementsByTagNameNS("*", "sysClr")[0];
-        if (srgb)    color = "#" + srgb.getAttribute("val");
-        else if (sys) color = "#" + (sys.getAttribute("lastClr") || "000000");
-        else if (scheme) color = resolveThemeColor(scheme.getAttribute("val"), theme.colors);
-      }
-    }
-    if (!color) color = (phType === "title" || phType === "ctrTitle") ? (theme.colors.dark1 || "#000000") : (theme.colors.dark2 || theme.colors.dark1 || "#000000");
+    // Colour — full inheritance walk: run → para defRPr → lstStyle lvl1pPr → theme
+    const color = getEffectiveColour(runRPr, paraDefRPr, lvl1DefRPr, theme, isTitle);
 
     // Bold
     let bold = null;
-    if (rPr) { const b = rPr.getAttribute("b"); bold = b === "1" || b === "true"; }
-    if (bold === null) bold = (phType === "title" || phType === "ctrTitle");
+    const boldEl = runRPr || lvl1DefRPr;
+    if (boldEl) { const b = boldEl.getAttribute("b"); bold = b === "1" || b === "true"; }
+    if (bold === null) bold = isTitle;
 
     // Alignment
     let alignment = "left";
@@ -339,6 +369,19 @@ function parseSlideXml(xml, theme, masterPlaceholders, layoutPositions = {}) {
       bold   = b === "1" || b === "true" ? true : b === "0" || b === "false" ? false : null;
       const i = rPr.getAttribute("i");
       italic = i === "1" || i === "true" ? true : i === "0" || i === "false" ? false : null;
+    }
+    // Walk inheritance chain for font name if not found on run rPr
+    if (!fontName) {
+      for (const para of allParas) {
+        const defRPr = para.getElementsByTagNameNS("*", "pPr")[0]?.getElementsByTagNameNS("*", "defRPr")[0];
+        const tf = defRPr?.getElementsByTagNameNS("*", "latin")[0]?.getAttribute("typeface");
+        if (tf) { fontName = tf.startsWith("+mj") ? theme.fonts.heading : tf.startsWith("+mn") ? theme.fonts.body : tf; break; }
+      }
+    }
+    if (!fontName) {
+      const lvl1DefRPr = txBody.getElementsByTagNameNS("*", "lstStyle")[0]?.getElementsByTagNameNS("*", "lvl1pPr")[0]?.getElementsByTagNameNS("*", "defRPr")[0];
+      const tf = lvl1DefRPr?.getElementsByTagNameNS("*", "latin")[0]?.getAttribute("typeface");
+      if (tf) fontName = tf.startsWith("+mj") ? theme.fonts.heading : tf.startsWith("+mn") ? theme.fonts.body : tf;
     }
 
     const firstPara = txBody.getElementsByTagNameNS("*", "p")[0];
