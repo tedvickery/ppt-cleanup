@@ -295,7 +295,7 @@ function parseSlideXml(xml, theme, masterPlaceholders, layoutPositions = {}) {
       height: emuToInches(ext.getAttribute("cy")),
     } : (layoutPositions[`${phType}:${phIdx}`] || layoutPositions["body:0"] || null);
 
-    // Shape fill
+    // Shape fill — check spPr first, then fall back to p:style fillRef
     let shapeFill = null, shapeBorder = null;
     const spPr = sp.getElementsByTagNameNS("*", "spPr")[0];
     if (spPr) {
@@ -337,6 +337,22 @@ function parseSlideXml(xml, theme, masterPlaceholders, layoutPositions = {}) {
               shapeBorder = resolved ? resolved.toUpperCase() : ("theme:" + scheme.getAttribute("val"));
             }
           }
+        }
+      }
+    }
+    // If spPr has no fill, check p:style > a:fillRef — this is how icon/preset shapes store their colour
+    if (!shapeFill) {
+      const style = sp.getElementsByTagNameNS("*", "style")[0];
+      const fillRef = style?.getElementsByTagNameNS("*", "fillRef")[0];
+      if (fillRef) {
+        const scheme = fillRef.getElementsByTagNameNS("*", "schemeClr")[0];
+        const srgb   = fillRef.getElementsByTagNameNS("*", "srgbClr")[0];
+        const sys    = fillRef.getElementsByTagNameNS("*", "sysClr")[0];
+        if (srgb)    shapeFill = "#" + srgb.getAttribute("val").toUpperCase();
+        else if (sys) shapeFill = "#" + (sys.getAttribute("lastClr") || "000000").toUpperCase();
+        else if (scheme) {
+          const resolved = resolveThemeColor(scheme.getAttribute("val"), theme.colors);
+          shapeFill = resolved ? resolved.toUpperCase() : ("theme:" + scheme.getAttribute("val"));
         }
       }
     }
@@ -1367,9 +1383,20 @@ export default function App() {
           try {
             if (kind === "fill") {
               if (String(os.fill.type).toLowerCase() !== "solid") continue;
-              const liveFill = os.fill.color ? (os.fill.color.startsWith("#") ? os.fill.color : `#${os.fill.color}`) : null;
-              if (liveFill && fillPool.some(c => c.toLowerCase() === liveFill.toLowerCase())) continue;
-              if (fillPool.length > 0) { os.fill.setSolidColor(fillPool[Math.floor(Math.random() * fillPool.length)].replace("#", "")); totalFixes++; }
+              // Try Office.js live colour first, then XML-parsed shapeFill as fallback
+              const liveRaw = os.fill.color ? (os.fill.color.startsWith("#") ? os.fill.color : `#${os.fill.color}`) : null;
+              const ss = pptxData.slideShapes.find(s => String(s.id) === String(os.id) || s.name === os.name);
+              const xmlFill = ss?.shapeFill && !ss.shapeFill.startsWith("theme:") && ss.shapeFill !== "none" && !ss.shapeFill.includes("gradient") ? ss.shapeFill : null;
+              const effectiveFill = liveRaw || xmlFill;
+              if (effectiveFill) {
+                // We know the current colour — snap to nearest theme colour
+                if (fillPool.some(c => c.toLowerCase() === effectiveFill.toLowerCase())) continue; // already correct
+                const nearest = snapToThemeColor(effectiveFill, themeColorsNoBg);
+                os.fill.setSolidColor(nearest.replace("#", "")); totalFixes++;
+              } else {
+                // Colour is genuinely unresolvable — pick a random theme colour
+                if (fillPool.length > 0) { os.fill.setSolidColor(fillPool[Math.floor(Math.random() * fillPool.length)].replace("#", "")); totalFixes++; }
+              }
             } else {
               if (!os.lineFormat.visible) continue;
               const cur = os.lineFormat.color ? (os.lineFormat.color.startsWith("#") ? os.lineFormat.color : `#${os.lineFormat.color}`) : null;
