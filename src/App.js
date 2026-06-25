@@ -1380,10 +1380,10 @@ export default function App() {
 
         // Build colour pools
         addLog("  3b: building colour pools…");
-        const themeColorsNoBg = Object.fromEntries(Object.entries(themeColors).filter(([, v]) => !v || v.toLowerCase() !== bgColor.toLowerCase()));
-        const themeColorValues = Object.values(themeColors).filter(Boolean).filter(c => c.toLowerCase() !== bgColor.toLowerCase());
+        const themeColorsNoBg = themeColors; // use full palette — background exclusion not needed
+        const themeColorValues = Object.values(themeColors).filter(Boolean);
         const fontPrimaryColor = themeColorValues[0];
-        const fontThemeColors = themeColorsNoBg; // snap font colours against full palette (minus background)
+        const fontThemeColors = themeColors;
 
         // Batch load all font colours and fill colours at once
         const colorJobs = [];
