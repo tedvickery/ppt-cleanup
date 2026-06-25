@@ -788,15 +788,17 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
     let masterTitlePos = null;
     if (masterFile) {
       const masterDoc = parseXml(await masterFile.async("string"));
-      for (const sp of masterDoc.getElementsByTagNameNS("*", "sp")) {
+      const allSps = masterDoc.getElementsByTagNameNS("*", "sp");
+      console.log(`Master XML: found ${allSps.length} sp elements`);
+      for (const sp of allSps) {
         const ph = sp.getElementsByTagNameNS("*", "ph")[0];
-        if (!ph) continue;
-        const phType = ph.getAttribute("type") || "body";
-        const phIdx  = ph.getAttribute("idx") || "0";
+        const phType = ph?.getAttribute("type") || (ph ? "body" : "none");
+        const phIdx  = ph?.getAttribute("idx") || "0";
         const xfrm = sp.getElementsByTagNameNS("*", "xfrm")[0];
         const off  = xfrm?.getElementsByTagNameNS("*", "off")[0];
         const ext  = xfrm?.getElementsByTagNameNS("*", "ext")[0];
-        console.log(`Master ph: type="${phType}" idx="${phIdx}" hasXfrm=${!!xfrm} hasOff=${!!off} hasExt=${!!ext}${off && ext ? ` w=${emuToInches(ext.getAttribute("cx")).toFixed(2)} h=${emuToInches(ext.getAttribute("cy")).toFixed(2)} t=${emuToInches(off.getAttribute("y")).toFixed(2)}` : ""}`);
+        const dims = (off && ext) ? ` w=${emuToInches(ext.getAttribute("cx")).toFixed(2)} h=${emuToInches(ext.getAttribute("cy")).toFixed(2)} t=${emuToInches(off.getAttribute("y")).toFixed(2)}` : " no-xfrm";
+        console.log(`Master sp: ph=${phType} idx=${phIdx}${dims}`);
         if ((phType === "title" || phType === "ctrTitle") && off && ext) {
           masterTitlePos = {
             left:   emuToInches(off.getAttribute("x")),
@@ -804,10 +806,10 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
             width:  emuToInches(ext.getAttribute("cx")),
             height: emuToInches(ext.getAttribute("cy")),
           };
-          console.log(`Title position from master XML: ${masterTitlePos.left},${masterTitlePos.top},${masterTitlePos.width},${masterTitlePos.height}`);
-          break;
         }
       }
+      if (masterTitlePos) console.log(`Master title pos: ${JSON.stringify(masterTitlePos)}`);
+      else console.log(`Master title pos: NOT FOUND`);
     }
 
     if (masterTitlePos) {
