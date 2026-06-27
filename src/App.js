@@ -1620,14 +1620,26 @@ export default function App() {
             s.shapes.items.map(sh => ({ left: sh.left, top: sh.top }))
           );
 
-          // Template shapes = present in 4 or more of the reference slides
-          const templateShapes = refShapeSets[0].filter(shape =>
+          // Collect all unique shape positions across all reference slides
+          const allRefShapes = [];
+          for (const shapeSet of refShapeSets) {
+            for (const shape of shapeSet) {
+              const alreadySeen = allRefShapes.some(s =>
+                Math.abs(s.left - shape.left) < TOL && Math.abs(s.top - shape.top) < TOL
+              );
+              if (!alreadySeen) allRefShapes.push(shape);
+            }
+          }
+
+          // Template shapes = present in 4+ reference slides, or 80%+ if fewer available
+          const minMatches = Math.min(4, Math.ceil(refShapeSets.length * 0.8));
+          const templateShapes = allRefShapes.filter(shape =>
             refShapeSets.filter(otherSet =>
               otherSet.some(other =>
                 Math.abs(other.left - shape.left) < TOL &&
                 Math.abs(other.top  - shape.top)  < TOL
               )
-            ).length >= 4
+            ).length >= minMatches
           );
 
           // Warn if more than 50% of template shapes are missing from current slide
