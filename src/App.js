@@ -945,7 +945,7 @@ function LogLine({ entry }) {
 
 function ThemeCard({ theme, masterPlaceholders }) {
   if (!theme) return null;
-  const colors = Object.entries(theme.colors).filter(([, v]) => v).slice(0, 6);
+  const colors = Object.entries(theme.colors).filter(([, v]) => v);
   return (
     <div style={{ background: "#fff", borderRadius: 10, border: "1px solid #e5e7eb", padding: "12px 14px" }}>
       <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>Detected from file</div>
@@ -953,12 +953,10 @@ function ThemeCard({ theme, masterPlaceholders }) {
         {theme.fonts.heading && <span style={{ fontSize: 10, background: "#eff6ff", color: "#1e40af", padding: "2px 8px", borderRadius: 20, border: "1px solid #bfdbfe" }}>Aa {theme.fonts.heading}</span>}
         {theme.fonts.body && theme.fonts.body !== theme.fonts.heading && <span style={{ fontSize: 10, background: "#f5f3ff", color: "#6d28d9", padding: "2px 8px", borderRadius: 20, border: "1px solid #ddd6fe" }}>Aa {theme.fonts.body}</span>}
       </div>
-      <div style={{ display: "flex", gap: 4, marginBottom: 8, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 3, marginBottom: 8, flexWrap: "wrap" }}>
         {colors.map(([k, v]) => (
-          <div key={k} title={`${k}: ${v}`} style={{ display: "flex", alignItems: "center", gap: 3 }}>
-            <div style={{ width: 14, height: 14, borderRadius: 3, background: v, border: "1px solid rgba(0,0,0,0.1)" }} />
-            <span style={{ fontSize: 9, color: "#6b7280", fontFamily: "monospace" }}>{v}</span>
-          </div>
+          <div key={k} title={`${k}: ${v}`}
+            style={{ width: 18, height: 18, borderRadius: 4, background: v, border: "1px solid rgba(0,0,0,0.12)", flexShrink: 0 }} />
         ))}
       </div>
       <div style={{ fontSize: 10, color: "#9ca3af" }}>{masterPlaceholders.length} master placeholder{masterPlaceholders.length !== 1 ? "s" : ""} · read from XML</div>
