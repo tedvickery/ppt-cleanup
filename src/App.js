@@ -1595,28 +1595,30 @@ export default function App() {
       });
 
 
-      // ── Check if slide is on the correct master ──────────────────────────
+      // ── Check if slide is on the correct master / showing master shapes ───
       try {
         const slideRelsFile = zip.file(`ppt/slides/_rels/slide${slideIndex}.xml.rels`);
-        if (slideRelsFile) {
+        const slideXmlFile  = zip.file(`ppt/slides/slide${slideIndex}.xml`);
+        if (slideRelsFile && slideXmlFile) {
+          // Check if master shapes are suppressed on this slide
+          const slideDoc = parseXml(await slideXmlFile.async("string"));
+          const showMasterSp = slideDoc.getElementsByTagNameNS("*", "cSld")[0]?.getAttribute("showMasterSp");
+          if (showMasterSp === "0") setMasterWarning(true);
+
+          // Also check master index matches dominant master
           const relsDoc = parseXml(await slideRelsFile.async("string"));
           for (const rel of relsDoc.getElementsByTagNameNS("*", "Relationship")) {
             const target = rel.getAttribute("Target") || "";
             const layoutMatch = target.match(/slideLayouts\/slideLayout(\d+)\.xml/);
             if (!layoutMatch) continue;
-            const layoutNum = layoutMatch[1];
-            const layoutRelsFile = zip.file(`ppt/slideLayouts/_rels/slideLayout${layoutNum}.xml.rels`);
+            const layoutRelsFile = zip.file(`ppt/slideLayouts/_rels/slideLayout${layoutMatch[1]}.xml.rels`);
             if (!layoutRelsFile) continue;
             const layoutRelsDoc = parseXml(await layoutRelsFile.async("string"));
             for (const lrel of layoutRelsDoc.getElementsByTagNameNS("*", "Relationship")) {
-              const lTarget = lrel.getAttribute("Target") || "";
-              const masterMatch = lTarget.match(/slideMaster(\d+)\.xml/);
+              const masterMatch = (lrel.getAttribute("Target") || "").match(/slideMaster(\d+)\.xml/);
               if (masterMatch) {
                 const slideMasterIndex = parseInt(masterMatch[1], 10);
-                // Dominant master = the one with the highest slide count = first in the filtered list
-                // (readAllMasters returns filtered masters, dominant first by index)
                 const dominantMasterIndex = cachedMasters.current?.[0]?.index ?? 1;
-                addLog(`  Master check: slide uses master ${slideMasterIndex}, dominant is master ${dominantMasterIndex}`);
                 if (slideMasterIndex !== dominantMasterIndex) setMasterWarning(true);
                 break;
               }
