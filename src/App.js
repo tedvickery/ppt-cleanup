@@ -995,6 +995,7 @@ export default function App() {
   const cachedZip       = useRef(null);
   const cachedMasters   = useRef(null);
   const cachedDominantMaster = useRef(1);
+  const cachedTemplateShapes = useRef(null); // pre-computed once from reference slides
   const cachedPptxData  = useRef({}); // keyed by slideIndex — slide shapes cached between runs
 
   // Load the file in the background as soon as the add-in opens
@@ -1599,67 +1600,63 @@ export default function App() {
           const totalSlides = slides.items.length;
           if (totalSlides < 2) return;
 
-          // Use slides 2-6 as reference (0-indexed: 1-5), excluding current slide
-          const refIndices = [1, 2, 3, 4, 5].filter(i => i < totalSlides && i !== dupIndex - 1);
-          if (refIndices.length < 2) return;
-
-          const refSlides = refIndices.map(i => slides.items[i]);
-          const currentSlide = slides.items[dupIndex - 1];
-
-          for (const s of [...refSlides, currentSlide]) s.shapes.load("items");
-          await ctx.sync();
-
-          for (const s of [...refSlides, currentSlide]) {
-            for (const shape of s.shapes.items) shape.load(["left", "top", "width", "height", "type", "hasTextFrame"]);
-          }
-          await ctx.sync();
-
-          const TOL = 0.15 * 72; // 0.15 inches in points
-
-          // Only consider images and non-text shapes — text boxes are content, not master elements
+          const TOL = 0.15 * 72;
           const isTemplateCandidate = (sh) =>
             sh.type === PowerPoint.ShapeType.picture ||
             (!sh.hasTextFrame && sh.type !== PowerPoint.ShapeType.placeholder);
 
-          const refShapeSets = refSlides.map(s =>
-            s.shapes.items.filter(isTemplateCandidate).map(sh => ({ left: sh.left, top: sh.top }))
-          );
-
-          // Collect all unique shape positions across all reference slides
-          const allRefShapes = [];
-          for (const shapeSet of refShapeSets) {
-            for (const shape of shapeSet) {
-              const alreadySeen = allRefShapes.some(s =>
-                Math.abs(s.left - shape.left) < TOL && Math.abs(s.top - shape.top) < TOL
-              );
-              if (!alreadySeen) allRefShapes.push(shape);
+          // Compute reference template shapes once per file load — always use slides 2-6
+          if (!cachedTemplateShapes.current) {
+            const refIndices = [1, 2, 3, 4, 5].filter(i => i < totalSlides);
+            if (refIndices.length < 2) return;
+            const refSlides = refIndices.map(i => slides.items[i]);
+            for (const s of refSlides) s.shapes.load("items");
+            await ctx.sync();
+            for (const s of refSlides) {
+              for (const sh of s.shapes.items) sh.load(["left", "top", "type", "hasTextFrame"]);
             }
+            await ctx.sync();
+
+            const refShapeSets = refSlides.map(s =>
+              s.shapes.items.filter(isTemplateCandidate).map(sh => ({ left: sh.left, top: sh.top }))
+            );
+
+            const allRefShapes = [];
+            for (const shapeSet of refShapeSets) {
+              for (const shape of shapeSet) {
+                if (!allRefShapes.some(s => Math.abs(s.left - shape.left) < TOL && Math.abs(s.top - shape.top) < TOL)) {
+                  allRefShapes.push(shape);
+                }
+              }
+            }
+
+            const minMatches = Math.min(4, Math.ceil(refShapeSets.length * 0.8));
+            cachedTemplateShapes.current = allRefShapes.filter(shape =>
+              refShapeSets.filter(otherSet =>
+                otherSet.some(other =>
+                  Math.abs(other.left - shape.left) < TOL && Math.abs(other.top - shape.top) < TOL
+                )
+              ).length >= minMatches
+            );
           }
 
-          // Template shapes = present in 4+ reference slides, or 80%+ if fewer available
-          const minMatches = Math.min(4, Math.ceil(refShapeSets.length * 0.8));
-          const templateShapes = allRefShapes.filter(shape =>
-            refShapeSets.filter(otherSet =>
-              otherSet.some(other =>
-                Math.abs(other.left - shape.left) < TOL &&
-                Math.abs(other.top  - shape.top)  < TOL
-              )
-            ).length >= minMatches
-          );
+          const templateShapes = cachedTemplateShapes.current;
+          if (templateShapes.length === 0) return;
 
-          // Warn if more than 50% of template shapes are missing from current slide
+          // Check current slide
+          const currentSlide = slides.items[dupIndex - 1];
+          currentSlide.shapes.load("items");
+          await ctx.sync();
+          for (const sh of currentSlide.shapes.items) sh.load(["left", "top", "type", "hasTextFrame"]);
+          await ctx.sync();
+
           const currentShapes = currentSlide.shapes.items.filter(isTemplateCandidate).map(sh => ({ left: sh.left, top: sh.top }));
           const missing = templateShapes.filter(ts =>
-            !currentShapes.some(cs =>
-              Math.abs(cs.left - ts.left) < TOL &&
-              Math.abs(cs.top  - ts.top)  < TOL
-            )
+            !currentShapes.some(cs => Math.abs(cs.left - ts.left) < TOL && Math.abs(cs.top - ts.top) < TOL)
           );
 
           addLog(`  Template check: ${templateShapes.length} consistent shapes, ${missing.length} missing`);
-          if (templateShapes.length > 0 && missing.length >= templateShapes.length * 0.3) {
-            setMasterWarning(true);
-          }
+          if (missing.length >= templateShapes.length * 0.3) setMasterWarning(true);
         });
       } catch (e) { addLog(`  Template check error: ${e.message}`); }
 
@@ -1744,14 +1741,14 @@ export default function App() {
         {fileReady && status === "idle" && (
           <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "8px 12px", fontSize: 11, color: "#166534", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <span>✓ Template ready: <strong>{cachedMasters.current?.[0]?.name}</strong></span>
-            <button onClick={async () => { setFileReady(false); setFileError(null); try { const { zip, masters, dominantMasterIndex } = await readPptxFile(); cachedZip.current = zip; cachedMasters.current = masters; cachedDominantMaster.current = dominantMasterIndex; cachedPptxData.current = {}; setFileReady(true); } catch (e) { setFileError(e.message); } }}
+            <button onClick={async () => { setFileReady(false); setFileError(null); try { const { zip, masters, dominantMasterIndex } = await readPptxFile(); cachedZip.current = zip; cachedMasters.current = masters; cachedDominantMaster.current = dominantMasterIndex; cachedPptxData.current = {}; cachedTemplateShapes.current = null; setFileReady(true); } catch (e) { setFileError(e.message); } }}
               style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#15803d", textDecoration: "underline", padding: 0 }}>↺ Reload</button>
           </div>
         )}
         {fileError && (
           <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "8px 12px", fontSize: 11, color: "#991b1b", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <span>⚠ {fileError}</span>
-            <button onClick={async () => { setFileReady(false); setFileError(null); try { const { zip, masters, dominantMasterIndex } = await readPptxFile(); cachedZip.current = zip; cachedMasters.current = masters; cachedDominantMaster.current = dominantMasterIndex; cachedPptxData.current = {}; setFileReady(true); } catch (e) { setFileError(e.message); } }}
+            <button onClick={async () => { setFileReady(false); setFileError(null); try { const { zip, masters, dominantMasterIndex } = await readPptxFile(); cachedZip.current = zip; cachedMasters.current = masters; cachedDominantMaster.current = dominantMasterIndex; cachedPptxData.current = {}; cachedTemplateShapes.current = null; setFileReady(true); } catch (e) { setFileError(e.message); } }}
               style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#991b1b", textDecoration: "underline", padding: 0 }}>↺ Retry</button>
           </div>
         )}
