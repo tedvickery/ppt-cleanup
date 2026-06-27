@@ -1609,13 +1609,15 @@ export default function App() {
             if (!layoutRelsFile) continue;
             const layoutRelsDoc = parseXml(await layoutRelsFile.async("string"));
             for (const lrel of layoutRelsDoc.getElementsByTagNameNS("*", "Relationship")) {
-              const masterMatch = (lrel.getAttribute("Target") || "").match(/slideMasters\/slideMaster(\d+)\.xml/);
+              const lTarget = lrel.getAttribute("Target") || "";
+              const masterMatch = lTarget.match(/slideMaster(\d+)\.xml/);
               if (masterMatch) {
                 const slideMasterIndex = parseInt(masterMatch[1], 10);
-                const dominantMasterIndex = cachedMasters.current?.[0]?.index;
-                if (dominantMasterIndex && slideMasterIndex !== dominantMasterIndex) {
-                  setMasterWarning(true);
-                }
+                // Dominant master = the one with the highest slide count = first in the filtered list
+                // (readAllMasters returns filtered masters, dominant first by index)
+                const dominantMasterIndex = cachedMasters.current?.[0]?.index ?? 1;
+                addLog(`  Master check: slide uses master ${slideMasterIndex}, dominant is master ${dominantMasterIndex}`);
+                if (slideMasterIndex !== dominantMasterIndex) setMasterWarning(true);
                 break;
               }
             }
