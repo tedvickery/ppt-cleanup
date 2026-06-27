@@ -1623,14 +1623,14 @@ export default function App() {
             s.shapes.items.map(sh => ({ left: sh.left, top: sh.top, width: sh.width, height: sh.height }))
           );
 
-          // Find shapes present in at least 2/3 reference slides (consistent template elements)
+          // Find shapes present in ALL reference slides (strict — must be on every reference slide)
           const templateShapes = refShapeSets[0].filter(shape =>
-            refShapeSets.slice(1).filter(otherSet =>
+            refShapeSets.slice(1).every(otherSet =>
               otherSet.some(other =>
                 Math.abs(other.left - shape.left) < TOL &&
                 Math.abs(other.top  - shape.top)  < TOL
               )
-            ).length >= Math.min(1, refShapeSets.length - 1)
+            )
           );
 
           // Check if current slide has those template shapes
@@ -1643,7 +1643,7 @@ export default function App() {
           );
 
           addLog(`  Template check: ${templateShapes.length} consistent shapes, ${missing.length} missing`);
-          if (missing.length > 0 && missing.length >= templateShapes.length * 0.5) {
+          if (templateShapes.length > 0 && missing.length >= Math.ceil(templateShapes.length * 0.8)) {
             setMasterWarning(true);
           }
         });
