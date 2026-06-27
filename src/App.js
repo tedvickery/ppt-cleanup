@@ -679,21 +679,31 @@ async function readAllMasters(zip) {
     return maxCount === 0 || count >= Math.max(1, maxCount * 0.2);
   });
   const dominantMasters = filtered.length > 0 ? filtered : masters;
-
-  // Build set of layout numbers owned by the dominant master
-  // Used to detect imported slides whose layout doesn't belong to the template master
   const dominantMasterIndex = dominantMasters[0]?.index ?? 1;
-  const masterOwnedLayouts = new Set();
-  const masterRelsForCheck = zip.file(`ppt/slideMasters/_rels/slideMaster${dominantMasterIndex}.xml.rels`);
-  if (masterRelsForCheck) {
-    const relsDoc = parseXml(await masterRelsForCheck.async("string"));
-    for (const rel of relsDoc.getElementsByTagNameNS("*", "Relationship")) {
-      const layoutMatch = (rel.getAttribute("Target") || "").match(/slideLayouts\/slideLayout(\d+)\.xml/);
-      if (layoutMatch) masterOwnedLayouts.add(layoutMatch[1]);
+
+  // Read non-placeholder shapes from dominant master — these are fixed design elements
+  // (logos, footer lines, background shapes) that should appear on every slide
+  const masterFixedShapes = [];
+  const masterXmlFile = zip.file(`ppt/slideMasters/slideMaster${dominantMasterIndex}.xml`);
+  if (masterXmlFile) {
+    const masterDoc = parseXml(await masterXmlFile.async("string"));
+    for (const sp of masterDoc.getElementsByTagNameNS("*", "sp")) {
+      const ph = sp.getElementsByTagNameNS("*", "ph")[0];
+      if (ph) continue; // skip placeholders — only fixed shapes
+      const xfrm = sp.getElementsByTagNameNS("*", "xfrm")[0];
+      const off  = xfrm?.getElementsByTagNameNS("*", "off")[0];
+      const ext  = xfrm?.getElementsByTagNameNS("*", "ext")[0];
+      if (!off || !ext) continue;
+      masterFixedShapes.push({
+        left:   emuToInches(off.getAttribute("x")),
+        top:    emuToInches(off.getAttribute("y")),
+        width:  emuToInches(ext.getAttribute("cx")),
+        height: emuToInches(ext.getAttribute("cy")),
+      });
     }
   }
 
-  return { masters: dominantMasters, masterOwnedLayouts };
+  return { masters: dominantMasters, masterFixedShapes };
 }
 
 /* ── Phase 1: read file bytes + discover masters ────────────────────────── */
@@ -701,8 +711,8 @@ async function readAllMasters(zip) {
 async function readPptxFile() {
   const bytes = await getFileBytes();
   const zip = await JSZip.loadAsync(bytes);
-  const { masters, masterOwnedLayouts } = await readAllMasters(zip);
-  return { zip, masters, masterOwnedLayouts };
+  const { masters, masterFixedShapes } = await readAllMasters(zip);
+  return { zip, masters, masterFixedShapes };
 }
 
 /* ── Phase 2: read slide data using chosen master ───────────────────────── */
@@ -1007,7 +1017,7 @@ export default function App() {
   const [fileError, setFileError]   = useState(null);
   const cachedZip       = useRef(null);
   const cachedMasters   = useRef(null);
-  const cachedOwnedLayouts = useRef(new Set());
+  const cachedFixedShapes = useRef([]);
   const cachedPptxData  = useRef({}); // keyed by slideIndex — slide shapes cached between runs
 
   // Load the file in the background as soon as the add-in opens
@@ -1015,11 +1025,11 @@ export default function App() {
     let cancelled = false;
     async function loadFile() {
       try {
-        const { zip, masters, masterOwnedLayouts } = await readPptxFile();
+        const { zip, masters, masterFixedShapes } = await readPptxFile();
         if (cancelled) return;
         cachedZip.current          = zip;
         cachedMasters.current      = masters;
-        cachedOwnedLayouts.current = masterOwnedLayouts;
+        cachedFixedShapes.current = masterFixedShapes;
         setFileReady(true);
       } catch (e) {
         if (cancelled) return;
@@ -1182,11 +1192,11 @@ export default function App() {
       let zip = cachedZip.current;
       let masters = cachedMasters.current;
       if (!zip || !masters) {
-        let masterOwnedLayouts;
-        ({ zip, masters, masterOwnedLayouts } = await readPptxFile());
+        let masterFixedShapes;
+        ({ zip, masters, masterFixedShapes } = await readPptxFile());
         cachedZip.current          = zip;
         cachedMasters.current      = masters;
-        cachedOwnedLayouts.current = masterOwnedLayouts;
+        cachedFixedShapes.current = masterFixedShapes;
       }
 
       if (masters.length === 0) throw new Error("No slide masters found in this file");
@@ -1602,40 +1612,44 @@ export default function App() {
       });
 
 
-      // ── Check if slide is on the correct master / showing master shapes ───
+      // ── Check if master fixed shapes are present on this slide ───────────
       try {
-        const slideRelsFile = zip.file(`ppt/slides/_rels/slide${slideIndex}.xml.rels`);
-        const slideXmlFile  = zip.file(`ppt/slides/slide${slideIndex}.xml`);
-        if (slideRelsFile && slideXmlFile) {
-          const [slideXml, slideRelsXml] = await Promise.all([
-            slideXmlFile.async("string"),
-            slideRelsFile.async("string"),
-          ]);
-          // Check if master shapes are suppressed on this slide
-          const slideDoc = parseXml(slideXml);
-          if (slideDoc.getElementsByTagNameNS("*", "cSld")[0]?.getAttribute("showMasterSp") === "0") setMasterWarning(true);
-
-          // Compare slide's layout against layouts used by reference slides (2, 3, 4)
-          // Reference slides are assumed to be native template slides
-          const referenceLayouts = new Set();
-          for (const refSlideNum of [2, 3, 4]) {
-            const refRelsFile = zip.file(`ppt/slides/_rels/slide${refSlideNum}.xml.rels`);
-            if (!refRelsFile) continue;
-            const refRelsDoc = parseXml(await refRelsFile.async("string"));
-            for (const rel of refRelsDoc.getElementsByTagNameNS("*", "Relationship")) {
-              const layoutMatch = (rel.getAttribute("Target") || "").match(/slideLayouts\/slideLayout(\d+)\.xml/);
-              if (layoutMatch) { referenceLayouts.add(layoutMatch[1]); break; }
+        const masterShapes = cachedFixedShapes.current || [];
+        if (masterShapes.length > 0) {
+          const slideXmlFile = zip.file(`ppt/slides/slide${slideIndex}.xml`);
+          if (slideXmlFile) {
+            const slideDoc = parseXml(await slideXmlFile.async("string"));
+            // Check showMasterSp — if 0, master shapes are explicitly hidden
+            if (slideDoc.getElementsByTagNameNS("*", "cSld")[0]?.getAttribute("showMasterSp") === "0") {
+              setMasterWarning(true);
+            } else {
+              // Collect slide shape positions
+              const slideShapePositions = [];
+              for (const sp of slideDoc.getElementsByTagNameNS("*", "sp")) {
+                const xfrm = sp.getElementsByTagNameNS("*", "xfrm")[0];
+                const off  = xfrm?.getElementsByTagNameNS("*", "off")[0];
+                const ext  = xfrm?.getElementsByTagNameNS("*", "ext")[0];
+                if (!off || !ext) continue;
+                slideShapePositions.push({
+                  left:   emuToInches(off.getAttribute("x")),
+                  top:    emuToInches(off.getAttribute("y")),
+                  width:  emuToInches(ext.getAttribute("cx")),
+                  height: emuToInches(ext.getAttribute("cy")),
+                });
+              }
+              // Check each master fixed shape has a matching shape on the slide
+              const TOL = 0.3; // inches tolerance
+              let missing = 0;
+              for (const ms of masterShapes) {
+                const found = slideShapePositions.some(ss =>
+                  Math.abs(ss.left - ms.left) < TOL &&
+                  Math.abs(ss.top  - ms.top)  < TOL
+                );
+                if (!found) missing++;
+              }
+              // If more than half the master fixed shapes are missing → warn
+              if (missing > masterShapes.length * 0.5) setMasterWarning(true);
             }
-          }
-          addLog(`  Ref layouts: ${[...referenceLayouts].join(", ")}`);
-          const relsDoc = parseXml(slideRelsXml);
-          for (const rel of relsDoc.getElementsByTagNameNS("*", "Relationship")) {
-            const layoutMatch = (rel.getAttribute("Target") || "").match(/slideLayouts\/slideLayout(\d+)\.xml/);
-            if (!layoutMatch) continue;
-            const layoutNum = layoutMatch[1];
-            addLog(`  This slide: layout ${layoutNum} — match: ${referenceLayouts.has(layoutNum)}`);
-            if (referenceLayouts.size > 0 && !referenceLayouts.has(layoutNum)) setMasterWarning(true);
-            break;
           }
         }
       } catch (e) { /* non-critical */ }
@@ -1721,14 +1735,14 @@ export default function App() {
         {fileReady && status === "idle" && (
           <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "8px 12px", fontSize: 11, color: "#166534", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <span>✓ Template ready: <strong>{cachedMasters.current?.[0]?.name}</strong></span>
-            <button onClick={async () => { setFileReady(false); setFileError(null); try { const { zip, masters, masterOwnedLayouts } = await readPptxFile(); cachedZip.current = zip; cachedMasters.current = masters; cachedOwnedLayouts.current = masterOwnedLayouts; cachedPptxData.current = {}; setFileReady(true); } catch (e) { setFileError(e.message); } }}
+            <button onClick={async () => { setFileReady(false); setFileError(null); try { const { zip, masters, masterFixedShapes } = await readPptxFile(); cachedZip.current = zip; cachedMasters.current = masters; cachedFixedShapes.current = masterFixedShapes; cachedPptxData.current = {}; setFileReady(true); } catch (e) { setFileError(e.message); } }}
               style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#15803d", textDecoration: "underline", padding: 0 }}>↺ Reload</button>
           </div>
         )}
         {fileError && (
           <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "8px 12px", fontSize: 11, color: "#991b1b", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <span>⚠ {fileError}</span>
-            <button onClick={async () => { setFileReady(false); setFileError(null); try { const { zip, masters, masterOwnedLayouts } = await readPptxFile(); cachedZip.current = zip; cachedMasters.current = masters; cachedOwnedLayouts.current = masterOwnedLayouts; cachedPptxData.current = {}; setFileReady(true); } catch (e) { setFileError(e.message); } }}
+            <button onClick={async () => { setFileReady(false); setFileError(null); try { const { zip, masters, masterFixedShapes } = await readPptxFile(); cachedZip.current = zip; cachedMasters.current = masters; cachedFixedShapes.current = masterFixedShapes; cachedPptxData.current = {}; setFileReady(true); } catch (e) { setFileError(e.message); } }}
               style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#991b1b", textDecoration: "underline", padding: 0 }}>↺ Retry</button>
           </div>
         )}
