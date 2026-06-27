@@ -680,41 +680,7 @@ async function readAllMasters(zip) {
   });
   const dominantMasters = filtered.length > 0 ? filtered : masters;
   const dominantMasterIndex = dominantMasters[0]?.index ?? 1;
-
-  // Read non-placeholder shapes from dominant master — these are fixed design elements
-  // (logos, footer lines, background shapes) that should appear on every slide
-  const masterFixedShapes = [];
-  const masterXmlFile = zip.file(`ppt/slideMasters/slideMaster${dominantMasterIndex}.xml`);
-  if (masterXmlFile) {
-    const masterDoc = parseXml(await masterXmlFile.async("string"));
-    const spTree = masterDoc.getElementsByTagNameNS("*", "spTree")[0];
-    if (spTree) {
-      for (const child of Array.from(spTree.childNodes)) {
-        const localName = child.localName;
-        if (!localName) continue;
-        // Skip placeholder shapes — only collect fixed design elements
-        if (localName === "sp") {
-          const ph = child.getElementsByTagNameNS?.("*", "ph")?.[0];
-          if (ph) continue;
-        }
-        // Collect sp (non-ph), pic (images), graphicFrame (charts/tables)
-        if (!["sp", "pic", "graphicFrame", "grpSp"].includes(localName)) continue;
-        const xfrm = child.getElementsByTagNameNS("*", "xfrm")[0];
-        const off  = xfrm?.getElementsByTagNameNS("*", "off")[0];
-        const ext  = xfrm?.getElementsByTagNameNS("*", "ext")[0];
-        if (!off || !ext) continue;
-        masterFixedShapes.push({
-          type: localName,
-          left:   emuToInches(off.getAttribute("x")),
-          top:    emuToInches(off.getAttribute("y")),
-          width:  emuToInches(ext.getAttribute("cx")),
-          height: emuToInches(ext.getAttribute("cy")),
-        });
-      }
-    }
-  }
-
-  return { masters: dominantMasters, masterFixedShapes };
+  return { masters: dominantMasters, dominantMasterIndex };
 }
 
 /* ── Phase 1: read file bytes + discover masters ────────────────────────── */
@@ -722,8 +688,8 @@ async function readAllMasters(zip) {
 async function readPptxFile() {
   const bytes = await getFileBytes();
   const zip = await JSZip.loadAsync(bytes);
-  const { masters, masterFixedShapes } = await readAllMasters(zip);
-  return { zip, masters, masterFixedShapes };
+  const { masters, dominantMasterIndex } = await readAllMasters(zip);
+  return { zip, masters, dominantMasterIndex };
 }
 
 /* ── Phase 2: read slide data using chosen master ───────────────────────── */
@@ -733,9 +699,9 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
   if (!slideFile) throw new Error(`Slide ${selectedSlideIndex} not found in file`);
   const slideXml = await slideFile.async("string");
 
-  // Always use master 1's layouts for title position
+  // Use the chosen master's layouts for title position
   let layoutPositions = {};
-  const masterRelsFile = zip.file("ppt/slideMasters/_rels/slideMaster1.xml.rels");
+  const masterRelsFile = zip.file(`ppt/slideMasters/_rels/slideMaster${chosenMasterIndex}.xml.rels`);
   if (masterRelsFile) {
     const masterRelsXml = await masterRelsFile.async("string");
     const masterRels = parseXml(masterRelsXml).getElementsByTagNameNS("*", "Relationship");
@@ -1028,7 +994,7 @@ export default function App() {
   const [fileError, setFileError]   = useState(null);
   const cachedZip       = useRef(null);
   const cachedMasters   = useRef(null);
-  const cachedFixedShapes = useRef([]);
+  const cachedDominantMaster = useRef(1);
   const cachedPptxData  = useRef({}); // keyed by slideIndex — slide shapes cached between runs
 
   // Load the file in the background as soon as the add-in opens
@@ -1036,11 +1002,11 @@ export default function App() {
     let cancelled = false;
     async function loadFile() {
       try {
-        const { zip, masters, masterFixedShapes } = await readPptxFile();
+        const { zip, masters, dominantMasterIndex } = await readPptxFile();
         if (cancelled) return;
         cachedZip.current          = zip;
         cachedMasters.current      = masters;
-        cachedFixedShapes.current = masterFixedShapes;
+        cachedDominantMaster.current = dominantMasterIndex;
         setFileReady(true);
       } catch (e) {
         if (cancelled) return;
@@ -1203,11 +1169,11 @@ export default function App() {
       let zip = cachedZip.current;
       let masters = cachedMasters.current;
       if (!zip || !masters) {
-        let masterFixedShapes;
-        ({ zip, masters, masterFixedShapes } = await readPptxFile());
+        let dominantMasterIndex;
+        ({ zip, masters, dominantMasterIndex } = await readPptxFile());
         cachedZip.current          = zip;
         cachedMasters.current      = masters;
-        cachedFixedShapes.current = masterFixedShapes;
+        cachedDominantMaster.current = dominantMasterIndex;
       }
 
       if (masters.length === 0) throw new Error("No slide masters found in this file");
@@ -1623,48 +1589,16 @@ export default function App() {
       });
 
 
-      // ── Check if master fixed shapes are present on this slide ───────────
+      // ── Check if master shapes are suppressed on this slide ──────────────
       try {
-        const masterShapes = cachedFixedShapes.current || [];
-        addLog(`  Master check: ${masterShapes.length} fixed shapes in master`);
-        if (masterShapes.length > 0) {
-          const slideXmlFile = zip.file(`ppt/slides/slide${slideIndex}.xml`);
-          if (slideXmlFile) {
-            const slideDoc = parseXml(await slideXmlFile.async("string"));
-            if (slideDoc.getElementsByTagNameNS("*", "cSld")[0]?.getAttribute("showMasterSp") === "0") {
-              addLog(`  showMasterSp=0 → warning`);
-              setMasterWarning(true);
-            } else {
-              const slideShapePositions = [];
-              const spTree = slideDoc.getElementsByTagNameNS("*", "spTree")[0];
-              if (spTree) {
-                for (const child of Array.from(spTree.childNodes)) {
-                  if (!["sp", "pic", "graphicFrame", "grpSp"].includes(child.localName)) continue;
-                  const xfrm = child.getElementsByTagNameNS("*", "xfrm")[0];
-                  const off  = xfrm?.getElementsByTagNameNS("*", "off")[0];
-                  const ext  = xfrm?.getElementsByTagNameNS("*", "ext")[0];
-                  if (!off || !ext) continue;
-                  slideShapePositions.push({
-                    left:   emuToInches(off.getAttribute("x")),
-                    top:    emuToInches(off.getAttribute("y")),
-                  });
-                }
-              }
-              const TOL = 0.3;
-              let missing = 0;
-              for (const ms of masterShapes) {
-                const found = slideShapePositions.some(ss =>
-                  Math.abs(ss.left - ms.left) < TOL &&
-                  Math.abs(ss.top  - ms.top)  < TOL
-                );
-                if (!found) missing++;
-              }
-              addLog(`  Slide shapes: ${slideShapePositions.length}, missing master shapes: ${missing}/${masterShapes.length}`);
-              if (missing > masterShapes.length * 0.5) setMasterWarning(true);
-            }
+        const slideXmlFile = zip.file(`ppt/slides/slide${slideIndex}.xml`);
+        if (slideXmlFile) {
+          const slideDoc = parseXml(await slideXmlFile.async("string"));
+          if (slideDoc.getElementsByTagNameNS("*", "cSld")[0]?.getAttribute("showMasterSp") === "0") {
+            setMasterWarning(true);
           }
         }
-      } catch (e) { addLog(`  Master check error: ${e.message}`); }
+      } catch (e) { /* non-critical */ }
 
       addLog(`✓ Done — ${totalFixes} fix${totalFixes !== 1 ? "es" : ""} applied`);
       setFixCount(totalFixes);
@@ -1747,14 +1681,14 @@ export default function App() {
         {fileReady && status === "idle" && (
           <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "8px 12px", fontSize: 11, color: "#166534", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <span>✓ Template ready: <strong>{cachedMasters.current?.[0]?.name}</strong></span>
-            <button onClick={async () => { setFileReady(false); setFileError(null); try { const { zip, masters, masterFixedShapes } = await readPptxFile(); cachedZip.current = zip; cachedMasters.current = masters; cachedFixedShapes.current = masterFixedShapes; cachedPptxData.current = {}; setFileReady(true); } catch (e) { setFileError(e.message); } }}
+            <button onClick={async () => { setFileReady(false); setFileError(null); try { const { zip, masters, dominantMasterIndex } = await readPptxFile(); cachedZip.current = zip; cachedMasters.current = masters; cachedDominantMaster.current = dominantMasterIndex; cachedPptxData.current = {}; setFileReady(true); } catch (e) { setFileError(e.message); } }}
               style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#15803d", textDecoration: "underline", padding: 0 }}>↺ Reload</button>
           </div>
         )}
         {fileError && (
           <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "8px 12px", fontSize: 11, color: "#991b1b", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <span>⚠ {fileError}</span>
-            <button onClick={async () => { setFileReady(false); setFileError(null); try { const { zip, masters, masterFixedShapes } = await readPptxFile(); cachedZip.current = zip; cachedMasters.current = masters; cachedFixedShapes.current = masterFixedShapes; cachedPptxData.current = {}; setFileReady(true); } catch (e) { setFileError(e.message); } }}
+            <button onClick={async () => { setFileReady(false); setFileError(null); try { const { zip, masters, dominantMasterIndex } = await readPptxFile(); cachedZip.current = zip; cachedMasters.current = masters; cachedDominantMaster.current = dominantMasterIndex; cachedPptxData.current = {}; setFileReady(true); } catch (e) { setFileError(e.message); } }}
               style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#991b1b", textDecoration: "underline", padding: 0 }}>↺ Retry</button>
           </div>
         )}
