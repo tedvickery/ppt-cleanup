@@ -1186,7 +1186,8 @@ export default function App() {
         ({ zip, masters, masterOwnedLayouts } = await readPptxFile());
         cachedZip.current          = zip;
         cachedMasters.current      = masters;
-        cachedOwnedLayouts.current = masterOwnedLayouts;      }
+        cachedOwnedLayouts.current = masterOwnedLayouts;
+      }
 
       if (masters.length === 0) throw new Error("No slide masters found in this file");
       const primaryMaster = masters[0];
