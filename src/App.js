@@ -1610,14 +1610,19 @@ export default function App() {
           await ctx.sync();
 
           for (const s of [...refSlides, currentSlide]) {
-            for (const shape of s.shapes.items) shape.load(["left", "top", "width", "height"]);
+            for (const shape of s.shapes.items) shape.load(["left", "top", "width", "height", "type", "hasTextFrame"]);
           }
           await ctx.sync();
 
           const TOL = 0.15 * 72; // 0.15 inches in points
 
+          // Only consider images and non-text shapes — text boxes are content, not master elements
+          const isTemplateCandidate = (sh) =>
+            sh.type === PowerPoint.ShapeType.picture ||
+            (!sh.hasTextFrame && sh.type !== PowerPoint.ShapeType.placeholder);
+
           const refShapeSets = refSlides.map(s =>
-            s.shapes.items.map(sh => ({ left: sh.left, top: sh.top }))
+            s.shapes.items.filter(isTemplateCandidate).map(sh => ({ left: sh.left, top: sh.top }))
           );
 
           // Collect all unique shape positions across all reference slides
@@ -1643,7 +1648,7 @@ export default function App() {
           );
 
           // Warn if more than 50% of template shapes are missing from current slide
-          const currentShapes = currentSlide.shapes.items.map(sh => ({ left: sh.left, top: sh.top }));
+          const currentShapes = currentSlide.shapes.items.filter(isTemplateCandidate).map(sh => ({ left: sh.left, top: sh.top }));
           const missing = templateShapes.filter(ts =>
             !currentShapes.some(cs =>
               Math.abs(cs.left - ts.left) < TOL &&
