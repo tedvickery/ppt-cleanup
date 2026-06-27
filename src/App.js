@@ -1615,15 +1615,15 @@ export default function App() {
       // ── Check if master fixed shapes are present on this slide ───────────
       try {
         const masterShapes = cachedFixedShapes.current || [];
+        addLog(`  Master check: ${masterShapes.length} fixed shapes in master`);
         if (masterShapes.length > 0) {
           const slideXmlFile = zip.file(`ppt/slides/slide${slideIndex}.xml`);
           if (slideXmlFile) {
             const slideDoc = parseXml(await slideXmlFile.async("string"));
-            // Check showMasterSp — if 0, master shapes are explicitly hidden
             if (slideDoc.getElementsByTagNameNS("*", "cSld")[0]?.getAttribute("showMasterSp") === "0") {
+              addLog(`  showMasterSp=0 → warning`);
               setMasterWarning(true);
             } else {
-              // Collect slide shape positions
               const slideShapePositions = [];
               for (const sp of slideDoc.getElementsByTagNameNS("*", "sp")) {
                 const xfrm = sp.getElementsByTagNameNS("*", "xfrm")[0];
@@ -1637,8 +1637,7 @@ export default function App() {
                   height: emuToInches(ext.getAttribute("cy")),
                 });
               }
-              // Check each master fixed shape has a matching shape on the slide
-              const TOL = 0.3; // inches tolerance
+              const TOL = 0.3;
               let missing = 0;
               for (const ms of masterShapes) {
                 const found = slideShapePositions.some(ss =>
@@ -1647,12 +1646,12 @@ export default function App() {
                 );
                 if (!found) missing++;
               }
-              // If more than half the master fixed shapes are missing → warn
+              addLog(`  Slide shapes: ${slideShapePositions.length}, missing master shapes: ${missing}/${masterShapes.length}`);
               if (missing > masterShapes.length * 0.5) setMasterWarning(true);
             }
           }
         }
-      } catch (e) { /* non-critical */ }
+      } catch (e) { addLog(`  Master check error: ${e.message}`); }
 
       addLog(`✓ Done — ${totalFixes} fix${totalFixes !== 1 ? "es" : ""} applied`);
       setFixCount(totalFixes);
