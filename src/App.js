@@ -1614,15 +1614,24 @@ export default function App() {
           const slideDoc = parseXml(slideXml);
           if (slideDoc.getElementsByTagNameNS("*", "cSld")[0]?.getAttribute("showMasterSp") === "0") setMasterWarning(true);
 
-          // Check if this slide's layout belongs to the dominant master
-          const ownedLayouts = cachedOwnedLayouts.current;
+          // Compare slide's layout against layouts used by reference slides (2, 3, 4)
+          // Reference slides are assumed to be native template slides
+          const referenceLayouts = new Set();
+          for (const refSlideNum of [2, 3, 4]) {
+            const refRelsFile = zip.file(`ppt/slides/_rels/slide${refSlideNum}.xml.rels`);
+            if (!refRelsFile) continue;
+            const refRelsDoc = parseXml(await refRelsFile.async("string"));
+            for (const rel of refRelsDoc.getElementsByTagNameNS("*", "Relationship")) {
+              const layoutMatch = (rel.getAttribute("Target") || "").match(/slideLayouts\/slideLayout(\d+)\.xml/);
+              if (layoutMatch) { referenceLayouts.add(layoutMatch[1]); break; }
+            }
+          }
           const relsDoc = parseXml(slideRelsXml);
           for (const rel of relsDoc.getElementsByTagNameNS("*", "Relationship")) {
             const layoutMatch = (rel.getAttribute("Target") || "").match(/slideLayouts\/slideLayout(\d+)\.xml/);
             if (!layoutMatch) continue;
             const layoutNum = layoutMatch[1];
-            addLog(`  Layout check: layout ${layoutNum}, owned by master: ${ownedLayouts.has(layoutNum)}`);
-            if (ownedLayouts.size > 0 && !ownedLayouts.has(layoutNum)) setMasterWarning(true);
+            if (referenceLayouts.size > 0 && !referenceLayouts.has(layoutNum)) setMasterWarning(true);
             break;
           }
         }
@@ -1681,7 +1690,7 @@ export default function App() {
         {status === "done" && fixCount === 0 && <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "10px 14px", fontSize: 11, color: "#166534" }}>✓ Slide already matches the master — no changes needed.</div>}
         {status === "done" && masterWarning && (
           <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "10px 14px", fontSize: 11, color: "#92400e" }}>
-            ⚠ This slide is not on a templated master slide. Consider copying the reformatted contents to a fresh slide to inherit the master.
+            ⚠ Looks like this slide might not be aligned to the master template. Consider copying the contents of this slide to a new blank slide.
           </div>
         )}
         {error && <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 12px", fontSize: 11, color: "#991b1b" }}><strong>Error:</strong> {error}</div>}
