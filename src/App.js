@@ -1617,6 +1617,9 @@ export default function App() {
             }
             await ctx.sync();
 
+            // Log types found on first reference slide for debugging
+            addLog(`  Ref slide types: ${refSlides[0].shapes.items.map(sh => sh.type).join(", ")}`);
+
             const refShapeSets = refSlides.map(s =>
               s.shapes.items.filter(isTemplateCandidate).map(sh => ({ left: sh.left, top: sh.top }))
             );
