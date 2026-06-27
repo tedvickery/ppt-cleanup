@@ -873,10 +873,10 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
         const inchToPt = 72;
         const { left, top, width, height } = fix.position;
         const orig = originalPositions.get(String(target.id)) || {};
-        if (left   !== undefined && left   >= 0  && left   < 13)  { console.log(`  left: ${orig.left} → ${left * inchToPt}`);  target.left   = left   * inchToPt; }
-        if (top    !== undefined && top    >= 0  && top    < 8)   { console.log(`  top: ${orig.top} → ${top * inchToPt}`);     target.top    = top    * inchToPt; }
-        if (width  !== undefined && width  > 0.5 && width  <= 14) { target.width  = width  * inchToPt; }
-        if (height !== undefined && height > 0.1 && height <= 8)  { target.height = height * inchToPt; }
+        if (left   !== undefined && left   >= -2 && left   < 15)  { console.log(`  left: ${orig.left} → ${left * inchToPt}`);  target.left   = left   * inchToPt; }
+        if (top    !== undefined && top    >= -2 && top    < 10)  { console.log(`  top: ${orig.top} → ${top * inchToPt}`);     target.top    = top    * inchToPt; }
+        if (width  !== undefined && width  >= 0  && width  <= 15) { target.width  = width  * inchToPt; }
+        if (height !== undefined && height >= 0  && height <= 10) { target.height = height * inchToPt; }
       }
 
       if (fix.fill !== undefined && fix.fill !== null) {
