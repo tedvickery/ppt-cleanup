@@ -1950,7 +1950,32 @@ export default function App() {
 
       <div style={{ flex: 1, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
 
-        {/* File loading status */}
+        {/* 1. SnapBack button */}
+        <button className="btn" onClick={handleCleanup} disabled={isRunning}
+          style={{ width: "100%", padding: "14px 0", background: status === "done" ? "#15803d" : "#111111", color: "#fff", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.2s ease", boxShadow: "0 4px 14px rgba(0,0,0,0.28)" }}>
+          {isRunning ? (
+            <><span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.3)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block" }} />Working…</>
+          ) : status === "done" ? "✓ Done — clean another?" : "SnapBack"}
+        </button>
+
+        {status === "done" && fixCount > 0  && <FixBadge count={fixCount} />}
+        {status === "done" && fixCount === 0 && <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "10px 14px", fontSize: 11, color: "#166534" }}>✓ Slide already matches the master — no changes needed.</div>}
+        {error && <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 12px", fontSize: 11, color: "#991b1b" }}><strong>Error:</strong> {error}</div>}
+
+        {/* 2. Select shape as title */}
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={handleSetTitleOverride} disabled={isRunning}
+            style={{ flex: 1, padding: "8px 0", background: "#fff", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+            Use selected shape as title
+          </button>
+        </div>
+        {overrideStatus && (
+          <div style={{ background: overrideStatus.ok ? "#f0fdf4" : "#fef2f2", border: `1px solid ${overrideStatus.ok ? "#bbf7d0" : "#fecaca"}`, borderRadius: 8, padding: "8px 12px", fontSize: 11, color: overrideStatus.ok ? "#166534" : "#991b1b" }}>
+            {overrideStatus.msg}
+          </div>
+        )}
+
+        {/* 3. Template ready / file status */}
         {!fileReady && !fileError && (
           <div style={{ background: "#fff", borderRadius: 8, border: "1px solid #e5e7eb", padding: "10px 14px", fontSize: 11, color: "#6b7280", display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ width: 10, height: 10, border: "2px solid #d1d5db", borderTop: "2px solid #6b7280", borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block", flexShrink: 0 }} />
@@ -1974,6 +1999,7 @@ export default function App() {
 
         {detectedTheme && <ThemeCard theme={detectedTheme} masterPlaceholders={detectedMaster} />}
 
+        {/* 4. Description */}
         {status === "idle" && !detectedTheme && (
           <div style={{ background: "#fff", borderRadius: 10, border: "1px solid #e5e7eb", padding: "12px 14px" }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>What cleanup does</div>
@@ -1985,35 +2011,6 @@ export default function App() {
             ))}
           </div>
         )}
-
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={handleSetTitleOverride} disabled={isRunning}
-            style={{ flex: 1, padding: "8px 0", background: "#fff", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
-            Use selected shape as title
-          </button>
-        </div>
-        {overrideStatus && (
-          <div style={{ background: overrideStatus.ok ? "#f0fdf4" : "#fef2f2", border: `1px solid ${overrideStatus.ok ? "#bbf7d0" : "#fecaca"}`, borderRadius: 8, padding: "8px 12px", fontSize: 11, color: overrideStatus.ok ? "#166534" : "#991b1b" }}>
-            {overrideStatus.msg}
-          </div>
-        )}
-
-        <button className="btn" onClick={handleCleanup} disabled={isRunning}
-          style={{ width: "100%", padding: "14px 0", background: status === "done" ? "#15803d" : "#111111", color: "#fff", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.2s ease", boxShadow: "0 4px 14px rgba(0,0,0,0.28)" }}>
-          {isRunning ? (
-            <><span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.3)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block" }} />Working…</>
-          ) : status === "done" ? "✓ Done — clean another?" : "SnapBack"}
-        </button>
-
-        <button onClick={handleRebuildSlide} disabled={isRunning}
-          style={{ width: "100%", padding: "10px 0", background: "none", color: "#374151", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", marginTop: 6 }}>
-          ↺ Rebuild from master
-        </button>
-
-        {status === "done" && fixCount > 0  && <FixBadge count={fixCount} />}
-        {status === "done" && fixCount === 0 && <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "10px 14px", fontSize: 11, color: "#166534" }}>✓ Slide already matches the master — no changes needed.</div>}
-
-        {error && <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 12px", fontSize: 11, color: "#991b1b" }}><strong>Error:</strong> {error}</div>}
 
         {log.length > 0 && (
           <div style={{ background: "#0f172a", borderRadius: 10, padding: "10px 12px" }}>
