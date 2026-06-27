@@ -987,6 +987,7 @@ export default function App() {
   const [error, setError]                 = useState(null);
   const [detectedTheme, setDetectedTheme] = useState(null);
   const [detectedMaster, setDetectedMaster] = useState([]);
+  const [masterWarning, setMasterWarning] = useState(false);
 
   // Manual title override, per slide, for this session only — { [slideIndex]: { id, name } }
   const [titleOverrides, setTitleOverrides] = useState({});
@@ -1155,6 +1156,7 @@ export default function App() {
     setLog([]);
     setError(null);
     setFixCount(0);
+    setMasterWarning(false);
     setDetectedTheme(null);
     setDetectedMaster([]);
 
@@ -1593,6 +1595,35 @@ export default function App() {
       });
 
 
+      // ── Check if slide is on the correct master ──────────────────────────
+      try {
+        const slideRelsFile = zip.file(`ppt/slides/_rels/slide${slideIndex}.xml.rels`);
+        if (slideRelsFile) {
+          const relsDoc = parseXml(await slideRelsFile.async("string"));
+          for (const rel of relsDoc.getElementsByTagNameNS("*", "Relationship")) {
+            const target = rel.getAttribute("Target") || "";
+            const layoutMatch = target.match(/slideLayouts\/slideLayout(\d+)\.xml/);
+            if (!layoutMatch) continue;
+            const layoutNum = layoutMatch[1];
+            const layoutRelsFile = zip.file(`ppt/slideLayouts/_rels/slideLayout${layoutNum}.xml.rels`);
+            if (!layoutRelsFile) continue;
+            const layoutRelsDoc = parseXml(await layoutRelsFile.async("string"));
+            for (const lrel of layoutRelsDoc.getElementsByTagNameNS("*", "Relationship")) {
+              const masterMatch = (lrel.getAttribute("Target") || "").match(/slideMasters\/slideMaster(\d+)\.xml/);
+              if (masterMatch) {
+                const slideMasterIndex = parseInt(masterMatch[1], 10);
+                const dominantMasterIndex = cachedMasters.current?.[0]?.index;
+                if (dominantMasterIndex && slideMasterIndex !== dominantMasterIndex) {
+                  setMasterWarning(true);
+                }
+                break;
+              }
+            }
+            break;
+          }
+        }
+      } catch (e) { /* non-critical */ }
+
       addLog(`✓ Done — ${totalFixes} fix${totalFixes !== 1 ? "es" : ""} applied`);
       setFixCount(totalFixes);
       setStatus("done");
@@ -1644,6 +1675,11 @@ export default function App() {
 
         {status === "done" && fixCount > 0  && <FixBadge count={fixCount} />}
         {status === "done" && fixCount === 0 && <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "10px 14px", fontSize: 11, color: "#166534" }}>✓ Slide already matches the master — no changes needed.</div>}
+        {status === "done" && masterWarning && (
+          <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "10px 14px", fontSize: 11, color: "#92400e" }}>
+            ⚠ This slide is not on a templated master slide. Consider copying the reformatted contents to a fresh slide to inherit the master.
+          </div>
+        )}
         {error && <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 12px", fontSize: 11, color: "#991b1b" }}><strong>Error:</strong> {error}</div>}
 
         {/* 2. Select shape as title */}
