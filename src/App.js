@@ -1626,11 +1626,13 @@ export default function App() {
               if (layoutMatch) { referenceLayouts.add(layoutMatch[1]); break; }
             }
           }
+          addLog(`  Ref layouts: ${[...referenceLayouts].join(", ")}`);
           const relsDoc = parseXml(slideRelsXml);
           for (const rel of relsDoc.getElementsByTagNameNS("*", "Relationship")) {
             const layoutMatch = (rel.getAttribute("Target") || "").match(/slideLayouts\/slideLayout(\d+)\.xml/);
             if (!layoutMatch) continue;
             const layoutNum = layoutMatch[1];
+            addLog(`  This slide: layout ${layoutNum} — match: ${referenceLayouts.has(layoutNum)}`);
             if (referenceLayouts.size > 0 && !referenceLayouts.has(layoutNum)) setMasterWarning(true);
             break;
           }
