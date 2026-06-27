@@ -1589,15 +1589,64 @@ export default function App() {
       });
 
 
-      // ── Check if master shapes are suppressed on this slide ──────────────
+      // ── Check if slide matches template by comparing against reference slides ──
       try {
-        const slideXmlFile = zip.file(`ppt/slides/slide${slideIndex}.xml`);
-        if (slideXmlFile) {
-          const slideDoc = parseXml(await slideXmlFile.async("string"));
-          if (slideDoc.getElementsByTagNameNS("*", "cSld")[0]?.getAttribute("showMasterSp") === "0") {
+        await PowerPoint.run(async (ctx) => {
+          const slides = ctx.presentation.slides;
+          slides.load("items");
+          await ctx.sync();
+
+          const totalSlides = slides.items.length;
+          if (totalSlides < 2) return; // not enough slides to compare
+
+          // Load shapes for reference slides (2, 3, 4) and current slide
+          const refIndices = [1, 2, 3].filter(i => i < totalSlides && i !== dupIndex - 1);
+          if (refIndices.length === 0) return;
+
+          const refSlides = refIndices.map(i => slides.items[i]);
+          const currentSlide = slides.items[dupIndex - 1];
+
+          for (const s of [...refSlides, currentSlide]) {
+            s.shapes.load("items");
+          }
+          await ctx.sync();
+
+          for (const s of [...refSlides, currentSlide]) {
+            for (const shape of s.shapes.items) shape.load(["left", "top", "width", "height", "type"]);
+          }
+          await ctx.sync();
+
+          const TOL = 0.15 * 72; // 0.15 inches in points
+
+          // Collect shape positions from each reference slide
+          const refShapeSets = refSlides.map(s =>
+            s.shapes.items.map(sh => ({ left: sh.left, top: sh.top, width: sh.width, height: sh.height }))
+          );
+
+          // Find shapes present in at least 2/3 reference slides (consistent template elements)
+          const templateShapes = refShapeSets[0].filter(shape =>
+            refShapeSets.slice(1).filter(otherSet =>
+              otherSet.some(other =>
+                Math.abs(other.left - shape.left) < TOL &&
+                Math.abs(other.top  - shape.top)  < TOL
+              )
+            ).length >= Math.min(1, refShapeSets.length - 1)
+          );
+
+          // Check if current slide has those template shapes
+          const currentShapes = currentSlide.shapes.items.map(sh => ({ left: sh.left, top: sh.top }));
+          const missing = templateShapes.filter(ts =>
+            !currentShapes.some(cs =>
+              Math.abs(cs.left - ts.left) < TOL &&
+              Math.abs(cs.top  - ts.top)  < TOL
+            )
+          );
+
+          addLog(`  Template check: ${templateShapes.length} consistent shapes, ${missing.length} missing`);
+          if (missing.length > 0 && missing.length >= templateShapes.length * 0.5) {
             setMasterWarning(true);
           }
-        }
+        });
       } catch (e) { /* non-critical */ }
 
       addLog(`✓ Done — ${totalFixes} fix${totalFixes !== 1 ? "es" : ""} applied`);
