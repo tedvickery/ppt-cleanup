@@ -881,7 +881,6 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
             }
             await ctx.sync();
           } else if (fix._slideShape?.isGroup) {
-            // Groups: apply font/colour to all child shapes
             try {
               const groupShapes = target.shapes;
               groupShapes.load("items");
@@ -891,18 +890,13 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
                   const tr = child.textFrame.textRange;
                   if (fix.font?.name)  tr.font.name = fix.font.name;
                   if (fix.font?.size)  tr.font.size = fix.font.size;
-                  if (fix.font?.color) {
-                    let textColor = snapToThemeColor(fix.font.color, themeColors);
-                    tr.font.color = textColor.replace("#", "");
-                  }
-                  await ctx.sync();
+                  if (fix.font?.color) { tr.font.color = snapToThemeColor(fix.font.color, themeColors).replace("#", ""); }
                 } catch (e) { /* no text */ }
               }
+              await ctx.sync();
             } catch (e) { /* no group */ }
           } else {
             const tr = target.textFrame.textRange;
-            tr.load(["text"]);
-            await ctx.sync();
             if (fix.font) {
               if (fix.font.name)  tr.font.name = fix.font.name;
               if (fix.font.size)  tr.font.size = fix.font.size;
@@ -1457,31 +1451,25 @@ export default function App() {
         let bgColor = "#FFFFFF";
         let masterBgColor = "#FFFFFF";
         try {
-          const masters = ctx.presentation.slideMasters;
-          masters.load("items");
+          // Batch: load master bg and slide bg type in one sync
+          const masterBgFill = ctx.presentation.slideMasters.getItemAt(0).background.fill;
+          const slideBgFill  = slides.items[dupIndex - 1].background.fill;
+          masterBgFill.load("type"); slideBgFill.load("type");
           await ctx.sync();
-          const masterBgFill = masters.items[0].background.fill;
-          masterBgFill.load("type");
-          await ctx.sync();
-          if (String(masterBgFill.type).toLowerCase() === "solid") {
-            const solid = masterBgFill.getSolidColorOrNullObject ? masterBgFill.getSolidColorOrNullObject() : null;
-            if (solid) { solid.load("color"); await ctx.sync(); if (!solid.isNullObject && solid.color) masterBgColor = solid.color.startsWith("#") ? solid.color : `#${solid.color}`; }
+          // Now load colours if solid — one more sync
+          const masterSolid = String(masterBgFill.type).toLowerCase() === "solid" && masterBgFill.getSolidColorOrNullObject ? masterBgFill.getSolidColorOrNullObject() : null;
+          const slideSolid  = String(slideBgFill.type).toLowerCase()  === "solid" && slideBgFill.getSolidColorOrNullObject  ? slideBgFill.getSolidColorOrNullObject()  : null;
+          if (masterSolid) masterSolid.load("color");
+          if (slideSolid)  slideSolid.load("color");
+          if (masterSolid || slideSolid) {
+            await ctx.sync();
+            if (masterSolid && !masterSolid.isNullObject && masterSolid.color) masterBgColor = masterSolid.color.startsWith("#") ? masterSolid.color : `#${masterSolid.color}`;
+            if (slideSolid  && !slideSolid.isNullObject  && slideSolid.color)  bgColor       = slideSolid.color.startsWith("#")  ? slideSolid.color  : `#${slideSolid.color}`;
           }
-        } catch (e) { /* master background read not supported */ }
-        try {
-          const bgFill = slides.items[dupIndex - 1].background.fill;
-          bgFill.load("type");
-          await ctx.sync();
-          if (String(bgFill.type).toLowerCase() === "solid") {
-            const solid = bgFill.getSolidColorOrNullObject ? bgFill.getSolidColorOrNullObject() : null;
-            if (solid) { solid.load("color"); await ctx.sync(); if (!solid.isNullObject && solid.color) bgColor = solid.color.startsWith("#") ? solid.color : `#${solid.color}`; }
-          }
-        } catch (e) { /* slide background read not supported */ }
+        } catch (e) { /* background read not supported */ }
         const BG_DRIFT_THRESHOLD = 80;
         if (colourDistance(bgColor, masterBgColor) < BG_DRIFT_THRESHOLD && bgColor !== masterBgColor) {
           try { slides.items[dupIndex - 1].background.fill.setSolidColor(masterBgColor.replace("#", "")); await ctx.sync(); bgColor = masterBgColor; addLog(`Background snapped to master: ${masterBgColor}`); } catch (e) { /* can't write */ }
-        } else if (colourDistance(bgColor, masterBgColor) >= BG_DRIFT_THRESHOLD) {
-          addLog(`Background differs from master (intentional) — leaving unchanged`);
         }
 
         // Build colour pools
@@ -1500,7 +1488,7 @@ export default function App() {
         }
         const fillJobs = [];
         for (const os of shapes.items) {
-          try { os.load(["name", "type"]); os.fill.load(["type", "color", "foregroundColor"]); fillJobs.push({ os, kind: "fill" }); } catch (e) { /* no fill */ }
+          try { os.fill.load(["type", "color", "foregroundColor"]); fillJobs.push({ os, kind: "fill" }); } catch (e) { /* no fill */ }
           try { os.lineFormat.load(["color", "visible"]); fillJobs.push({ os, kind: "line" }); } catch (e) { /* no line */ }
         }
         // Load table colour jobs
@@ -1600,27 +1588,28 @@ export default function App() {
         const slideRelsFile = zip.file(`ppt/slides/_rels/slide${slideIndex}.xml.rels`);
         const slideXmlFile  = zip.file(`ppt/slides/slide${slideIndex}.xml`);
         if (slideRelsFile && slideXmlFile) {
+          const [slideXml, slideRelsXml] = await Promise.all([
+            slideXmlFile.async("string"),
+            slideRelsFile.async("string"),
+          ]);
           // Check if master shapes are suppressed on this slide
-          const slideDoc = parseXml(await slideXmlFile.async("string"));
-          const showMasterSp = slideDoc.getElementsByTagNameNS("*", "cSld")[0]?.getAttribute("showMasterSp");
-          if (showMasterSp === "0") setMasterWarning(true);
+          const slideDoc = parseXml(slideXml);
+          if (slideDoc.getElementsByTagNameNS("*", "cSld")[0]?.getAttribute("showMasterSp") === "0") setMasterWarning(true);
 
-          // Also check master index matches dominant master
-          const relsDoc = parseXml(await slideRelsFile.async("string"));
+          // Check master index matches dominant master
+          const relsDoc = parseXml(slideRelsXml);
           for (const rel of relsDoc.getElementsByTagNameNS("*", "Relationship")) {
-            const target = rel.getAttribute("Target") || "";
-            const layoutMatch = target.match(/slideLayouts\/slideLayout(\d+)\.xml/);
+            const layoutMatch = (rel.getAttribute("Target") || "").match(/slideLayouts\/slideLayout(\d+)\.xml/);
             if (!layoutMatch) continue;
             const layoutRelsFile = zip.file(`ppt/slideLayouts/_rels/slideLayout${layoutMatch[1]}.xml.rels`);
-            if (!layoutRelsFile) continue;
-            const layoutRelsDoc = parseXml(await layoutRelsFile.async("string"));
-            for (const lrel of layoutRelsDoc.getElementsByTagNameNS("*", "Relationship")) {
-              const masterMatch = (lrel.getAttribute("Target") || "").match(/slideMaster(\d+)\.xml/);
-              if (masterMatch) {
-                const slideMasterIndex = parseInt(masterMatch[1], 10);
-                const dominantMasterIndex = cachedMasters.current?.[0]?.index ?? 1;
-                if (slideMasterIndex !== dominantMasterIndex) setMasterWarning(true);
-                break;
+            if (layoutRelsFile) {
+              const layoutRelsDoc = parseXml(await layoutRelsFile.async("string"));
+              for (const lrel of layoutRelsDoc.getElementsByTagNameNS("*", "Relationship")) {
+                const masterMatch = (lrel.getAttribute("Target") || "").match(/slideMaster(\d+)\.xml/);
+                if (masterMatch) {
+                  if (parseInt(masterMatch[1], 10) !== (cachedMasters.current?.[0]?.index ?? 1)) setMasterWarning(true);
+                  break;
+                }
               }
             }
             break;
