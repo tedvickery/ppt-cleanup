@@ -1602,8 +1602,7 @@ export default function App() {
 
           const TOL = 0.15 * 72;
           const isTemplateCandidate = (sh) =>
-            sh.type === PowerPoint.ShapeType.picture ||
-            (!sh.hasTextFrame && sh.type !== PowerPoint.ShapeType.placeholder);
+            !sh.hasTextFrame && sh.type !== "placeholder";
 
           // Compute reference template shapes once per file load — always use slides 2-6
           if (!cachedTemplateShapes.current) {
@@ -1616,9 +1615,6 @@ export default function App() {
               for (const sh of s.shapes.items) sh.load(["left", "top", "type", "hasTextFrame"]);
             }
             await ctx.sync();
-
-            // Log types found on first reference slide for debugging
-            addLog(`  Ref slide types: ${refSlides[0].shapes.items.map(sh => sh.type).join(", ")}`);
 
             const refShapeSets = refSlides.map(s =>
               s.shapes.items.filter(isTemplateCandidate).map(sh => ({ left: sh.left, top: sh.top }))
