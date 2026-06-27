@@ -1339,19 +1339,15 @@ export default function App() {
             }], themeColors);
             totalFixes++;
 
-            // ── Squeeze content shapes to fit new available space below/beside title ──
+            // ── Squeeze all content shapes to fit new available space ──────────
             if (posNeedsFix && cur) {
               const SLIDE_W = 13.33, SLIDE_H = 7.5;
-              const titleH = cur.height || (targetTitlePos.height || 0.5);
-              const titleW = cur.width  || (targetTitlePos.width  || 10);
+              const titleH = cur.height || 0.5;
 
-              // Vertical: space below title
               const oldTitleBottom = cur.top  + titleH;
               const newTitleBottom = targetTitlePos.top + titleH;
               const oldAvailV = SLIDE_H - oldTitleBottom;
               const newAvailV = SLIDE_H - newTitleBottom;
-
-              // Horizontal: space to right of title left edge
               const oldAvailH = SLIDE_W - cur.left;
               const newAvailH = SLIDE_W - targetTitlePos.left;
 
@@ -1362,27 +1358,32 @@ export default function App() {
 
               if (needsV || needsH) {
                 addLog(`  Squeezing content: V=${ratioV.toFixed(3)} H=${ratioH.toFixed(3)}`);
+                await PowerPoint.run(async (ctx) => {
+                  const slide = ctx.presentation.slides.getItemAt(dupIndex - 1);
+                  const allShapes = slide.shapes;
+                  allShapes.load("items");
+                  await ctx.sync();
+                  for (const s of allShapes.items) s.load(["id", "name", "left", "top", "width", "height"]);
+                  await ctx.sync();
 
-                const shapesToSqueeze = pptxData.slideShapes.filter(ss =>
-                  ss.phType !== "title" && ss.phType !== "ctrTitle" && ss.position
-                );
-
-                if (shapesToSqueeze.length > 0) {
-                  await applyFixes(dupIndex, shapesToSqueeze.map(ss => {
-                    const p = ss.position;
-                    return {
-                      shapeName: ss.name, shapeId: ss.id, _slideShape: ss,
-                      position: {
-                        left:   targetTitlePos.left + (p.left - cur.left) * ratioH,
-                        top:    newTitleBottom      + (p.top  - oldTitleBottom) * ratioV,
-                        width:  p.width  * ratioH,
-                        height: p.height * ratioV,
-                      },
-                    };
-                  }), themeColors);
-                  totalFixes += shapesToSqueeze.length;
-                  addLog(`  ✓ Squeezed ${shapesToSqueeze.length} shapes`);
-                }
+                  const inchToPt = 72;
+                  const titleId = String(titleShape.id);
+                  let squeezed = 0;
+                  for (const s of allShapes.items) {
+                    if (String(s.id) === titleId) continue;
+                    const oldLeft   = s.left   / inchToPt;
+                    const oldTop    = s.top     / inchToPt;
+                    const oldWidth  = s.width   / inchToPt;
+                    const oldHeight = s.height  / inchToPt;
+                    s.left   = (targetTitlePos.left + (oldLeft - cur.left) * ratioH) * inchToPt;
+                    s.top    = (newTitleBottom      + (oldTop  - oldTitleBottom) * ratioV) * inchToPt;
+                    s.width  = oldWidth  * ratioH * inchToPt;
+                    s.height = oldHeight * ratioV * inchToPt;
+                    squeezed++;
+                  }
+                  await ctx.sync();
+                  addLog(`  ✓ Squeezed ${squeezed} shapes`);
+                });
               }
             }
           } catch (e) { addLog(`⚠ Step 1 error: ${e.message}`); }
