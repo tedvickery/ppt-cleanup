@@ -18,7 +18,6 @@ function getFileBytes() {
         }
         const file = result.value;
         const sliceCount = file.sliceCount;
-        console.log(`File has ${sliceCount} slices`);
         const slices = [];
         function getSlice(index) {
           file.getSliceAsync(index, (sliceResult) => {
@@ -29,7 +28,6 @@ function getFileBytes() {
             }
             slices.push(sliceResult.value.data);
             if (index < sliceCount - 1) {
-              if (index % 10 === 0) console.log(`Slice ${index}/${sliceCount}`);
               getSlice(index + 1);
             } else {
               clearTimeout(timeout);
@@ -675,13 +673,10 @@ async function readAllMasters(zip) {
       }
     } catch (e) { /* skip */ }
   }
-  console.log("Master slide counts:", masterSlideCounts);
   const maxCount = Math.max(...Object.values(masterSlideCounts), 0);
   const filtered = masters.filter(m => {
     const count = masterSlideCounts[m.index] || 0;
-    const keep = maxCount === 0 || count >= Math.max(1, maxCount * 0.2);
-    if (!keep) console.log(`Rejecting imported master ${m.index} ("${m.name}") — ${count} slide(s) vs dominant ${maxCount}`);
-    return keep;
+    return maxCount === 0 || count >= Math.max(1, maxCount * 0.2);
   });
   return filtered.length > 0 ? filtered : masters;
 }
@@ -702,35 +697,8 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
   if (!slideFile) throw new Error(`Slide ${selectedSlideIndex} not found in file`);
   const slideXml = await slideFile.async("string");
 
-  // Always use master 1's layouts — ignore whatever imported layout the slide references
+  // Always use master 1's layouts for title position
   let layoutPositions = {};
-
-  // Read master title placeholder position directly from master XML (for resolving inherited positions)
-  let masterTitleXfrmPos = null;
-  const masterXmlFile = zip.file("ppt/slideMasters/slideMaster1.xml");
-  if (masterXmlFile) {
-    const masterXmlDoc = parseXml(await masterXmlFile.async("string"));
-    for (const sp of masterXmlDoc.getElementsByTagNameNS("*", "sp")) {
-      const ph = sp.getElementsByTagNameNS("*", "ph")[0];
-      const phType = ph?.getAttribute("type");
-      if (phType === "title" || phType === "ctrTitle" || (!phType && ph)) {
-        const xfrm = sp.getElementsByTagNameNS("*", "xfrm")[0];
-        const off  = xfrm?.getElementsByTagNameNS("*", "off")[0];
-        const ext  = xfrm?.getElementsByTagNameNS("*", "ext")[0];
-        if (off && ext) {
-          masterTitleXfrmPos = {
-            left:   emuToInches(off.getAttribute("x")),
-            top:    emuToInches(off.getAttribute("y")),
-            width:  emuToInches(ext.getAttribute("cx")),
-            height: emuToInches(ext.getAttribute("cy")),
-          };
-          if (phType === "title") break; // prefer explicit title over default body
-        }
-      }
-    }
-    if (masterTitleXfrmPos) console.log(`Master title xfrm: ${JSON.stringify(masterTitleXfrmPos)}`);
-  }
-
   const masterRelsFile = zip.file("ppt/slideMasters/_rels/slideMaster1.xml.rels");
   if (masterRelsFile) {
     const masterRelsXml = await masterRelsFile.async("string");
@@ -777,14 +745,11 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
       const topKey = Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0];
       const [left, top, width, height] = topKey.split(",").map(Number);
       layoutPositions["title:0"] = { left, top, width, height };
-      console.log(`Title position from ${titlePositions.length} layouts: ${topKey}`);
     }
   }
 
   const master = masters.find(m => m.index === chosenMasterIndex) || masters[0];
   const slideShapes = parseSlideXml(slideXml, master.theme, master.placeholders, layoutPositions);
-  console.log(`Using master ${master.index} ("${master.name}") for slide ${selectedSlideIndex}`);
-  console.log("Layout positions:", JSON.stringify(layoutPositions));
   return { theme: master.theme, masterPlaceholders: master.placeholders, masterName: master.name, slideShapes, layoutPositions, slideIndex: selectedSlideIndex };
 }
 
@@ -858,32 +823,27 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
     for (const shape of shapes.items) shape.load(["id", "name", "left", "top", "width", "height"]);
     await ctx.sync();
 
-    const originalPositions = new Map();
-    for (const s of shapes.items) originalPositions.set(String(s.id), { left: s.left, top: s.top, width: s.width, height: s.height });
-
     for (const fix of fixes) {
       const lookupId = fix._slideShape?.id || fix.shapeId;
       const target = lookupId
         ? shapes.items.find(s => String(s.id) === String(lookupId))
         : shapes.items.find(s => s.name === fix.shapeName);
-      console.log(`Fix for "${fix.shapeName}" → ${target ? "FOUND" : "NOT FOUND"}`);
       if (!target) continue;
 
       if (fix.position) {
         const inchToPt = 72;
         const { left, top, width, height } = fix.position;
-        const orig = originalPositions.get(String(target.id)) || {};
-        if (left   !== undefined && left   >= -2 && left   < 15)  { console.log(`  left: ${orig.left} → ${left * inchToPt}`);  target.left   = left   * inchToPt; }
-        if (top    !== undefined && top    >= -2 && top    < 10)  { console.log(`  top: ${orig.top} → ${top * inchToPt}`);     target.top    = top    * inchToPt; }
-        if (width  !== undefined && width  >= 0  && width  <= 15) { target.width  = width  * inchToPt; }
-        if (height !== undefined && height >= 0  && height <= 10) { target.height = height * inchToPt; }
+        if (left   !== undefined && left   >= -2 && left   < 15)  target.left   = left   * inchToPt;
+        if (top    !== undefined && top    >= -2 && top    < 10)  target.top    = top    * inchToPt;
+        if (width  !== undefined && width  >= 0  && width  <= 15) target.width  = width  * inchToPt;
+        if (height !== undefined && height >= 0  && height <= 10) target.height = height * inchToPt;
       }
 
       if (fix.fill !== undefined && fix.fill !== null) {
         try {
-          if (fix.fill === "none" && fix.shapeFill && fix.shapeFill !== "none") { target.fill.clear(); console.log(`  ✓ Fill cleared`); }
+          if (fix.fill === "none" && fix.shapeFill && fix.shapeFill !== "none") target.fill.clear();
           else if (fix.fill?.startsWith("#")) { const snapped = snapToThemeColor(fix.fill, themeColors); target.fill.setSolidColor(snapped.replace("#", "")); }
-        } catch (e) { console.log(`  Error setting fill:`, e.message); }
+        } catch (e) { /* skip */ }
       }
 
       if (fix.border !== undefined && fix.border !== null) {
@@ -895,7 +855,7 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
             else if (snapped !== fix.shapeBorder) { target.lineFormat.color = snapped.replace("#", ""); target.lineFormat.visible = true; }
             else { target.lineFormat.visible = false; }
           }
-        } catch (e) { console.log(`  Error setting border:`, e.message); }
+        } catch (e) { /* skip */ }
       }
 
       if (fix.font || fix.alignment) {
@@ -962,7 +922,7 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
             }
             await ctx.sync();
           }
-        } catch (e) { console.log(`  Error applying font:`, e.message); }
+        } catch (e) { /* skip */ }
       }
     }
     await ctx.sync();
@@ -1302,8 +1262,6 @@ export default function App() {
       const titleMaster   = pptxData.masterPlaceholders.find(p => p.type === "title" || p.type === "ctrTitle");
       const layoutTitlePos = pptxData.layoutPositions?.["title:0"];
       const targetTitlePos = layoutTitlePos || titleMaster?.position;
-      addLog(`  Title: shape="${titleShape?.name}" targetPos=${JSON.stringify(targetTitlePos)}`);
-
       if (titleShape && targetTitlePos) {
         const cur = titleShape.position;
         const posNeedsFix = !cur ||
@@ -1396,15 +1354,12 @@ export default function App() {
         const slides = ctx.presentation.slides;
         slides.load("items");
         await ctx.sync();
-        addLog("  2a: slides loaded");
         const slide  = slides.items[dupIndex - 1];
         const shapes = slide.shapes;
         shapes.load("items");
         await ctx.sync();
-        addLog("  2b: shapes loaded");
         for (const s of shapes.items) s.load(["id", "name", "type"]);
         await ctx.sync();
-        addLog("  2c: shape IDs loaded");
 
         // ── Font step: use theme fonts directly — most reliable source ──────────
         const nonTitleSizes = pptxData.slideShapes
@@ -1440,7 +1395,6 @@ export default function App() {
           try { os.shapes.load("items"); groupJobs.push({ os, ss }); } catch (e) { /* no group */ }
         }
         await ctx.sync(); // ONE sync for all shape/table/group loads
-        addLog("  2d: font loads queued");
 
         // Load table cells now that we know dimensions
         const tableCellJobs = [];
@@ -1464,13 +1418,8 @@ export default function App() {
           } catch (e) { /* no children */ }
         }
         await ctx.sync(); // ONE sync for all cell/group-child loads
-        addLog("  2e: cell/group loads done");
 
         // Write all font/size changes
-        const firstFontJob = fontJobs[0];
-        if (firstFontJob) {
-          addLog(`  Font target: body="${bodyFont}" heading="${headingFont}"`);
-        }
         for (const { tr, ss } of [...fontJobs, ...tableCellJobs, ...groupTrJobs]) {
           try {
             const targetFont = bodyFont;
@@ -1502,11 +1451,9 @@ export default function App() {
           }
         }
         await ctx.sync(); // ONE sync for all font/size writes
-        addLog("  2f: font writes done");
 
         // ── Colour step ──────────────────────────────────────────────────────────
         addLog("Step 3: Colours…");
-        addLog("  3a: reading backgrounds…");
         let bgColor = "#FFFFFF";
         let masterBgColor = "#FFFFFF";
         try {
@@ -1538,7 +1485,6 @@ export default function App() {
         }
 
         // Build colour pools
-        addLog("  3b: building colour pools…");
         const themeColorsNoBg = themeColors; // use full palette — background exclusion not needed
         const themeColorValues = Object.values(themeColors).filter(Boolean);
         const fontPrimaryColor = themeColorValues[0];
@@ -1646,268 +1592,8 @@ export default function App() {
         }
 
         await ctx.sync(); // final write sync
-      });;
-
-      /* ─── POSITIONING DISABLED FOR NOW — keeping tool to font/colour/title scope ───
-      // ─── STEP 4: Grid pipeline (looped until stable) ────────────────────────
-      let skipAlignment = false;
-      {
-        const nonTitleShapes = pptxData.slideShapes.filter(s =>
-          s.phType !== "title" && s.phType !== "ctrTitle" && s.phType !== "sldNum" && s.phType !== "ftr" && s.position
-        );
-        const SHAPE_COMPLEXITY_LIMIT = 25;
-        const tooManyShapes = nonTitleShapes.length > SHAPE_COMPLEXITY_LIMIT;
-        if (tooManyShapes) {
-          addLog(`Slide has ${nonTitleShapes.length} shapes (limit ${SHAPE_COMPLEXITY_LIMIT}) — skipping position/size alignment, keeping fonts, colours and title position`);
-        }
-
-        // Check original (pre-fix) positions for any overlap — if found, skip alignment entirely
-        let hasOverlap = false;
-        for (let i = 0; i < nonTitleShapes.length && !hasOverlap; i++) {
-          for (let j = i + 1; j < nonTitleShapes.length; j++) {
-            const a = nonTitleShapes[i].position, b = nonTitleShapes[j].position;
-            const overlapX = Math.min(a.left + a.width, b.left + b.width) - Math.max(a.left, b.left);
-            const overlapY = Math.min(a.top + a.height, b.top + b.height) - Math.max(a.top, b.top);
-            if (overlapX > 0 && overlapY > 0) { hasOverlap = true; break; }
-          }
-        }
-        if (hasOverlap && !tooManyShapes) {
-          addLog(`Slide has overlapping shapes — skipping position/size alignment, keeping fonts, colours and title position`);
-        }
-        skipAlignment = tooManyShapes || hasOverlap;
-
-        if (nonTitleShapes.length > 0 && !tooManyShapes && !hasOverlap && targetTitlePos) {
-          const GRID = 50, MAX_CELLS = 5;
-          const areaLeft = targetTitlePos.left, areaRight = targetTitlePos.left + targetTitlePos.width;
-          const areaTop  = targetTitlePos.top + targetTitlePos.height + slideH * 0.013, areaBottom = slideH * 0.987;
-          const cellW = (areaRight - areaLeft) / GRID, cellH = (areaBottom - areaTop) / GRID;
-          const q = v => Math.round(v * 10000) / 10000; // 4dp precision to avoid float drift
-          const snapX = v => { const n = Math.round((v - areaLeft) / cellW); return q(areaLeft + n * cellW); };
-          const snapY = v => { const n = Math.round((v - areaTop)  / cellH); return q(areaTop  + n * cellH); };
-          const clamp = (snapped, orig, cell) => Math.abs(snapped - orig) <= MAX_CELLS * cell ? snapped : orig;
-
-          const gridFixes = [];
-          const gridFixMap = new Map();
-          const positions = nonTitleShapes.map(s => ({ ...s.position }));
-
-          const recordFix = (idx) => {
-            const s = nonTitleShapes[idx], p = positions[idx];
-            const key = String(s.id);
-            const ex = gridFixMap.get(key);
-            if (ex) { ex.position = { ...p }; }
-            else {
-              const fix = { shapeName: s.name, shapeId: s.id, _slideShape: s, shapeFill: s.shapeFill||null, position: { ...p } };
-              gridFixMap.set(key, fix);
-              gridFixes.push(fix);
-            }
-          };
-
-          const sameH = (a, b) => Math.abs(a.height - b.height) <= cellH;
-          const sameW = (a, b) => Math.abs(a.width  - b.width)  <= cellW;
-
-          // ── Step 1: Snap every shape to nearest grid point (once, up front) ──
-          for (let i = 0; i < nonTitleShapes.length; i++) {
-            const orig = nonTitleShapes[i].position;
-            const newLeft   = clamp(snapX(orig.left),              orig.left,              cellW);
-            const newTop    = clamp(snapY(orig.top),               orig.top,               cellH);
-            const newRight  = clamp(snapX(orig.left + orig.width), orig.left + orig.width, cellW);
-            const newBottom = clamp(snapY(orig.top  + orig.height),orig.top  + orig.height,cellH);
-            const newWidth  = Math.max(newRight - newLeft, cellW);
-            const newHeight = Math.max(newBottom - newTop, cellH);
-            if (Math.abs(newLeft-orig.left) > cellW*0.1 || Math.abs(newTop-orig.top) > cellH*0.1 ||
-                Math.abs(newWidth-orig.width) > cellW*0.1 || Math.abs(newHeight-orig.height) > cellH*0.1) {
-              positions[i] = { left: newLeft, top: newTop, width: newWidth, height: newHeight };
-              recordFix(i);
-            }
-          }
-
-          // ── Steps 2–5 loop until no more changes ─────────────────────────────
-          for (let pass = 0; pass < 5; pass++) {
-            let changed = false;
-
-            // Step 2: Match dimensions — where width or height is within 1 cell,
-            //         snap both to the larger value
-            for (let i = 0; i < nonTitleShapes.length; i++) {
-              for (let j = i + 1; j < nonTitleShapes.length; j++) {
-                const a = positions[i], b = positions[j];
-                if (Math.abs(a.width - b.width) <= cellW * 2 && Math.abs(a.width - b.width) > cellW * 0.1) {
-                  const w = Math.max(a.width, b.width);
-                  positions[i].width = w; positions[j].width = w;
-                  recordFix(i); recordFix(j); changed = true;
-                }
-                if (Math.abs(a.height - b.height) <= cellH * 2 && Math.abs(a.height - b.height) > cellH * 0.1) {
-                  const h = Math.max(a.height, b.height);
-                  positions[i].height = h; positions[j].height = h;
-                  recordFix(i); recordFix(j); changed = true;
-                }
-              }
-            }
-
-            // Step 3: Resolve text-box overlaps — move one cell at a time
-            // Skip pairs where one shape is fully contained inside the other (intentional layering, e.g. icons)
-            const isContained = (x, y) =>
-              x.left >= y.left - cellW * 0.1 && x.left + x.width  <= y.left + y.width  + cellW * 0.1 &&
-              x.top  >= y.top  - cellH * 0.1 && x.top  + x.height <= y.top  + y.height + cellH * 0.1;
-            for (let i = 0; i < nonTitleShapes.length; i++) {
-              for (let j = i + 1; j < nonTitleShapes.length; j++) {
-                const a = positions[i], b = positions[j];
-                if (isContained(a, b) || isContained(b, a)) continue;
-                const overlapX = Math.min(a.left+a.width, b.left+b.width) - Math.max(a.left, b.left);
-                const overlapY = Math.min(a.top+a.height, b.top+b.height) - Math.max(a.top,  b.top);
-                if (overlapX > cellW * 0.1 && overlapY > cellH * 0.1) {
-                  // Move j one cell in the axis of least overlap
-                  if (overlapX <= overlapY) { positions[j].left += cellW; }
-                  else                      { positions[j].top  += cellH; }
-                  recordFix(j); changed = true;
-                }
-              }
-            }
-
-            // Step 4: Align edges — within 2 grid cells AND same height/width
-            for (let i = 0; i < nonTitleShapes.length; i++) {
-              for (let j = i + 1; j < nonTitleShapes.length; j++) {
-                const a = positions[i], b = positions[j];
-                // Align tops if within 2 vertical cells — no height check needed
-                if (Math.abs(a.top - b.top) <= cellH * 2 && Math.abs(a.top - b.top) > cellH * 0.1) {
-                  const t = q(Math.min(a.top, b.top));
-                  positions[i].top = t; positions[j].top = t;
-                  recordFix(i); recordFix(j); changed = true;
-                }
-                // Align lefts if within 2 horizontal cells and same width
-                if (sameW(a, b) && Math.abs(a.left - b.left) <= cellW * 2 && Math.abs(a.left - b.left) > cellW * 0.1) {
-                  const l = q(Math.min(a.left, b.left));
-                  positions[i].left = l; positions[j].left = l;
-                  recordFix(i); recordFix(j); changed = true;
-                }
-                // Align bottom edges if within 2 vertical cells and same height
-                const aBotE = a.top + a.height, bBotE = b.top + b.height;
-                if (sameH(a, b) && Math.abs(aBotE - bBotE) <= cellH * 2 && Math.abs(aBotE - bBotE) > cellH * 0.1) {
-                  const bot = q(Math.min(aBotE, bBotE));
-                  positions[i].top = q(bot - a.height); positions[j].top = q(bot - b.height);
-                  recordFix(i); recordFix(j); changed = true;
-                }
-                // Align right edges if within 2 horizontal cells and same width
-                const aRightE = a.left + a.width, bRightE = b.left + b.width;
-                if (sameW(a, b) && Math.abs(aRightE - bRightE) <= cellW * 2 && Math.abs(aRightE - bRightE) > cellW * 0.1) {
-                  const right = q(Math.min(aRightE, bRightE));
-                  positions[i].left = q(right - a.width); positions[j].left = q(right - b.width);
-                  recordFix(i); recordFix(j); changed = true;
-                }
-              }
-            }
-
-            // Step 5: Distribute spacing — groups of 2+ that are aligned and
-            //         same size get evenly spaced
-            for (let i = 0; i < nonTitleShapes.length; i++) {
-              // Find all shapes with same height and tops aligned with i
-              const hRow = [i];
-              for (let j = 0; j < nonTitleShapes.length; j++) {
-                if (j === i) continue;
-                const a = positions[i], b = positions[j];
-                if (sameH(a, b) && Math.abs(a.top - b.top) <= cellH * 0.1) hRow.push(j);
-              }
-              if (hRow.length >= 2) {
-                const sorted = hRow.sort((x, y) => positions[x].left - positions[y].left);
-                const lmost = positions[sorted[0]].left;
-                const rmost = positions[sorted[sorted.length-1]].left + positions[sorted[sorted.length-1]].width;
-                const totalW = sorted.reduce((s, idx) => s + positions[idx].width, 0);
-                const gap = (rmost - lmost - totalW) / (sorted.length - 1);
-                if (gap > 0) {
-                  let cursor = lmost;
-                  for (const idx of sorted) {
-                    if (Math.abs(positions[idx].left - cursor) > cellW * 0.1) {
-                      positions[idx].left = cursor; recordFix(idx); changed = true;
-                    }
-                    cursor += positions[idx].width + gap;
-                  }
-                }
-              }
-
-              // Find all shapes with same width and lefts aligned with i
-              const wCol = [i];
-              for (let j = 0; j < nonTitleShapes.length; j++) {
-                if (j === i) continue;
-                const a = positions[i], b = positions[j];
-                if (sameW(a, b) && Math.abs(a.left - b.left) <= cellW * 0.1) wCol.push(j);
-              }
-              if (wCol.length >= 2) {
-                const sorted = wCol.sort((x, y) => positions[x].top - positions[y].top);
-                const tmost = positions[sorted[0]].top;
-                const bmost = positions[sorted[sorted.length-1]].top + positions[sorted[sorted.length-1]].height;
-                const totalH = sorted.reduce((s, idx) => s + positions[idx].height, 0);
-                const gap = (bmost - tmost - totalH) / (sorted.length - 1);
-                if (gap > 0) {
-                  let cursor = tmost;
-                  for (const idx of sorted) {
-                    if (Math.abs(positions[idx].top - cursor) > cellH * 0.1) {
-                      positions[idx].top = cursor; recordFix(idx); changed = true;
-                    }
-                    cursor += positions[idx].height + gap;
-                  }
-                }
-              }
-            }
-
-            if (!changed) break;
-          }
-
-          if (gridFixes.length > 0) {
-            addLog(`Step 4: Aligning ${gridFixes.length} shape(s)…`);
-            await applyFixes(dupIndex, gridFixes, themeColors);
-            totalFixes += gridFixes.length;
-          }
-        }
-      }
-
-      // ─── ENFORCE: title position always wins ────────────────────────────────
-      if (titleShape && targetTitlePos) {
-        await applyFixes(dupIndex, [{
-          shapeName: titleShape.name, shapeId: titleShape.id, _slideShape: titleShape,
-          shapeFill: titleShape.shapeFill || null, position: targetTitlePos,
-        }], themeColors);
-      }
-
-      // ─── SAFETY NET: push any remaining text-box overlaps apart ─────────────
-      if (!skipAlignment) {
-      await PowerPoint.run(async (ctx) => {
-        const slides = ctx.presentation.slides;
-        slides.load("items");
-        await ctx.sync();
-        const shapes = slides.items[dupIndex - 1].shapes;
-        shapes.load("items");
-        await ctx.sync();
-        for (const s of shapes.items) s.load(["id", "name", "left", "top", "width", "height", "type"]);
-        await ctx.sync();
-        // Only consider text boxes (type 1 = text box, 14 = placeholder)
-        const live = shapes.items
-          .filter(s => s.width > 0 && s.height > 0)
-          .map(s => ({ s, left: s.left/72, top: s.top/72, width: s.width/72, height: s.height/72 }));
-        // Grid cell sizes based on slide area
-        const gW = slideW / 50, gH = slideH / 50;
-        let changed = true;
-        const isContainedLive = (x, y) =>
-          x.left >= y.left - gW * 0.5 && x.left + x.width  <= y.left + y.width  + gW * 0.5 &&
-          x.top  >= y.top  - gH * 0.5 && x.top  + x.height <= y.top  + y.height + gH * 0.5;
-        for (let iter = 0; iter < 8 && changed; iter++) {
-          changed = false;
-          for (let i = 0; i < live.length; i++) {
-            for (let j = i + 1; j < live.length; j++) {
-              const a = live[i], b = live[j];
-              if (isContainedLive(a, b) || isContainedLive(b, a)) continue;
-              const overX = a.left < b.left + b.width  - gW && a.left + a.width  > b.left + gW;
-              const overY = a.top  < b.top  + b.height - gH && a.top  + a.height > b.top  + gH;
-              if (!overX || !overY) continue;
-              const lower = a.top >= b.top ? a : b;
-              const upper = a.top >= b.top ? b : a;
-              const newTop = upper.top + upper.height + gH;
-              if (newTop + lower.height <= slideH) { lower.top = newTop; lower.s.top = newTop * 72; changed = true; }
-            }
-          }
-        }
-        await ctx.sync();
       });
-      }
-      */
+
 
       addLog(`✓ Done — ${totalFixes} fix${totalFixes !== 1 ? "es" : ""} applied`);
       setFixCount(totalFixes);
