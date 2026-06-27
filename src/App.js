@@ -1339,35 +1339,47 @@ export default function App() {
             }], themeColors);
             totalFixes++;
 
-            // ── Squeeze content shapes to fit new available space below title ──
+            // ── Squeeze content shapes to fit new available space below/beside title ──
             if (posNeedsFix && cur) {
-              const SLIDE_H = 7.5;
+              const SLIDE_W = 13.33, SLIDE_H = 7.5;
               const titleH = cur.height || (targetTitlePos.height || 0.5);
-              const oldTitleBottom = cur.top + titleH;
+              const titleW = cur.width  || (targetTitlePos.width  || 10);
+
+              // Vertical: space below title
+              const oldTitleBottom = cur.top  + titleH;
               const newTitleBottom = targetTitlePos.top + titleH;
-              const oldAvail = SLIDE_H - oldTitleBottom;
-              const newAvail = SLIDE_H - newTitleBottom;
+              const oldAvailV = SLIDE_H - oldTitleBottom;
+              const newAvailV = SLIDE_H - newTitleBottom;
 
-              if (oldAvail > 0 && newAvail > 0 && Math.abs(oldAvail - newAvail) > 0.05) {
-                const ratio = newAvail / oldAvail;
-                addLog(`  Squeezing content: ratio=${ratio.toFixed(3)} (${oldAvail.toFixed(2)}" → ${newAvail.toFixed(2)}")`);
+              // Horizontal: space to right of title left edge
+              const oldAvailH = SLIDE_W - cur.left;
+              const newAvailH = SLIDE_W - targetTitlePos.left;
 
-                // Find all non-title shapes that were below the old title bottom
+              const ratioV = (oldAvailV > 0 && newAvailV > 0) ? newAvailV / oldAvailV : 1;
+              const ratioH = (oldAvailH > 0 && newAvailH > 0) ? newAvailH / oldAvailH : 1;
+              const needsV = Math.abs(ratioV - 1) > 0.005;
+              const needsH = Math.abs(ratioH - 1) > 0.005;
+
+              if (needsV || needsH) {
+                addLog(`  Squeezing content: V=${ratioV.toFixed(3)} H=${ratioH.toFixed(3)}`);
+
                 const shapesToSqueeze = pptxData.slideShapes.filter(ss =>
-                  ss.phType !== "title" && ss.phType !== "ctrTitle" &&
-                  ss.position && ss.position.top >= oldTitleBottom - 0.05
+                  ss.phType !== "title" && ss.phType !== "ctrTitle" && ss.position
                 );
 
                 if (shapesToSqueeze.length > 0) {
-                  await applyFixes(dupIndex, shapesToSqueeze.map(ss => ({
-                    shapeName: ss.name, shapeId: ss.id, _slideShape: ss,
-                    position: {
-                      left:   ss.position.left,
-                      top:    newTitleBottom + (ss.position.top - oldTitleBottom) * ratio,
-                      width:  ss.position.width,
-                      height: ss.position.height * ratio,
-                    },
-                  })), themeColors);
+                  await applyFixes(dupIndex, shapesToSqueeze.map(ss => {
+                    const p = ss.position;
+                    return {
+                      shapeName: ss.name, shapeId: ss.id, _slideShape: ss,
+                      position: {
+                        left:   targetTitlePos.left + (p.left - cur.left) * ratioH,
+                        top:    newTitleBottom      + (p.top  - oldTitleBottom) * ratioV,
+                        width:  p.width  * ratioH,
+                        height: p.height * ratioV,
+                      },
+                    };
+                  }), themeColors);
                   totalFixes += shapesToSqueeze.length;
                   addLog(`  ✓ Squeezed ${shapesToSqueeze.length} shapes`);
                 }
