@@ -1597,43 +1597,40 @@ export default function App() {
           await ctx.sync();
 
           const totalSlides = slides.items.length;
-          if (totalSlides < 2) return; // not enough slides to compare
+          if (totalSlides < 2) return;
 
-          // Load shapes for reference slides (2, 3, 4) and current slide
-          const refIndices = [1, 2, 3].filter(i => i < totalSlides && i !== dupIndex - 1);
-          if (refIndices.length === 0) return;
+          // Use slides 2-6 as reference (0-indexed: 1-5), excluding current slide
+          const refIndices = [1, 2, 3, 4, 5].filter(i => i < totalSlides && i !== dupIndex - 1);
+          if (refIndices.length < 2) return;
 
           const refSlides = refIndices.map(i => slides.items[i]);
           const currentSlide = slides.items[dupIndex - 1];
 
-          for (const s of [...refSlides, currentSlide]) {
-            s.shapes.load("items");
-          }
+          for (const s of [...refSlides, currentSlide]) s.shapes.load("items");
           await ctx.sync();
 
           for (const s of [...refSlides, currentSlide]) {
-            for (const shape of s.shapes.items) shape.load(["left", "top", "width", "height", "type"]);
+            for (const shape of s.shapes.items) shape.load(["left", "top", "width", "height"]);
           }
           await ctx.sync();
 
           const TOL = 0.15 * 72; // 0.15 inches in points
 
-          // Collect shape positions from each reference slide
           const refShapeSets = refSlides.map(s =>
-            s.shapes.items.map(sh => ({ left: sh.left, top: sh.top, width: sh.width, height: sh.height }))
+            s.shapes.items.map(sh => ({ left: sh.left, top: sh.top }))
           );
 
-          // Find shapes present in ALL reference slides (strict — must be on every reference slide)
+          // Template shapes = present in 4 or more of the reference slides
           const templateShapes = refShapeSets[0].filter(shape =>
-            refShapeSets.slice(1).every(otherSet =>
+            refShapeSets.filter(otherSet =>
               otherSet.some(other =>
                 Math.abs(other.left - shape.left) < TOL &&
                 Math.abs(other.top  - shape.top)  < TOL
               )
-            )
+            ).length >= 4
           );
 
-          // Check if current slide has those template shapes
+          // Warn if more than 50% of template shapes are missing from current slide
           const currentShapes = currentSlide.shapes.items.map(sh => ({ left: sh.left, top: sh.top }));
           const missing = templateShapes.filter(ts =>
             !currentShapes.some(cs =>
@@ -1643,7 +1640,7 @@ export default function App() {
           );
 
           addLog(`  Template check: ${templateShapes.length} consistent shapes, ${missing.length} missing`);
-          if (templateShapes.length > 0 && missing.length >= Math.ceil(templateShapes.length * 0.8)) {
+          if (templateShapes.length > 0 && missing.length > templateShapes.length * 0.5) {
             setMasterWarning(true);
           }
         });
