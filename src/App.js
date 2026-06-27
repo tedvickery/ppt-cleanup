@@ -644,8 +644,9 @@ async function readAllMasters(zip) {
     }
   }
 
-  // Count slides per master — reject imported masters used by < 20% of slides vs dominant
+  // Count slides per master and per layout — detect imported slides
   const masterSlideCounts = {};
+  const layoutSlideCounts = {};
   for (const m of masters) masterSlideCounts[m.index] = 0;
   for (const slideFile of zip.file(/^ppt\/slides\/slide\d+\.xml$/)) {
     const slideNum = slideFile.name.match(/slide(\d+)\.xml/)?.[1];
@@ -658,7 +659,9 @@ async function readAllMasters(zip) {
       for (const rel of relsDoc.getElementsByTagNameNS("*", "Relationship")) {
         const layoutMatch = (rel.getAttribute("Target") || "").match(/slideLayouts\/slideLayout(\d+)\.xml/);
         if (!layoutMatch) continue;
-        const layoutRelsFile = zip.file(`ppt/slideLayouts/_rels/slideLayout${layoutMatch[1]}.xml.rels`);
+        const layoutNum = layoutMatch[1];
+        layoutSlideCounts[layoutNum] = (layoutSlideCounts[layoutNum] || 0) + 1;
+        const layoutRelsFile = zip.file(`ppt/slideLayouts/_rels/slideLayout${layoutNum}.xml.rels`);
         if (!layoutRelsFile) continue;
         const layoutRelsXml = await layoutRelsFile.async("string");
         for (const lrel of parseXml(layoutRelsXml).getElementsByTagNameNS("*", "Relationship")) {
@@ -678,7 +681,7 @@ async function readAllMasters(zip) {
     const count = masterSlideCounts[m.index] || 0;
     return maxCount === 0 || count >= Math.max(1, maxCount * 0.2);
   });
-  return filtered.length > 0 ? filtered : masters;
+  return { masters: filtered.length > 0 ? filtered : masters, layoutSlideCounts };
 }
 
 /* ── Phase 1: read file bytes + discover masters ────────────────────────── */
@@ -686,8 +689,8 @@ async function readAllMasters(zip) {
 async function readPptxFile() {
   const bytes = await getFileBytes();
   const zip = await JSZip.loadAsync(bytes);
-  const masters = await readAllMasters(zip);
-  return { zip, masters };
+  const { masters, layoutSlideCounts } = await readAllMasters(zip);
+  return { zip, masters, layoutSlideCounts };
 }
 
 /* ── Phase 2: read slide data using chosen master ───────────────────────── */
@@ -992,6 +995,7 @@ export default function App() {
   const [fileError, setFileError]   = useState(null);
   const cachedZip       = useRef(null);
   const cachedMasters   = useRef(null);
+  const cachedLayoutCounts = useRef({});
   const cachedPptxData  = useRef({}); // keyed by slideIndex — slide shapes cached between runs
 
   // Load the file in the background as soon as the add-in opens
@@ -999,10 +1003,11 @@ export default function App() {
     let cancelled = false;
     async function loadFile() {
       try {
-        const { zip, masters } = await readPptxFile();
+        const { zip, masters, layoutSlideCounts } = await readPptxFile();
         if (cancelled) return;
-        cachedZip.current     = zip;
-        cachedMasters.current = masters;
+        cachedZip.current          = zip;
+        cachedMasters.current      = masters;
+        cachedLayoutCounts.current = layoutSlideCounts;
         setFileReady(true);
       } catch (e) {
         if (cancelled) return;
@@ -1165,9 +1170,11 @@ export default function App() {
       let zip = cachedZip.current;
       let masters = cachedMasters.current;
       if (!zip || !masters) {
-        ({ zip, masters } = await readPptxFile());
-        cachedZip.current     = zip;
-        cachedMasters.current = masters;
+        let layoutSlideCounts;
+        ({ zip, masters, layoutSlideCounts } = await readPptxFile());
+        cachedZip.current          = zip;
+        cachedMasters.current      = masters;
+        cachedLayoutCounts.current = layoutSlideCounts;
       }
 
       if (masters.length === 0) throw new Error("No slide masters found in this file");
@@ -1596,22 +1603,17 @@ export default function App() {
           const slideDoc = parseXml(slideXml);
           if (slideDoc.getElementsByTagNameNS("*", "cSld")[0]?.getAttribute("showMasterSp") === "0") setMasterWarning(true);
 
-          // Check master index matches dominant master
+          // Check if this slide uses a rare layout (likely imported)
+          const layoutCounts = cachedLayoutCounts.current || {};
+          const totalSlides = Object.values(layoutCounts).reduce((a, b) => a + b, 0);
           const relsDoc = parseXml(slideRelsXml);
           for (const rel of relsDoc.getElementsByTagNameNS("*", "Relationship")) {
             const layoutMatch = (rel.getAttribute("Target") || "").match(/slideLayouts\/slideLayout(\d+)\.xml/);
             if (!layoutMatch) continue;
-            const layoutRelsFile = zip.file(`ppt/slideLayouts/_rels/slideLayout${layoutMatch[1]}.xml.rels`);
-            if (layoutRelsFile) {
-              const layoutRelsDoc = parseXml(await layoutRelsFile.async("string"));
-              for (const lrel of layoutRelsDoc.getElementsByTagNameNS("*", "Relationship")) {
-                const masterMatch = (lrel.getAttribute("Target") || "").match(/slideMaster(\d+)\.xml/);
-                if (masterMatch) {
-                  if (parseInt(masterMatch[1], 10) !== (cachedMasters.current?.[0]?.index ?? 1)) setMasterWarning(true);
-                  break;
-                }
-              }
-            }
+            const layoutNum = layoutMatch[1];
+            const layoutCount = layoutCounts[layoutNum] || 0;
+            // Flag if this layout is used by fewer than 10% of slides (likely imported)
+            if (totalSlides > 1 && layoutCount / totalSlides < 0.1) setMasterWarning(true);
             break;
           }
         }
@@ -1698,14 +1700,14 @@ export default function App() {
         {fileReady && status === "idle" && (
           <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "8px 12px", fontSize: 11, color: "#166534", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <span>✓ Template ready: <strong>{cachedMasters.current?.[0]?.name}</strong></span>
-            <button onClick={async () => { setFileReady(false); setFileError(null); try { const { zip, masters } = await readPptxFile(); cachedZip.current = zip; cachedMasters.current = masters; cachedPptxData.current = {}; setFileReady(true); } catch (e) { setFileError(e.message); } }}
+            <button onClick={async () => { setFileReady(false); setFileError(null); try { const { zip, masters, layoutSlideCounts } = await readPptxFile(); cachedZip.current = zip; cachedMasters.current = masters; cachedLayoutCounts.current = layoutSlideCounts; cachedPptxData.current = {}; setFileReady(true); } catch (e) { setFileError(e.message); } }}
               style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#15803d", textDecoration: "underline", padding: 0 }}>↺ Reload</button>
           </div>
         )}
         {fileError && (
           <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "8px 12px", fontSize: 11, color: "#991b1b", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <span>⚠ {fileError}</span>
-            <button onClick={async () => { setFileReady(false); setFileError(null); try { const { zip, masters } = await readPptxFile(); cachedZip.current = zip; cachedMasters.current = masters; cachedPptxData.current = {}; setFileReady(true); } catch (e) { setFileError(e.message); } }}
+            <button onClick={async () => { setFileReady(false); setFileError(null); try { const { zip, masters, layoutSlideCounts } = await readPptxFile(); cachedZip.current = zip; cachedMasters.current = masters; cachedLayoutCounts.current = layoutSlideCounts; cachedPptxData.current = {}; setFileReady(true); } catch (e) { setFileError(e.message); } }}
               style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#991b1b", textDecoration: "underline", padding: 0 }}>↺ Retry</button>
           </div>
         )}
