@@ -1652,7 +1652,7 @@ export default function App() {
           );
 
           addLog(`  Template check: ${templateShapes.length} consistent shapes, ${missing.length} missing`);
-          if (templateShapes.length > 0 && missing.length > templateShapes.length * 0.5) {
+          if (templateShapes.length > 0 && missing.length >= templateShapes.length * 0.3) {
             setMasterWarning(true);
           }
         });
