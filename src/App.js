@@ -1656,7 +1656,7 @@ export default function App() {
             setMasterWarning(true);
           }
         });
-      } catch (e) { /* non-critical */ }
+      } catch (e) { addLog(`  Template check error: ${e.message}`); }
 
       addLog(`✓ Done — ${totalFixes} fix${totalFixes !== 1 ? "es" : ""} applied`);
       setFixCount(totalFixes);
