@@ -687,19 +687,30 @@ async function readAllMasters(zip) {
   const masterXmlFile = zip.file(`ppt/slideMasters/slideMaster${dominantMasterIndex}.xml`);
   if (masterXmlFile) {
     const masterDoc = parseXml(await masterXmlFile.async("string"));
-    for (const sp of masterDoc.getElementsByTagNameNS("*", "sp")) {
-      const ph = sp.getElementsByTagNameNS("*", "ph")[0];
-      if (ph) continue; // skip placeholders — only fixed shapes
-      const xfrm = sp.getElementsByTagNameNS("*", "xfrm")[0];
-      const off  = xfrm?.getElementsByTagNameNS("*", "off")[0];
-      const ext  = xfrm?.getElementsByTagNameNS("*", "ext")[0];
-      if (!off || !ext) continue;
-      masterFixedShapes.push({
-        left:   emuToInches(off.getAttribute("x")),
-        top:    emuToInches(off.getAttribute("y")),
-        width:  emuToInches(ext.getAttribute("cx")),
-        height: emuToInches(ext.getAttribute("cy")),
-      });
+    const spTree = masterDoc.getElementsByTagNameNS("*", "spTree")[0];
+    if (spTree) {
+      for (const child of Array.from(spTree.childNodes)) {
+        const localName = child.localName;
+        if (!localName) continue;
+        // Skip placeholder shapes — only collect fixed design elements
+        if (localName === "sp") {
+          const ph = child.getElementsByTagNameNS?.("*", "ph")?.[0];
+          if (ph) continue;
+        }
+        // Collect sp (non-ph), pic (images), graphicFrame (charts/tables)
+        if (!["sp", "pic", "graphicFrame", "grpSp"].includes(localName)) continue;
+        const xfrm = child.getElementsByTagNameNS("*", "xfrm")[0];
+        const off  = xfrm?.getElementsByTagNameNS("*", "off")[0];
+        const ext  = xfrm?.getElementsByTagNameNS("*", "ext")[0];
+        if (!off || !ext) continue;
+        masterFixedShapes.push({
+          type: localName,
+          left:   emuToInches(off.getAttribute("x")),
+          top:    emuToInches(off.getAttribute("y")),
+          width:  emuToInches(ext.getAttribute("cx")),
+          height: emuToInches(ext.getAttribute("cy")),
+        });
+      }
     }
   }
 
@@ -1625,17 +1636,19 @@ export default function App() {
               setMasterWarning(true);
             } else {
               const slideShapePositions = [];
-              for (const sp of slideDoc.getElementsByTagNameNS("*", "sp")) {
-                const xfrm = sp.getElementsByTagNameNS("*", "xfrm")[0];
-                const off  = xfrm?.getElementsByTagNameNS("*", "off")[0];
-                const ext  = xfrm?.getElementsByTagNameNS("*", "ext")[0];
-                if (!off || !ext) continue;
-                slideShapePositions.push({
-                  left:   emuToInches(off.getAttribute("x")),
-                  top:    emuToInches(off.getAttribute("y")),
-                  width:  emuToInches(ext.getAttribute("cx")),
-                  height: emuToInches(ext.getAttribute("cy")),
-                });
+              const spTree = slideDoc.getElementsByTagNameNS("*", "spTree")[0];
+              if (spTree) {
+                for (const child of Array.from(spTree.childNodes)) {
+                  if (!["sp", "pic", "graphicFrame", "grpSp"].includes(child.localName)) continue;
+                  const xfrm = child.getElementsByTagNameNS("*", "xfrm")[0];
+                  const off  = xfrm?.getElementsByTagNameNS("*", "off")[0];
+                  const ext  = xfrm?.getElementsByTagNameNS("*", "ext")[0];
+                  if (!off || !ext) continue;
+                  slideShapePositions.push({
+                    left:   emuToInches(off.getAttribute("x")),
+                    top:    emuToInches(off.getAttribute("y")),
+                  });
+                }
               }
               const TOL = 0.3;
               let missing = 0;
