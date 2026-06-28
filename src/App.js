@@ -251,12 +251,13 @@ function parseMasterXml(xml, theme) {
 
     // Text body padding from bodyPr (in EMU — convert to points: 1pt = 12700 EMU)
     const bodyPr = txBody?.getElementsByTagNameNS("*", "bodyPr")[0];
-    const padding = bodyPr ? {
-      left:   bodyPr.getAttribute("lIns") != null ? parseInt(bodyPr.getAttribute("lIns"), 10) / 12700 : null,
-      right:  bodyPr.getAttribute("rIns") != null ? parseInt(bodyPr.getAttribute("rIns"), 10) / 12700 : null,
-      top:    bodyPr.getAttribute("tIns") != null ? parseInt(bodyPr.getAttribute("tIns"), 10) / 12700 : null,
-      bottom: bodyPr.getAttribute("bIns") != null ? parseInt(bodyPr.getAttribute("bIns"), 10) / 12700 : null,
-    } : null;
+    const DEFAULT_PADDING = { left: 7.2, right: 7.2, top: 3.6, bottom: 3.6 };
+    const padding = {
+      left:   bodyPr?.getAttribute("lIns") != null ? parseInt(bodyPr.getAttribute("lIns"), 10) / 12700 : DEFAULT_PADDING.left,
+      right:  bodyPr?.getAttribute("rIns") != null ? parseInt(bodyPr.getAttribute("rIns"), 10) / 12700 : DEFAULT_PADDING.right,
+      top:    bodyPr?.getAttribute("tIns") != null ? parseInt(bodyPr.getAttribute("tIns"), 10) / 12700 : DEFAULT_PADDING.top,
+      bottom: bodyPr?.getAttribute("bIns") != null ? parseInt(bodyPr.getAttribute("bIns"), 10) / 12700 : DEFAULT_PADDING.bottom,
+    };
 
     placeholders.push({ type: phType, idx: phIdx, font: { name: fontName, size: fontSize, color, bold }, alignment, position, fill: masterFill, paraFormat, padding });
   }
@@ -1314,7 +1315,7 @@ export default function App() {
                 ...(sizNeedsFix ? { size: titleFontSize } : {}),
                 ...(titleColorNeedsFix ? { color: primaryThemeColorForTitle } : {}),
               } } : {}),
-              ...(titleMaster?.padding ? { padding: titleMaster.padding } : {}),
+              ...(titleMaster?.padding ? { padding: titleMaster.padding } : { padding: { left: 7.2, right: 7.2, top: 3.6, bottom: 3.6 } }),
             }], themeColors);
             totalFixes++;
 
