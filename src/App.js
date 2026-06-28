@@ -1009,6 +1009,7 @@ export default function App() {
   const [detectedTheme, setDetectedTheme] = useState(null);
   const [detectedMaster, setDetectedMaster] = useState([]);
   const [masterWarning, setMasterWarning] = useState(false);
+  const [colorWarning, setColorWarning]   = useState(null);
 
   // Manual title override, per slide, for this session only — { [slideIndex]: { id, name } }
   const [titleOverrides, setTitleOverrides] = useState({});
@@ -1181,6 +1182,7 @@ export default function App() {
     setError(null);
     setFixCount(0);
     setMasterWarning(false);
+    setColorWarning(null);
     setDetectedTheme(null);
     setDetectedMaster([]);
 
@@ -1663,7 +1665,7 @@ export default function App() {
         const highestUsed = Math.max(...usedRanks);
         const unusedAbove = rankedColors.slice(0, highestUsed).filter(c => !usedColors.has(c));
         if (unusedAbove.length > 0) {
-          addLog(`⚠ Colour review: colour ${highestUsed + 1} used but ${unusedAbove.length} higher-priority colour${unusedAbove.length > 1 ? "s" : ""} unused — consider reviewing theme colour usage`);
+          setColorWarning(`Colour ${highestUsed + 1} is used but ${unusedAbove.length} higher-priority colour${unusedAbove.length > 1 ? "s" : ""} ${unusedAbove.length > 1 ? "are" : "is"} unused — consider reviewing theme colour usage`);
         }
       }
       setFixCount(totalFixes);
@@ -1719,6 +1721,11 @@ export default function App() {
         {status === "done" && masterWarning && (
           <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "10px 14px", fontSize: 11, color: "#92400e" }}>
             ⚠ Looks like this slide might not be aligned to the master template. Consider copying the contents of this slide to a new blank slide.
+          </div>
+        )}
+        {status === "done" && colorWarning && (
+          <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "10px 14px", fontSize: 11, color: "#92400e" }}>
+            ⚠ {colorWarning}
           </div>
         )}
         {error && <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 12px", fontSize: 11, color: "#991b1b" }}><strong>Error:</strong> {error}</div>}
