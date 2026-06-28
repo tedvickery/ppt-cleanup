@@ -1475,7 +1475,7 @@ export default function App() {
           }
         } catch (e) { /* use default */ }
 
-        // Snap slide background to master background if close
+        // Snap slide background to nearest theme colour
         try {
           const slideBgFill = slides.items[dupIndex - 1].background.fill;
           slideBgFill.load("type");
@@ -1487,10 +1487,11 @@ export default function App() {
               await ctx.sync();
               if (!solid.isNullObject && solid.color) {
                 const slideColor = solid.color.startsWith("#") ? solid.color : `#${solid.color}`;
-                if (slideColor.toLowerCase() !== bgColor.toLowerCase()) {
-                  slideBgFill.setSolidColor(bgColor.replace("#", ""));
+                const nearest = snapToThemeColor(slideColor, themeColors);
+                if (nearest.toLowerCase() !== slideColor.toLowerCase()) {
+                  slideBgFill.setSolidColor(nearest.replace("#", ""));
                   await ctx.sync();
-                  addLog(`Background snapped to master: ${bgColor}`);
+                  addLog(`Background snapped: ${slideColor} → ${nearest}`);
                 }
               }
             }
@@ -1581,8 +1582,8 @@ export default function App() {
                 const nearest = snapToThemeColor(effectiveFill, themeColorsNoBg);
                 os.fill.setSolidColor(nearest.replace("#", "")); totalFixes++;
               } else {
-                // Colour genuinely unresolvable — leave it alone
-                continue;
+                // Colour genuinely unresolvable — random theme colour
+                if (fillPool.length > 0) { os.fill.setSolidColor(fillPool[Math.floor(Math.random() * fillPool.length)].replace("#", "")); totalFixes++; }
               }
             } else {
               if (!os.lineFormat.visible) continue;
