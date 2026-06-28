@@ -1475,7 +1475,7 @@ export default function App() {
           }
         } catch (e) { /* use default */ }
 
-        // Snap slide background to nearest theme colour
+        addLog(`  BG from master XML: ${bgColor}`);
         try {
           const slideBgFill = slides.items[dupIndex - 1].background.fill;
           slideBgFill.load("type");
@@ -1549,6 +1549,7 @@ export default function App() {
         await ctx.sync(); // ONE sync for table cell / group child colour reads
 
         // Write all font colours
+        let colorLogCount = 0;
         for (const { tr, ss } of colorJobs) {
           try {
             const rawColor = tr.font.color;
@@ -1556,6 +1557,7 @@ export default function App() {
             const xmlExplicit = ss.current?.color && ss.current.color !== "(inherited)" && !ss.current.color.startsWith("theme:") ? ss.current.color : null;
             const masterColor = ss.masterTarget?.color && ss.masterTarget.color !== "(inherited)" ? ss.masterTarget.color : null;
             const effectiveColor = officeColor || xmlExplicit || masterColor;
+            if (colorLogCount < 5) { addLog(`  Font colour: raw=${rawColor} xml=${xmlExplicit} eff=${effectiveColor}`); colorLogCount++; }
             let targetColor;
             if (!effectiveColor) { targetColor = fontPrimaryColor; }
             else { const nearest = snapToThemeColor(effectiveColor, fontThemeColors); targetColor = nearest.toLowerCase() === effectiveColor.toLowerCase() ? null : nearest; }
@@ -1566,16 +1568,17 @@ export default function App() {
 
         // Write all fill/border colours
         const fillPool = themeColorValues.length > 0 ? themeColorValues : Object.values(themeColors).filter(Boolean);
+        let fillLogCount = 0;
         for (const { os, kind } of fillJobs) {
           try {
             if (kind === "fill") {
               if (String(os.fill.type).toLowerCase() !== "solid") continue;
-              // Try color first, then foregroundColor, then XML-parsed shapeFill
               const liveColor = os.fill.color ? (os.fill.color.startsWith("#") ? os.fill.color : `#${os.fill.color}`) : null;
               const liveFg    = os.fill.foregroundColor ? (os.fill.foregroundColor.startsWith("#") ? os.fill.foregroundColor : `#${os.fill.foregroundColor}`) : null;
               const ss = pptxData.slideShapes.find(s => String(s.id) === String(os.id) || s.name === os.name);
               const xmlFill = ss?.shapeFill && !ss.shapeFill.startsWith("theme:") && ss.shapeFill !== "none" && !ss.shapeFill.includes("gradient") ? ss.shapeFill : null;
               const effectiveFill = liveColor || liveFg || xmlFill;
+              if (fillLogCount < 5) { addLog(`  Fill: live=${liveColor} fg=${liveFg} xml=${xmlFill} eff=${effectiveFill}`); fillLogCount++; }
               if (effectiveFill) {
                 // We know the current colour — snap to nearest theme colour
                 if (fillPool.some(c => c.toLowerCase() === effectiveFill.toLowerCase())) continue; // already correct
