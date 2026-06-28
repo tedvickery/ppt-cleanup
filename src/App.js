@@ -1543,6 +1543,7 @@ export default function App() {
         const themeColorsNoBg = themeColors; // use full palette — background exclusion not needed
         const themeColorValues = Object.values(themeColors).filter(Boolean);
         const fontPrimaryColor = themeColorValues[0];
+        const usedColors = new Set(); // track which theme colours are actually used on this slide
         const fontThemeColors = themeColors;
 
         // Batch load all font colours and fill colours at once
@@ -1602,6 +1603,7 @@ export default function App() {
             else { const nearest = snapToThemeColor(effectiveColor, fontThemeColors); targetColor = nearest.toLowerCase() === effectiveColor.toLowerCase() ? null : nearest; }
             if (!targetColor) continue;
             tr.font.color = targetColor.replace("#", ""); totalFixes++;
+            usedColors.add(targetColor.toUpperCase());
           } catch (e) { /* skip */ }
         }
 
@@ -1620,6 +1622,7 @@ export default function App() {
                 if (fillPool.some(c => c.toLowerCase() === effectiveFill.toLowerCase())) continue; // already correct
                 const nearest = snapToThemeColor(effectiveFill, themeColorsNoBg);
                 os.fill.setSolidColor(nearest.replace("#", "")); totalFixes++;
+                usedColors.add(nearest.toUpperCase());
               } else {
                 // Colour genuinely unresolvable — random theme colour
                 if (fillPool.length > 0) { os.fill.setSolidColor(fillPool[Math.floor(Math.random() * fillPool.length)].replace("#", "")); totalFixes++; }
@@ -1651,6 +1654,18 @@ export default function App() {
 
 
       addLog(`✓ Done — ${totalFixes} fix${totalFixes !== 1 ? "es" : ""} applied`);
+
+      // ── Colour ranking check ─────────────────────────────────────────────
+      // Warn if a lower-ranked theme colour is used but a higher-ranked one isn't
+      const rankedColors = Object.values(themeColors).filter(Boolean).map(c => c.toUpperCase());
+      const usedRanks = rankedColors.map((c, i) => usedColors.has(c) ? i : -1).filter(i => i >= 0);
+      if (usedRanks.length > 0) {
+        const highestUsed = Math.max(...usedRanks);
+        const unusedAbove = rankedColors.slice(0, highestUsed).filter(c => !usedColors.has(c));
+        if (unusedAbove.length > 0) {
+          addLog(`⚠ Colour review: colour ${highestUsed + 1} used but ${unusedAbove.length} higher-priority colour${unusedAbove.length > 1 ? "s" : ""} unused — consider reviewing theme colour usage`);
+        }
+      }
       setFixCount(totalFixes);
       setStatus("done");
     } catch (err) {
