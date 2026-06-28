@@ -1381,6 +1381,7 @@ export default function App() {
 
       // ─── STEPS 2 + 3: Fonts, sizes, colours — single PowerPoint.run ────────────
       addLog("Step 2: Fonts & colours…");
+      const usedColors = new Set(); // track which theme colours are used — for ranking check
       await PowerPoint.run(async (ctx) => {
         const slides = ctx.presentation.slides;
         slides.load("items");
@@ -1540,10 +1541,9 @@ export default function App() {
         }
 
         // Build colour pools
-        const themeColorsNoBg = themeColors; // use full palette — background exclusion not needed
+        const themeColorsNoBg = themeColors;
         const themeColorValues = Object.values(themeColors).filter(Boolean);
         const fontPrimaryColor = themeColorValues[0];
-        const usedColors = new Set(); // track which theme colours are actually used on this slide
         const fontThemeColors = themeColors;
 
         // Batch load all font colours and fill colours at once
