@@ -1553,7 +1553,7 @@ export default function App() {
         for (const { tr, ss } of colorJobs) {
           try {
             const rawColor = tr.font.color;
-            const officeColor = (rawColor && rawColor !== "null") ? `#${rawColor}` : null;
+            const officeColor = (rawColor && rawColor !== "null") ? (rawColor.startsWith("#") ? rawColor : `#${rawColor}`) : null;
             const xmlExplicit = ss.current?.color && ss.current.color !== "(inherited)" && !ss.current.color.startsWith("theme:") ? ss.current.color : null;
             const masterColor = ss.masterTarget?.color && ss.masterTarget.color !== "(inherited)" ? ss.masterTarget.color : null;
             const effectiveColor = officeColor || xmlExplicit || masterColor;
