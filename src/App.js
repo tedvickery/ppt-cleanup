@@ -1269,18 +1269,20 @@ export default function App() {
           Math.abs(cur.left - targetTitlePos.left) > 0.05 ||
           Math.abs(cur.top  - targetTitlePos.top)  > 0.05;
         const headingFontForTitle = pptxData.theme.fonts.heading;
+        const titleFontSize = titleMaster?.font?.size || null;
         const fontNeedsFix = headingFontForTitle &&
           titleShape.current.fontName !== "(inherited)" &&
           titleShape.current.fontName !== headingFontForTitle;
+        const sizNeedsFix = titleFontSize && titleShape.current.fontSize &&
+          Math.abs(titleShape.current.fontSize - titleFontSize) > 1;
         const fillNeedsFix = titleShape.shapeFill && titleShape.shapeFill !== "none" && titleShape.masterTarget?.fill === "none";
         const primaryThemeColorForTitle = themeColorList[0];
         const titleColorNeedsFix = primaryThemeColorForTitle &&
           titleShape.current.color !== "(inherited)" &&
           titleShape.current.color?.toLowerCase() !== primaryThemeColorForTitle.toLowerCase();
-        if (posNeedsFix || fontNeedsFix || fillNeedsFix || titleColorNeedsFix) {
+        if (posNeedsFix || fontNeedsFix || sizNeedsFix || fillNeedsFix || titleColorNeedsFix) {
           addLog("Step 1: Title position & font…");
           try {
-            // Pass position with only left/top from target — preserve current width/height
             const posFix = posNeedsFix ? {
               left:   targetTitlePos.left,
               top:    targetTitlePos.top,
@@ -1291,8 +1293,9 @@ export default function App() {
               shapeName: titleShape.name, shapeId: titleShape.id, _slideShape: titleShape,
               shapeFill: fillNeedsFix ? "none" : (titleShape.shapeFill || null),
               ...(posNeedsFix ? { position: posFix } : {}),
-              ...(fontNeedsFix || titleColorNeedsFix ? { font: {
+              ...(fontNeedsFix || sizNeedsFix || titleColorNeedsFix ? { font: {
                 ...(fontNeedsFix ? { name: headingFontForTitle } : {}),
+                ...(sizNeedsFix ? { size: titleFontSize } : {}),
                 ...(titleColorNeedsFix ? { color: primaryThemeColorForTitle } : {}),
               } } : {}),
             }], themeColors);
