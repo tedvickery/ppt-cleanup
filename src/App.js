@@ -1477,26 +1477,38 @@ export default function App() {
 
         addLog(`  BG from master XML: ${bgColor}`);
         try {
-          const slideBgFill = slides.items[dupIndex - 1].background.fill;
-          slideBgFill.load("type");
+          const slideBg = slides.items[dupIndex - 1].background;
+          slideBg.load("followsMasterBackground");
           await ctx.sync();
-          if (String(slideBgFill.type).toLowerCase() === "solid") {
-            const solid = slideBgFill.getSolidColorOrNullObject ? slideBgFill.getSolidColorOrNullObject() : null;
-            if (solid) {
-              solid.load("color");
-              await ctx.sync();
-              if (!solid.isNullObject && solid.color) {
-                const slideColor = solid.color.startsWith("#") ? solid.color : `#${solid.color}`;
-                const nearest = snapToThemeColor(slideColor, themeColors);
-                if (nearest.toLowerCase() !== slideColor.toLowerCase()) {
-                  slideBgFill.setSolidColor(nearest.replace("#", ""));
-                  await ctx.sync();
-                  addLog(`Background snapped: ${slideColor} → ${nearest}`);
+          if (!slideBg.followsMasterBackground) {
+            slideBg.followsMasterBackground = true;
+            await ctx.sync();
+            addLog(`Background reset to master`);
+          }
+        } catch (e) {
+          // followsMasterBackground not supported — snap to nearest theme colour
+          try {
+            const slideBgFill = slides.items[dupIndex - 1].background.fill;
+            slideBgFill.load("type");
+            await ctx.sync();
+            if (String(slideBgFill.type).toLowerCase() === "solid") {
+              const solid = slideBgFill.getSolidColorOrNullObject ? slideBgFill.getSolidColorOrNullObject() : null;
+              if (solid) {
+                solid.load("color");
+                await ctx.sync();
+                if (!solid.isNullObject && solid.color) {
+                  const slideColor = solid.color.startsWith("#") ? solid.color : `#${solid.color}`;
+                  const nearest = snapToThemeColor(slideColor, themeColors);
+                  if (nearest.toLowerCase() !== slideColor.toLowerCase()) {
+                    slideBgFill.setSolidColor(nearest.replace("#", ""));
+                    await ctx.sync();
+                    addLog(`Background snapped: ${slideColor} → ${nearest}`);
+                  }
                 }
               }
             }
-          }
-        } catch (e) { /* background write not supported */ }
+          } catch (e2) { /* not supported */ }
+        }
 
         // Build colour pools
         const themeColorsNoBg = themeColors; // use full palette — background exclusion not needed
