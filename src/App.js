@@ -1456,28 +1456,46 @@ export default function App() {
         // ── Colour step ──────────────────────────────────────────────────────────
         addLog("Step 3: Colours…");
         let bgColor = "#FFFFFF";
-        let masterBgColor = "#FFFFFF";
+
+        // Read master background from XML — most reliable source
         try {
-          // Batch: load master bg and slide bg type in one sync
-          const masterBgFill = ctx.presentation.slideMasters.getItemAt(0).background.fill;
-          const slideBgFill  = slides.items[dupIndex - 1].background.fill;
-          masterBgFill.load("type"); slideBgFill.load("type");
-          await ctx.sync();
-          // Now load colours if solid — one more sync
-          const masterSolid = String(masterBgFill.type).toLowerCase() === "solid" && masterBgFill.getSolidColorOrNullObject ? masterBgFill.getSolidColorOrNullObject() : null;
-          const slideSolid  = String(slideBgFill.type).toLowerCase()  === "solid" && slideBgFill.getSolidColorOrNullObject  ? slideBgFill.getSolidColorOrNullObject()  : null;
-          if (masterSolid) masterSolid.load("color");
-          if (slideSolid)  slideSolid.load("color");
-          if (masterSolid || slideSolid) {
-            await ctx.sync();
-            if (masterSolid && !masterSolid.isNullObject && masterSolid.color) masterBgColor = masterSolid.color.startsWith("#") ? masterSolid.color : `#${masterSolid.color}`;
-            if (slideSolid  && !slideSolid.isNullObject  && slideSolid.color)  bgColor       = slideSolid.color.startsWith("#")  ? slideSolid.color  : `#${slideSolid.color}`;
+          const masterXmlFile = zip.file(`ppt/slideMasters/slideMaster${pptxData.theme ? cachedMasters.current?.[0]?.index ?? 1 : 1}.xml`);
+          if (masterXmlFile) {
+            const masterDoc = parseXml(await masterXmlFile.async("string"));
+            const bg = masterDoc.getElementsByTagNameNS("*", "bg")[0];
+            const solidFill = bg?.getElementsByTagNameNS("*", "solidFill")[0];
+            if (solidFill) {
+              const srgb   = solidFill.getElementsByTagNameNS("*", "srgbClr")[0];
+              const scheme = solidFill.getElementsByTagNameNS("*", "schemeClr")[0];
+              const sys    = solidFill.getElementsByTagNameNS("*", "sysClr")[0];
+              if (srgb)    bgColor = "#" + srgb.getAttribute("val");
+              else if (sys) bgColor = "#" + (sys.getAttribute("lastClr") || "FFFFFF");
+              else if (scheme) bgColor = resolveThemeColor(scheme.getAttribute("val"), pptxData.theme.colors) || "#FFFFFF";
+            }
           }
-        } catch (e) { /* background read not supported */ }
-        const BG_DRIFT_THRESHOLD = 80;
-        if (colourDistance(bgColor, masterBgColor) < BG_DRIFT_THRESHOLD && bgColor !== masterBgColor) {
-          try { slides.items[dupIndex - 1].background.fill.setSolidColor(masterBgColor.replace("#", "")); await ctx.sync(); bgColor = masterBgColor; addLog(`Background snapped to master: ${masterBgColor}`); } catch (e) { /* can't write */ }
-        }
+        } catch (e) { /* use default */ }
+
+        // Snap slide background to master background if close
+        try {
+          const slideBgFill = slides.items[dupIndex - 1].background.fill;
+          slideBgFill.load("type");
+          await ctx.sync();
+          if (String(slideBgFill.type).toLowerCase() === "solid") {
+            const solid = slideBgFill.getSolidColorOrNullObject ? slideBgFill.getSolidColorOrNullObject() : null;
+            if (solid) {
+              solid.load("color");
+              await ctx.sync();
+              if (!solid.isNullObject && solid.color) {
+                const slideColor = solid.color.startsWith("#") ? solid.color : `#${solid.color}`;
+                if (slideColor.toLowerCase() !== bgColor.toLowerCase()) {
+                  slideBgFill.setSolidColor(bgColor.replace("#", ""));
+                  await ctx.sync();
+                  addLog(`Background snapped to master: ${bgColor}`);
+                }
+              }
+            }
+          }
+        } catch (e) { /* background write not supported */ }
 
         // Build colour pools
         const themeColorsNoBg = themeColors; // use full palette — background exclusion not needed
@@ -1563,8 +1581,8 @@ export default function App() {
                 const nearest = snapToThemeColor(effectiveFill, themeColorsNoBg);
                 os.fill.setSolidColor(nearest.replace("#", "")); totalFixes++;
               } else {
-                // Colour is genuinely unresolvable — pick a random theme colour
-                if (fillPool.length > 0) { os.fill.setSolidColor(fillPool[Math.floor(Math.random() * fillPool.length)].replace("#", "")); totalFixes++; }
+                // Colour genuinely unresolvable — leave it alone
+                continue;
               }
             } else {
               if (!os.lineFormat.visible) continue;
@@ -1590,74 +1608,7 @@ export default function App() {
       });
 
 
-      // ── Check if slide matches template by comparing against reference slides ──
-      try {
-        await PowerPoint.run(async (ctx) => {
-          const slides = ctx.presentation.slides;
-          slides.load("items");
-          await ctx.sync();
 
-          const totalSlides = slides.items.length;
-          if (totalSlides < 2) return;
-
-          const TOL = 0.15 * 72;
-          const isTemplateCandidate = (sh) =>
-            !sh.hasTextFrame && sh.type !== "placeholder";
-
-          // Compute reference template shapes once per file load — always use slides 2-6
-          if (!cachedTemplateShapes.current) {
-            const refIndices = [1, 2, 3, 4, 5].filter(i => i < totalSlides);
-            if (refIndices.length < 2) return;
-            const refSlides = refIndices.map(i => slides.items[i]);
-            for (const s of refSlides) s.shapes.load("items");
-            await ctx.sync();
-            for (const s of refSlides) {
-              for (const sh of s.shapes.items) sh.load(["left", "top", "type", "hasTextFrame"]);
-            }
-            await ctx.sync();
-
-            const refShapeSets = refSlides.map(s =>
-              s.shapes.items.filter(isTemplateCandidate).map(sh => ({ left: sh.left, top: sh.top }))
-            );
-
-            const allRefShapes = [];
-            for (const shapeSet of refShapeSets) {
-              for (const shape of shapeSet) {
-                if (!allRefShapes.some(s => Math.abs(s.left - shape.left) < TOL && Math.abs(s.top - shape.top) < TOL)) {
-                  allRefShapes.push(shape);
-                }
-              }
-            }
-
-            const minMatches = Math.min(4, Math.ceil(refShapeSets.length * 0.8));
-            cachedTemplateShapes.current = allRefShapes.filter(shape =>
-              refShapeSets.filter(otherSet =>
-                otherSet.some(other =>
-                  Math.abs(other.left - shape.left) < TOL && Math.abs(other.top - shape.top) < TOL
-                )
-              ).length >= minMatches
-            );
-          }
-
-          const templateShapes = cachedTemplateShapes.current;
-          if (templateShapes.length === 0) return;
-
-          // Check current slide
-          const currentSlide = slides.items[dupIndex - 1];
-          currentSlide.shapes.load("items");
-          await ctx.sync();
-          for (const sh of currentSlide.shapes.items) sh.load(["left", "top", "type", "hasTextFrame"]);
-          await ctx.sync();
-
-          const currentShapes = currentSlide.shapes.items.filter(isTemplateCandidate).map(sh => ({ left: sh.left, top: sh.top }));
-          const missing = templateShapes.filter(ts =>
-            !currentShapes.some(cs => Math.abs(cs.left - ts.left) < TOL && Math.abs(cs.top - ts.top) < TOL)
-          );
-
-          addLog(`  Template check: ${templateShapes.length} consistent shapes, ${missing.length} missing`);
-          if (missing.length >= templateShapes.length * 0.3) setMasterWarning(true);
-        });
-      } catch (e) { addLog(`  Template check error: ${e.message}`); }
 
       addLog(`✓ Done — ${totalFixes} fix${totalFixes !== 1 ? "es" : ""} applied`);
       setFixCount(totalFixes);
