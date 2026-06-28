@@ -929,6 +929,14 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
               if (fix.padding.top    != null) tf.topMargin    = fix.padding.top;
               if (fix.padding.bottom != null) tf.bottomMargin = fix.padding.bottom;
             }
+            if (fix.verticalAlignment) {
+              const vaMap = {
+                top:    PowerPoint.TextVerticalAlignment.top,
+                middle: PowerPoint.TextVerticalAlignment.middle,
+                bottom: PowerPoint.TextVerticalAlignment.bottom,
+              };
+              if (vaMap[fix.verticalAlignment]) target.textFrame.verticalAlignment = vaMap[fix.verticalAlignment];
+            }
             if (fix.alignment) {
               const alignMap = { left: PowerPoint.ParagraphHorizontalAlignment.left, center: PowerPoint.ParagraphHorizontalAlignment.center, right: PowerPoint.ParagraphHorizontalAlignment.right };
               if (alignMap[fix.alignment]) tr.paragraphFormat.horizontalAlignment = alignMap[fix.alignment];
@@ -1316,6 +1324,7 @@ export default function App() {
                 ...(titleColorNeedsFix ? { color: primaryThemeColorForTitle } : {}),
               } } : {}),
               ...(titleMaster?.padding ? { padding: titleMaster.padding } : { padding: { left: 7.2, right: 7.2, top: 3.6, bottom: 3.6 } }),
+              verticalAlignment: "top",
             }], themeColors);
             totalFixes++;
 
