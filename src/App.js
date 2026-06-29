@@ -1478,7 +1478,7 @@ export default function App() {
           try {
             if (bodyFont) { tr.font.name = bodyFont; totalFixes++; }
             const currentSize = typeof ss.current.fontSize === "number" ? ss.current.fontSize : null;
-            if (normalisedSize && currentSize !== null && Math.abs(currentSize - normalisedSize) <= 1) { addLog(`  Size: ${currentSize} → ${normalisedSize}`); tr.font.size = normalisedSize; totalFixes++; }
+            if (normalisedSize && currentSize !== null && Math.abs(currentSize - normalisedSize) <= 1) { tr.font.size = normalisedSize; totalFixes++; }
           } catch (e) { /* skip */ }
         }
 
@@ -1497,7 +1497,7 @@ export default function App() {
             if (ss.current.fontSize === groupSize || Math.abs(ss.current.fontSize - groupSize) > 1) continue;
             const os = shapes.items.find(s => String(s.id) === String(ss.id));
             if (!os) continue;
-            try { addLog(`  Group size: ${ss.current.fontSize} → ${groupSize}`); os.textFrame.textRange.font.size = groupSize; totalFixes++; } catch (e) { /* ignore */ }
+            try { os.textFrame.textRange.font.size = groupSize; totalFixes++; } catch (e) { /* ignore */ }
           }
         }
         await ctx.sync(); // ONE sync for all font/size writes
