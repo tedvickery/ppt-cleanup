@@ -1574,7 +1574,7 @@ export default function App() {
         }
         const fillJobs = [];
         for (const os of shapes.items) {
-          try { os.fill.load(["type", "color", "foregroundColor"]); fillJobs.push({ os, kind: "fill" }); } catch (e) { /* no fill */ }
+          try { os.fill.load(["type", "foregroundColor"]); fillJobs.push({ os, kind: "fill" }); } catch (e) { /* no fill */ }
           try { os.lineFormat.load(["color", "visible"]); fillJobs.push({ os, kind: "line" }); } catch (e) { /* no line */ }
         }
         // Load table colour jobs
@@ -1629,18 +1629,17 @@ export default function App() {
           } catch (e) { /* skip */ }
         }
 
-        // Write all fill/border colours = themeColorValues.length > 0 ? themeColorValues : Object.values(themeColors).filter(Boolean);
+        // Write all fill/border colours
+        const fillPool = themeColorValues.length > 0 ? themeColorValues : Object.values(themeColors).filter(Boolean);
         for (const { os, kind } of fillJobs) {
           try {
             if (kind === "fill") {
-              // foregroundColor resolves inheritance for ALL fill types — noFill, schemeClr, gradFill etc.
-              const liveFg    = os.fill.foregroundColor ? (os.fill.foregroundColor.startsWith("#") ? os.fill.foregroundColor : `#${os.fill.foregroundColor}`) : null;
-              const liveColor = os.fill.color ? (os.fill.color.startsWith("#") ? os.fill.color : `#${os.fill.color}`) : null;
-              const ss = pptxData.slideShapes.find(s => String(s.id) === String(os.id) || s.name === os.name);
-              const xmlFill = ss?.shapeFill && !ss.shapeFill.startsWith("theme:") && ss.shapeFill !== "none" && !ss.shapeFill.includes("gradient") ? ss.shapeFill : null;
-              const effectiveFill = liveColor || liveFg || xmlFill;
-              if (os.name?.includes("244") || os.name?.includes("246")) addLog(`  DBG ${os.name}: type=${os.fill.type} color=${liveColor} fg=${liveFg} xml=${xmlFill} ss=${ss?.shapeFill}`);
+              const fillType = String(os.fill.type).toLowerCase();
+              if (fillType === "nofill" || fillType === "null" || fillType === "undefined") continue;
+              const fg = os.fill.foregroundColor;
+              const effectiveFill = fg ? (fg.startsWith("#") ? fg : `#${fg}`) : null;
               if (!effectiveFill) {
+                // Has a fill but colour unresolvable — random theme colour
                 if (fillPool.length > 0) { os.fill.setSolidColor(fillPool[Math.floor(Math.random() * fillPool.length)].replace("#", "")); totalFixes++; }
                 continue;
               }
