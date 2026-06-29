@@ -1639,7 +1639,7 @@ export default function App() {
               const ss = pptxData.slideShapes.find(s => String(s.id) === String(os.id) || s.name === os.name);
               const xmlFill = ss?.shapeFill && !ss.shapeFill.startsWith("theme:") && ss.shapeFill !== "none" && !ss.shapeFill.includes("gradient") ? ss.shapeFill : null;
               const effectiveFill = liveColor || liveFg || xmlFill;
-              if (os.name?.includes("239") || os.name?.includes("241")) addLog(`  DBG ${os.name}: type=${os.fill.type} color=${liveColor} fg=${liveFg} xml=${xmlFill}`);
+              if (os.name?.includes("244") || os.name?.includes("246")) addLog(`  DBG ${os.name}: type=${os.fill.type} color=${liveColor} fg=${liveFg} xml=${xmlFill} ss=${ss?.shapeFill}`);
               if (!effectiveFill) {
                 if (fillPool.length > 0) { os.fill.setSolidColor(fillPool[Math.floor(Math.random() * fillPool.length)].replace("#", "")); totalFixes++; }
                 continue;
