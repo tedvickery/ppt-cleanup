@@ -1429,13 +1429,13 @@ export default function App() {
         const bodyFont = pptxData.theme.fonts.body;   // minor font = body text
         const headingFont = pptxData.theme.fonts.heading; // major font = titles
 
-        // Batch: load all regular shape text ranges — only need size (name write is unconditional)
+        // Batch: load all regular shape text ranges — font name write is unconditional, size from XML
         const fontJobs = [];
         for (const ss of pptxData.slideShapes) {
           if (ss.isTable || ss.isGroup || ss.phType === "title" || ss.phType === "ctrTitle") continue;
           const os = shapes.items.find(s => String(s.id) === String(ss.id)) || shapes.items.find(s => s.name === ss.name);
           if (!os) continue;
-          try { const tr = os.textFrame.textRange; tr.font.load("size"); fontJobs.push({ tr, ss, os }); } catch (e) { /* no text frame */ }
+          try { const tr = os.textFrame.textRange; fontJobs.push({ tr, ss }); } catch (e) { /* no text frame */ }
         }
         // Batch: load all table dimensions at once
         const tableJobs = [];
@@ -1455,50 +1455,41 @@ export default function App() {
         }
         await ctx.sync(); // ONE sync for all shape/table/group loads
 
-        // Load table cells now that we know dimensions
+        // Build table cell and group child jobs (no loads needed — font name write is unconditional)
         const tableCellJobs = [];
         for (const { table, ss } of tableJobs) {
           try {
             for (let r = 0; r < table.rowCount; r++)
-              for (let c = 0; c < table.columnCount; c++) {
-                const tr = table.getCell(r, c).textFrame.textRange;
-                tr.font.load("size");
-                tableCellJobs.push({ tr, ss });
-              }
+              for (let c = 0; c < table.columnCount; c++)
+                tableCellJobs.push({ tr: table.getCell(r, c).textFrame.textRange, ss });
           } catch (e) { /* empty table */ }
         }
-        // Load group child text ranges
         const groupTrJobs = [];
         for (const { os, ss } of groupJobs) {
           try {
             for (const child of os.shapes.items) {
-              try { const tr = child.textFrame.textRange; tr.font.load("size"); groupTrJobs.push({ tr, ss }); } catch (e) { /* no text */ }
+              try { groupTrJobs.push({ tr: child.textFrame.textRange, ss }); } catch (e) { /* no text */ }
             }
           } catch (e) { /* no children */ }
         }
-        await ctx.sync(); // ONE sync for all cell/group-child loads
 
-        // Write all font/size changes
+        // Write all font/size changes — no syncs needed
         for (const { tr, ss } of [...fontJobs, ...tableCellJobs, ...groupTrJobs]) {
           try {
-            const targetFont = bodyFont;
-            if (targetFont) { tr.font.name = targetFont; totalFixes++; }
-            const currentSize = typeof ss.current.fontSize === "number" ? ss.current.fontSize : tr.font.size;
-            if (normalisedSize && currentSize !== null && Math.abs(currentSize - normalisedSize) <= 3 && tr.font.size !== normalisedSize) { tr.font.size = normalisedSize; totalFixes++; }
+            if (bodyFont) { tr.font.name = bodyFont; totalFixes++; }
+            const currentSize = typeof ss.current.fontSize === "number" ? ss.current.fontSize : null;
+            if (normalisedSize && currentSize !== null && Math.abs(currentSize - normalisedSize) <= 3) { tr.font.size = normalisedSize; totalFixes++; }
           } catch (e) { /* skip */ }
         }
 
-        // Normalise similarly-sized shape groups (no syncs needed — pure in-memory writes)
-        const textShapes = pptxData.slideShapes.filter(ss => ss.phType !== "title" && ss.phType !== "ctrTitle" && ss.position && typeof ss.current.fontSize === "number" && !ss.isTable && !ss.isGroup);
-        for (let i = 0; i < textShapes.length; i++) {
-          const a = textShapes[i];
-          const group = [a];
-          for (let j = 0; j < textShapes.length; j++) {
-            if (i === j) continue;
-            const b = textShapes[j];
-            if (Math.abs(a.position.width - b.position.width) / a.position.width <= 0.15 &&
-                Math.abs(a.position.height - b.position.height) / a.position.height <= 0.15) group.push(b);
-          }
+        // Normalise similarly-sized shapes — O(n) frequency map approach
+        const sizeGroups = new Map();
+        for (const ss of pptxData.slideShapes.filter(ss => ss.phType !== "title" && ss.phType !== "ctrTitle" && ss.position && typeof ss.current.fontSize === "number" && !ss.isTable && !ss.isGroup)) {
+          const sizeKey = `${Math.round(ss.position.width * 10)}_${Math.round(ss.position.height * 10)}`;
+          if (!sizeGroups.has(sizeKey)) sizeGroups.set(sizeKey, []);
+          sizeGroups.get(sizeKey).push(ss);
+        }
+        for (const group of sizeGroups.values()) {
           if (group.length < 2) continue;
           const freq = group.reduce((acc, s) => { acc[s.current.fontSize] = (acc[s.current.fontSize]||0)+1; return acc; }, {});
           const groupSize = parseInt(Object.entries(freq).sort((a, b) => b[1]-a[1])[0][0]);
