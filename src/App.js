@@ -1359,6 +1359,7 @@ export default function App() {
 
                   const inchToPt = 72;
                   const titleId = String(titleShape.id);
+                  const ratioAbove = (cur.top > 0 && targetTitlePos.top > 0) ? targetTitlePos.top / cur.top : 1;
                   let squeezed = 0;
                   for (const s of allShapes.items) {
                     if (String(s.id) === titleId) continue;
@@ -1366,10 +1367,19 @@ export default function App() {
                     const oldTop    = s.top     / inchToPt;
                     const oldWidth  = s.width   / inchToPt;
                     const oldHeight = s.height  / inchToPt;
-                    s.left   = (targetTitlePos.left + (oldLeft - cur.left) * ratioH) * inchToPt;
-                    s.top    = (newTitleBottom      + (oldTop  - oldTitleBottom) * ratioV) * inchToPt;
-                    s.width  = oldWidth  * ratioH * inchToPt;
-                    s.height = oldHeight * ratioV * inchToPt;
+                    const isAboveTitle = (oldTop + oldHeight) <= cur.top;
+                    if (isAboveTitle && Math.abs(ratioAbove - 1) > 0.005) {
+                      // Scale top proportionally within the space above the title
+                      s.left = (targetTitlePos.left + (oldLeft - cur.left) * ratioH) * inchToPt;
+                      s.top  = (oldTop * ratioAbove) * inchToPt;
+                      s.width  = oldWidth  * ratioH * inchToPt;
+                      s.height = oldHeight * inchToPt; // preserve height for shapes above
+                    } else {
+                      s.left   = (targetTitlePos.left + (oldLeft - cur.left) * ratioH) * inchToPt;
+                      s.top    = (newTitleBottom      + (oldTop  - oldTitleBottom) * ratioV) * inchToPt;
+                      s.width  = oldWidth  * ratioH * inchToPt;
+                      s.height = oldHeight * ratioV * inchToPt;
+                    }
                     squeezed++;
                   }
                   await ctx.sync();
