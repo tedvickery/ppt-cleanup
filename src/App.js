@@ -616,19 +616,27 @@ async function readAllMasters(zip) {
   if (relsFile) {
     const relsXml = await relsFile.async("string");
     const relsDoc = parseXml(relsXml);
+    const masterRefs = [];
     for (const rel of relsDoc.getElementsByTagNameNS("*", "Relationship")) {
       const target = rel.getAttribute("Target") || "";
       const match = target.match(/slideMasters\/slideMaster(\d+)\.xml/);
-      if (!match) continue;
-      const masterIndex = parseInt(match[1], 10);
-      const masterPath  = `ppt/slideMasters/slideMaster${masterIndex}.xml`;
+      if (match) masterRefs.push(parseInt(match[1], 10));
+    }
+
+    await Promise.all(masterRefs.map(async (masterIndex) => {
+      const masterPath     = `ppt/slideMasters/slideMaster${masterIndex}.xml`;
       const masterRelsPath = `ppt/slideMasters/_rels/slideMaster${masterIndex}.xml.rels`;
       let theme = { colors: {}, fonts: { heading: null, body: null } };
-      const masterRelsFile = zip.file(masterRelsPath);
-      if (masterRelsFile) {
-        const masterRelsXml = await masterRelsFile.async("string");
-        const masterRelsDoc = parseXml(masterRelsXml);
-        for (const mRel of masterRelsDoc.getElementsByTagNameNS("*", "Relationship")) {
+      const [masterRelsFile, masterFile] = [zip.file(masterRelsPath), zip.file(masterPath)];
+      if (!masterFile) return;
+
+      const [masterRelsXml, masterXml] = await Promise.all([
+        masterRelsFile ? masterRelsFile.async("string") : Promise.resolve(null),
+        masterFile.async("string"),
+      ]);
+
+      if (masterRelsXml) {
+        for (const mRel of parseXml(masterRelsXml).getElementsByTagNameNS("*", "Relationship")) {
           const themeMatch = (mRel.getAttribute("Target") || "").match(/\.\.\/theme\/theme(\d+)\.xml/);
           if (themeMatch) {
             const themeFile = zip.file(`ppt/theme/theme${themeMatch[1]}.xml`);
@@ -637,9 +645,7 @@ async function readAllMasters(zip) {
           }
         }
       }
-      const masterFile = zip.file(masterPath);
-      if (!masterFile) continue;
-      const masterXml = await masterFile.async("string");
+
       const masterDoc = parseXml(masterXml);
       const masterName = masterDoc.getElementsByTagNameNS("*", "cSld")[0]?.getAttribute("name") || `Master ${masterIndex}`;
       masters.push({
@@ -651,26 +657,35 @@ async function readAllMasters(zip) {
         bodyFont: theme.fonts.body,
         colors: Object.entries(theme.colors).filter(([, v]) => v).slice(0, 5).map(([, v]) => v),
       });
-    }
+    }));
+
+    masters.sort((a, b) => a.index - b.index);
   }
 
-  // Count slides per master — reject imported masters used by < 20% of slides vs dominant
+  // Count slides per master — parallelised with cached layout rels
   const masterSlideCounts = {};
   for (const m of masters) masterSlideCounts[m.index] = 0;
-  for (const slideFile of zip.file(/^ppt\/slides\/slide\d+\.xml$/)) {
+  const slideFiles = zip.file(/^ppt\/slides\/slide\d+\.xml$/);
+  const layoutRelsCache = {};
+
+  await Promise.all(slideFiles.map(async (slideFile) => {
     const slideNum = slideFile.name.match(/slide(\d+)\.xml/)?.[1];
-    if (!slideNum) continue;
+    if (!slideNum) return;
     const relsFile = zip.file(`ppt/slides/_rels/slide${slideNum}.xml.rels`);
-    if (!relsFile) continue;
+    if (!relsFile) return;
     try {
       const relsXml = await relsFile.async("string");
       const relsDoc = parseXml(relsXml);
       for (const rel of relsDoc.getElementsByTagNameNS("*", "Relationship")) {
         const layoutMatch = (rel.getAttribute("Target") || "").match(/slideLayouts\/slideLayout(\d+)\.xml/);
-        if (!layoutMatch) continue;
-        const layoutRelsFile = zip.file(`ppt/slideLayouts/_rels/slideLayout${layoutMatch[1]}.xml.rels`);
-        if (!layoutRelsFile) continue;
-        const layoutRelsXml = await layoutRelsFile.async("string");
+        if (!layoutMatch) break;
+        const layoutNum = layoutMatch[1];
+        if (!layoutRelsCache[layoutNum]) {
+          const layoutRelsFile = zip.file(`ppt/slideLayouts/_rels/slideLayout${layoutNum}.xml.rels`);
+          layoutRelsCache[layoutNum] = layoutRelsFile ? await layoutRelsFile.async("string") : null;
+        }
+        const layoutRelsXml = layoutRelsCache[layoutNum];
+        if (!layoutRelsXml) break;
         for (const lrel of parseXml(layoutRelsXml).getElementsByTagNameNS("*", "Relationship")) {
           const masterMatch = (lrel.getAttribute("Target") || "").match(/slideMasters\/slideMaster(\d+)\.xml/);
           if (masterMatch) {
@@ -682,7 +697,7 @@ async function readAllMasters(zip) {
         break;
       }
     } catch (e) { /* skip */ }
-  }
+  }));
   const maxCount = Math.max(...Object.values(masterSlideCounts), 0);
   const filtered = masters.filter(m => {
     const count = masterSlideCounts[m.index] || 0;
