@@ -1593,7 +1593,11 @@ export default function App() {
           try {
             for (let r = 0; r < table.rowCount; r++)
               for (let c = 0; c < table.columnCount; c++) {
-                const tr = table.getCell(r, c).textFrame.textRange; tr.font.load("color"); tableCellColorJobs.push({ tr });
+                const cell = table.getCell(r, c);
+                const tr = cell.textFrame.textRange;
+                tr.font.load("color");
+                cell.fill.load(["type", "color", "foregroundColor"]);
+                tableCellColorJobs.push({ tr, cell });
               }
           } catch (e) { /* empty table */ }
         }
@@ -1629,7 +1633,8 @@ export default function App() {
         for (const { os, kind } of fillJobs) {
           try {
             if (kind === "fill") {
-              if (String(os.fill.type).toLowerCase() !== "solid") continue;
+              const fillType = String(os.fill.type).toLowerCase();
+              if (fillType !== "solid") { if (fillType !== "noFill" && fillType !== "null" && fillType !== "undefined") addLog(`  Skip fill: type=${fillType} name=${os.name}`); continue; }
               const liveColor = os.fill.color ? (os.fill.color.startsWith("#") ? os.fill.color : `#${os.fill.color}`) : null;
               const liveFg    = os.fill.foregroundColor ? (os.fill.foregroundColor.startsWith("#") ? os.fill.foregroundColor : `#${os.fill.foregroundColor}`) : null;
               const ss = pptxData.slideShapes.find(s => String(s.id) === String(os.id) || s.name === os.name);
