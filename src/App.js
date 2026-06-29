@@ -1634,12 +1634,12 @@ export default function App() {
           try {
             if (kind === "fill") {
               // foregroundColor resolves inheritance for ALL fill types — noFill, schemeClr, gradFill etc.
-              // This is the same trick that works for font colours in Office.js
               const liveFg    = os.fill.foregroundColor ? (os.fill.foregroundColor.startsWith("#") ? os.fill.foregroundColor : `#${os.fill.foregroundColor}`) : null;
               const liveColor = os.fill.color ? (os.fill.color.startsWith("#") ? os.fill.color : `#${os.fill.color}`) : null;
               const ss = pptxData.slideShapes.find(s => String(s.id) === String(os.id) || s.name === os.name);
               const xmlFill = ss?.shapeFill && !ss.shapeFill.startsWith("theme:") && ss.shapeFill !== "none" && !ss.shapeFill.includes("gradient") ? ss.shapeFill : null;
               const effectiveFill = liveColor || liveFg || xmlFill;
+              if (os.name?.includes("239") || os.name?.includes("241")) addLog(`  DBG ${os.name}: type=${os.fill.type} color=${liveColor} fg=${liveFg} xml=${xmlFill}`);
               if (!effectiveFill) {
                 if (fillPool.length > 0) { os.fill.setSolidColor(fillPool[Math.floor(Math.random() * fillPool.length)].replace("#", "")); totalFixes++; }
                 continue;
