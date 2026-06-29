@@ -1633,23 +1633,21 @@ export default function App() {
         for (const { os, kind } of fillJobs) {
           try {
             if (kind === "fill") {
-              const fillType = String(os.fill.type).toLowerCase();
-              if (fillType !== "solid") { if (fillType !== "noFill" && fillType !== "null" && fillType !== "undefined") addLog(`  Skip fill: type=${fillType} name=${os.name}`); continue; }
-              const liveColor = os.fill.color ? (os.fill.color.startsWith("#") ? os.fill.color : `#${os.fill.color}`) : null;
+              // foregroundColor resolves inheritance for ALL fill types — noFill, schemeClr, gradFill etc.
+              // This is the same trick that works for font colours in Office.js
               const liveFg    = os.fill.foregroundColor ? (os.fill.foregroundColor.startsWith("#") ? os.fill.foregroundColor : `#${os.fill.foregroundColor}`) : null;
+              const liveColor = os.fill.color ? (os.fill.color.startsWith("#") ? os.fill.color : `#${os.fill.color}`) : null;
               const ss = pptxData.slideShapes.find(s => String(s.id) === String(os.id) || s.name === os.name);
               const xmlFill = ss?.shapeFill && !ss.shapeFill.startsWith("theme:") && ss.shapeFill !== "none" && !ss.shapeFill.includes("gradient") ? ss.shapeFill : null;
               const effectiveFill = liveColor || liveFg || xmlFill;
-              if (effectiveFill) {
-                // We know the current colour — snap to nearest theme colour
-                if (fillPool.some(c => c.toLowerCase() === effectiveFill.toLowerCase())) continue; // already correct
-                const nearest = snapToThemeColor(effectiveFill, themeColorsNoBg);
-                os.fill.setSolidColor(nearest.replace("#", "")); totalFixes++;
-                usedColors.add(nearest.toUpperCase());
-              } else {
-                // Colour genuinely unresolvable — random theme colour
+              if (!effectiveFill) {
                 if (fillPool.length > 0) { os.fill.setSolidColor(fillPool[Math.floor(Math.random() * fillPool.length)].replace("#", "")); totalFixes++; }
+                continue;
               }
+              if (fillPool.some(c => c.toLowerCase() === effectiveFill.toLowerCase())) continue;
+              const nearest = snapToThemeColor(effectiveFill, themeColorsNoBg);
+              os.fill.setSolidColor(nearest.replace("#", "")); totalFixes++;
+              usedColors.add(nearest.toUpperCase());
             } else {
               if (!os.lineFormat.visible) continue;
               const cur = os.lineFormat.color ? (os.lineFormat.color.startsWith("#") ? os.lineFormat.color : `#${os.lineFormat.color}`) : null;
