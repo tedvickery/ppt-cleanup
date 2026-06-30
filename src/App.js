@@ -731,6 +731,7 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
     const masterRelsXml = await masterRelsFile.async("string");
     const masterRels = parseXml(masterRelsXml).getElementsByTagNameNS("*", "Relationship");
     const titlePositions = [];
+    const titlePaddings = [];
     let firstLayoutDone = false;
 
     for (const rel of masterRels) {
@@ -755,7 +756,19 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
           width: emuToInches(ext.getAttribute("cx")), height: emuToInches(ext.getAttribute("cy")),
         };
         if (!firstLayoutDone && phType !== "title" && phType !== "ctrTitle") layoutPositions[`${phType}:${phIdx}`] = pos;
-        if (phType === "title" || phType === "ctrTitle") { layoutTitlePos = pos; isCtrTitle = phType === "ctrTitle"; }
+        if (phType === "title" || phType === "ctrTitle") {
+          layoutTitlePos = pos; isCtrTitle = phType === "ctrTitle";
+          // Read padding from this title placeholder's bodyPr, if present
+          const bodyPr = sp.getElementsByTagNameNS("*", "bodyPr")[0];
+          if (bodyPr && (bodyPr.getAttribute("lIns") != null || bodyPr.getAttribute("rIns") != null || bodyPr.getAttribute("tIns") != null || bodyPr.getAttribute("bIns") != null)) {
+            titlePaddings.push({
+              left:   bodyPr.getAttribute("lIns") != null ? parseInt(bodyPr.getAttribute("lIns"), 10) / 12700 : 7.2,
+              right:  bodyPr.getAttribute("rIns") != null ? parseInt(bodyPr.getAttribute("rIns"), 10) / 12700 : 7.2,
+              top:    bodyPr.getAttribute("tIns") != null ? parseInt(bodyPr.getAttribute("tIns"), 10) / 12700 : 3.6,
+              bottom: bodyPr.getAttribute("bIns") != null ? parseInt(bodyPr.getAttribute("bIns"), 10) / 12700 : 3.6,
+            });
+          }
+        }
         if (phType === "body" || phType === "obj") hasBody = true;
       }
       firstLayoutDone = true;
@@ -772,6 +785,18 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
       const topKey = Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0];
       const [left, top, width, height] = topKey.split(",").map(Number);
       layoutPositions["title:0"] = { left, top, width, height };
+    }
+
+    // Mode vote for padding — use the most common padding found across all layouts
+    if (titlePaddings.length > 0) {
+      const padFreq = {};
+      for (const pd of titlePaddings) {
+        const k = `${pd.left.toFixed(2)},${pd.right.toFixed(2)},${pd.top.toFixed(2)},${pd.bottom.toFixed(2)}`;
+        padFreq[k] = (padFreq[k] || 0) + 1;
+      }
+      const topPadKey = Object.entries(padFreq).sort((a, b) => b[1] - a[1])[0][0];
+      const [pLeft, pRight, pTop, pBottom] = topPadKey.split(",").map(Number);
+      layoutPositions["title:padding"] = { left: pLeft, right: pRight, top: pTop, bottom: pBottom };
     }
   }
 
@@ -1340,7 +1365,7 @@ export default function App() {
                 ...(sizNeedsFix ? { size: titleFontSize } : {}),
                 ...(titleColorNeedsFix ? { color: primaryThemeColorForTitle } : {}),
               } } : {}),
-              ...(titleMaster?.padding ? { padding: titleMaster.padding } : { padding: { left: 7.2, right: 7.2, top: 3.6, bottom: 3.6 } }),
+              ...((pptxData.layoutPositions?.["title:padding"]) ? { padding: pptxData.layoutPositions["title:padding"] } : { padding: { left: 7.2, right: 7.2, top: 3.6, bottom: 3.6 } }),
               verticalAlignment: "top",
             }], themeColors);
             totalFixes++;
