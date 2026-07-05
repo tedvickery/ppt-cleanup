@@ -6,14 +6,14 @@
   xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
   xsi:type="TaskPaneApp">
 
-  <Id>a1b2c3d4-e5f6-7890-abcd-ef1234567890</Id>
-  <Version>1.0.0.1</Version>
+  <Id>1927A2F0-19C4-471C-89EB-071A13D24BC4</Id>
+  <Version>1.0.0.2</Version>
   <ProviderName>SnapBack</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="SnapBack"/>
   <Description DefaultValue="AI-powered slide formatter that syncs your slide to the master theme."/>
-  <IconUrl DefaultValue="https://ppt-cleanup.vercel.app//icon-80.png"/>
-  <HighResolutionIconUrl DefaultValue="https://ppt-cleanup.vercel.app//icon-80.png"/>
+  <IconUrl DefaultValue="https://ppt-cleanup.vercel.app/icon-80.png"/>
+  <HighResolutionIconUrl DefaultValue="https://ppt-cleanup.vercel.app/icon-80.png"/>
   <SupportUrl DefaultValue="https://ppt-cleanup.vercel.app/"/>
 
   <Hosts>
@@ -30,6 +30,12 @@
     <Hosts>
       <Host xsi:type="Presentation">
         <DesktopFormFactor>
+
+          <GetStarted>
+            <Title resid="GetStarted.Title"/>
+            <Description resid="GetStarted.Description"/>
+            <LearnMoreUrl resid="GetStarted.LearnMoreUrl"/>
+          </GetStarted>
 
           <FunctionFile resid="Commands.Url"/>
 
@@ -68,19 +74,22 @@
 
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon.16x16" DefaultValue="https://cdn.jsdelivr.net/gh/microsoft/fluentui-system-icons/assets/Checkmark/SVG/ic_fluent_checkmark_16_regular.svg"/>
-        <bt:Image id="Icon.32x32" DefaultValue="https://cdn.jsdelivr.net/gh/microsoft/fluentui-system-icons/assets/Checkmark/SVG/ic_fluent_checkmark_32_regular.svg"/>
-        <bt:Image id="Icon.80x80" DefaultValue="https://cdn.jsdelivr.net/gh/microsoft/fluentui-system-icons/assets/Checkmark/SVG/ic_fluent_checkmark_48_regular.svg"/>
+        <bt:Image id="Icon.16x16" DefaultValue="https://ppt-cleanup.vercel.app/icon-16.png"/>
+        <bt:Image id="Icon.32x32" DefaultValue="https://ppt-cleanup.vercel.app/icon-32.png"/>
+        <bt:Image id="Icon.80x80" DefaultValue="https://ppt-cleanup.vercel.app/icon-80.png"/>
       </bt:Images>
       <bt:Urls>
+        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://ppt-cleanup.vercel.app/"/>
         <bt:Url id="Commands.Url" DefaultValue="https://ppt-cleanup.vercel.app/"/>
         <bt:Url id="Taskpane.Url" DefaultValue="https://ppt-cleanup.vercel.app/"/>
       </bt:Urls>
       <bt:ShortStrings>
+        <bt:String id="GetStarted.Title" DefaultValue="SnapBack is ready"/>
         <bt:String id="CommandsGroup.Label" DefaultValue="Formatting"/>
         <bt:String id="TaskpaneButton.Label" DefaultValue="SnapBack"/>
       </bt:ShortStrings>
       <bt:LongStrings>
+        <bt:String id="GetStarted.Description" DefaultValue="Select a slide and click SnapBack to reformat it to your master theme."/>
         <bt:String id="TaskpaneButton.Tooltip" DefaultValue="AI-powered slide cleanup — syncs fonts, colours and layout to your master theme."/>
       </bt:LongStrings>
     </Resources>
