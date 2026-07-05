@@ -1510,13 +1510,13 @@ export default function App() {
         for (const s of shapes.items) s.load(["id", "name", "type"]);
         await ctx.sync();
 
-        // Exclude the demoted title placeholder from size normalisation — it has an outlier font size
+        // All non-title shapes treated equally — mode size from all of them
         const nonTitleSizes = pptxData.slideShapes
-          .filter(ss => ss.phType !== "title" && ss.phType !== "ctrTitle" && typeof ss.current.fontSize === "number"
-            && !(demotedTitleId && String(ss.id) === demotedTitleId))
+          .filter(ss => ss.phType !== "title" && ss.phType !== "ctrTitle" && typeof ss.current.fontSize === "number")
           .map(ss => ss.current.fontSize);
         const sizeFreq = nonTitleSizes.reduce((acc, s) => { acc[s] = (acc[s] || 0) + 1; return acc; }, {});
-        const normalisedSize = nonTitleSizes.length > 0 ? parseInt(Object.entries(sizeFreq).sort((a, b) => b[1] - a[1])[0][0]) : null;
+        const sortedSizes = Object.entries(sizeFreq).sort((a, b) => b[1] - a[1]);
+        const normalisedSize = nonTitleSizes.length > 1 ? parseInt(sortedSizes[0][0]) : null; // need >1 shape to normalise
         addLog(`  normalisedSize=${normalisedSize} sizes=${JSON.stringify(sizeFreq)}`);
         const bodyFont = pptxData.theme.fonts.body;   // minor font = body text
         const headingFont = pptxData.theme.fonts.heading; // major font = titles
@@ -1579,7 +1579,7 @@ export default function App() {
 
         // Normalise similarly-sized shapes — O(n) frequency map approach
         const sizeGroups = new Map();
-        for (const ss of pptxData.slideShapes.filter(ss => ss.phType !== "title" && ss.phType !== "ctrTitle" && ss.position && typeof ss.current.fontSize === "number" && !ss.isTable && !ss.isGroup && !(demotedTitleId && String(ss.id) === demotedTitleId))) {
+        for (const ss of pptxData.slideShapes.filter(ss => ss.phType !== "title" && ss.phType !== "ctrTitle" && ss.position && typeof ss.current.fontSize === "number" && !ss.isTable && !ss.isGroup)) {
           const sizeKey = `${Math.round(ss.position.width * 10)}_${Math.round(ss.position.height * 10)}`;
           if (!sizeGroups.has(sizeKey)) sizeGroups.set(sizeKey, []);
           sizeGroups.get(sizeKey).push(ss);
