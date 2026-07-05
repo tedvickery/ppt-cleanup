@@ -1269,12 +1269,16 @@ export default function App() {
 
       // Apply manual title override for this slide, if one was set this session
       const override = titleOverrides[slideIndex];
+      let demotedTitleId = null;
       if (override) {
         const alreadyTitle = pptxData.slideShapes.find(s => s.phType === "title" || s.phType === "ctrTitle");
         const target = pptxData.slideShapes.find(s => String(s.id) === String(override.id))
           || pptxData.slideShapes.find(s => s.name === override.name);
         if (target) {
-          if (alreadyTitle && alreadyTitle !== target) alreadyTitle.phType = "body"; // demote previous auto-detected title
+          if (alreadyTitle && alreadyTitle !== target) {
+            alreadyTitle.phType = "body"; // demote previous auto-detected title
+            demotedTitleId = String(alreadyTitle.id);
+          }
           target.phType = "title";
           addLog(`Using manual title override: "${target.name}"`);
         } else {
@@ -1506,8 +1510,10 @@ export default function App() {
         for (const s of shapes.items) s.load(["id", "name", "type"]);
         await ctx.sync();
 
+        // Exclude the demoted title placeholder from size normalisation — it has an outlier font size
         const nonTitleSizes = pptxData.slideShapes
-          .filter(ss => ss.phType !== "title" && ss.phType !== "ctrTitle" && typeof ss.current.fontSize === "number")
+          .filter(ss => ss.phType !== "title" && ss.phType !== "ctrTitle" && typeof ss.current.fontSize === "number"
+            && !(demotedTitleId && String(ss.id) === demotedTitleId))
           .map(ss => ss.current.fontSize);
         const sizeFreq = nonTitleSizes.reduce((acc, s) => { acc[s] = (acc[s] || 0) + 1; return acc; }, {});
         const normalisedSize = nonTitleSizes.length > 0 ? parseInt(Object.entries(sizeFreq).sort((a, b) => b[1] - a[1])[0][0]) : null;
@@ -1573,7 +1579,7 @@ export default function App() {
 
         // Normalise similarly-sized shapes — O(n) frequency map approach
         const sizeGroups = new Map();
-        for (const ss of pptxData.slideShapes.filter(ss => ss.phType !== "title" && ss.phType !== "ctrTitle" && ss.position && typeof ss.current.fontSize === "number" && ss.current.fontSize <= 72 && !ss.isTable && !ss.isGroup)) {
+        for (const ss of pptxData.slideShapes.filter(ss => ss.phType !== "title" && ss.phType !== "ctrTitle" && ss.position && typeof ss.current.fontSize === "number" && !ss.isTable && !ss.isGroup && !(demotedTitleId && String(ss.id) === demotedTitleId))) {
           const sizeKey = `${Math.round(ss.position.width * 10)}_${Math.round(ss.position.height * 10)}`;
           if (!sizeGroups.has(sizeKey)) sizeGroups.set(sizeKey, []);
           sizeGroups.get(sizeKey).push(ss);
