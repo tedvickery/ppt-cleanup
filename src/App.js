@@ -1345,7 +1345,7 @@ export default function App() {
             const titleId = String(titleShape.id);
             const titleOs = slide.shapes.items.find(s => String(s.id) === titleId || s.name === titleShape.name);
             if (titleOs) {
-              // Disable autofit first
+              // Disable autofit and read font size in same context
               titleOs.textFrame.autoSizeSetting = "AutoSizeNone";
               titleOs.textFrame.textRange.font.load("size");
               await ctx.sync();
@@ -1356,6 +1356,13 @@ export default function App() {
                 height: titleOs.height / 72,
               };
               if (titleOs.textFrame.textRange.font.size) actualFontSize = titleOs.textFrame.textRange.font.size;
+
+              // Write font name and size in same context — autofit already disabled above
+              const headingFont = pptxData.theme.fonts.heading;
+              const masterSize  = !hasManualOverride ? (titleMaster?.font?.size || null) : null;
+              if (headingFont) titleOs.textFrame.textRange.font.name = headingFont;
+              if (masterSize)  titleOs.textFrame.textRange.font.size = masterSize;
+              await ctx.sync();
             }
           });
         } catch (e) { /* fall back to XML values */ }
@@ -1364,10 +1371,8 @@ export default function App() {
           Math.abs(cur.top  - targetTitlePos.top)  > 0.05;
         const headingFontForTitle = pptxData.theme.fonts.heading;
         const titleFontSize = !hasManualOverride ? (titleMaster?.font?.size || null) : null;
-        const fontNeedsFix = headingFontForTitle &&
-          titleShape.current.fontName !== "(inherited)" &&
-          titleShape.current.fontName !== headingFontForTitle;
-        const sizNeedsFix = !!titleFontSize && !!actualFontSize && Math.abs(actualFontSize - titleFontSize) > 0.5;
+        const fontNeedsFix = false; // handled directly in PowerPoint.run above
+        const sizNeedsFix  = false; // handled directly in PowerPoint.run above
         const fillNeedsFix = titleShape.shapeFill && titleShape.shapeFill !== "none" && titleShape.masterTarget?.fill === "none";
         const primaryThemeColorForTitle = themeColorList[0];
         const titleColorNeedsFix = primaryThemeColorForTitle &&
