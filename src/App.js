@@ -1386,11 +1386,13 @@ export default function App() {
 
               const ratioV = (oldAvailV > 0 && newAvailV > 0) ? newAvailV / oldAvailV : 1;
               const ratioH = (oldAvailH > 0 && newAvailH > 0) ? newAvailH / oldAvailH : 1;
+              const ratioLeft = (cur.left > 0 && targetTitlePos.left > 0) ? targetTitlePos.left / cur.left : 1;
               const needsV = Math.abs(ratioV - 1) > 0.005;
               const needsH = Math.abs(ratioH - 1) > 0.005;
+              const needsLeft = Math.abs(ratioLeft - 1) > 0.005;
 
-              if (needsV || needsH) {
-                addLog(`  Squeezing content: V=${ratioV.toFixed(3)} H=${ratioH.toFixed(3)}`);
+              if (needsV || needsH || needsLeft) {
+                addLog(`  Squeezing content: V=${ratioV.toFixed(3)} H=${ratioH.toFixed(3)} L=${ratioLeft.toFixed(3)}`);
                 await PowerPoint.run(async (ctx) => {
                   const slide = ctx.presentation.slides.getItemAt(dupIndex - 1);
                   const allShapes = slide.shapes;
@@ -1410,12 +1412,20 @@ export default function App() {
                     const oldWidth  = s.width   / inchToPt;
                     const oldHeight = s.height  / inchToPt;
                     const isAboveTitle = (oldTop + oldHeight) <= cur.top;
-                    if (isAboveTitle && Math.abs(ratioAbove - 1) > 0.005) {
+                    const isLeftOfTitle = (oldLeft + oldWidth) <= cur.left;
+
+                    if (isLeftOfTitle && needsLeft) {
+                      // Scale within the space left of the title
+                      s.left   = (oldLeft * ratioLeft) * inchToPt;
+                      s.top    = (newTitleBottom + (oldTop - oldTitleBottom) * ratioV) * inchToPt;
+                      s.width  = oldWidth  * inchToPt; // preserve width
+                      s.height = oldHeight * ratioV * inchToPt;
+                    } else if (isAboveTitle && Math.abs(ratioAbove - 1) > 0.005) {
                       // Scale top proportionally within the space above the title
-                      s.left = (targetTitlePos.left + (oldLeft - cur.left) * ratioH) * inchToPt;
-                      s.top  = (oldTop * ratioAbove) * inchToPt;
+                      s.left   = (targetTitlePos.left + (oldLeft - cur.left) * ratioH) * inchToPt;
+                      s.top    = (oldTop * ratioAbove) * inchToPt;
                       s.width  = oldWidth  * ratioH * inchToPt;
-                      s.height = oldHeight * inchToPt; // preserve height for shapes above
+                      s.height = oldHeight * inchToPt; // preserve height
                     } else {
                       s.left   = (targetTitlePos.left + (oldLeft - cur.left) * ratioH) * inchToPt;
                       s.top    = (newTitleBottom      + (oldTop  - oldTitleBottom) * ratioV) * inchToPt;
