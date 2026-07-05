@@ -1331,9 +1331,8 @@ export default function App() {
       const layoutTitlePos = pptxData.layoutPositions?.["title:0"];
       const targetTitlePos = layoutTitlePos || titleMaster?.position;
       if (titleShape && targetTitlePos) {
-        // Read actual current state from Office.js — ZIP XML may be stale (unsaved changes)
+        // Read live position from Office.js — ZIP XML is stale for unsaved changes
         let cur = titleShape.position;
-        let actualFontSize = titleShape.current.fontSize;
         try {
           await PowerPoint.run(async (ctx) => {
             const slide = ctx.presentation.slides.getItemAt(dupIndex - 1);
@@ -1344,9 +1343,8 @@ export default function App() {
             const titleId = String(titleShape.id);
             const titleOs = slide.shapes.items.find(s => String(s.id) === titleId || s.name === titleShape.name);
             if (titleOs) {
-              // Disable autofit and read font size in same context
+              // Disable autofit before font/size writes
               titleOs.textFrame.autoSizeSetting = "AutoSizeNone";
-              titleOs.textFrame.textRange.font.load("size");
               await ctx.sync();
               cur = {
                 left:   titleOs.left   / 72,
@@ -1354,31 +1352,27 @@ export default function App() {
                 width:  titleOs.width  / 72,
                 height: titleOs.height / 72,
               };
-              if (titleOs.textFrame.textRange.font.size) actualFontSize = titleOs.textFrame.textRange.font.size;
-
-              // Write font name and size in same context — autofit already disabled above
-              const headingFont = pptxData.theme.fonts.heading;
-              const masterSize  = !hasManualOverride ? (titleMaster?.font?.size || titleShape.current.fontSize || null) : null;
-              if (headingFont) titleOs.textFrame.textRange.font.name = headingFont;
-              if (masterSize)  titleOs.textFrame.textRange.font.size = masterSize;
-              await ctx.sync();
             }
           });
-        } catch (e) { /* fall back to XML values */ }
+        } catch (e) { /* fall back to XML position */ }
+
         const posNeedsFix = !cur ||
           Math.abs(cur.left - targetTitlePos.left) > 0.05 ||
           Math.abs(cur.top  - targetTitlePos.top)  > 0.05;
         const headingFontForTitle = pptxData.theme.fonts.heading;
         const titleFontSize = !hasManualOverride ? (titleMaster?.font?.size || null) : null;
-        const fontNeedsFix = false; // handled directly in PowerPoint.run above
-        const sizNeedsFix  = false; // handled directly in PowerPoint.run above
+        const fontNeedsFix = headingFontForTitle &&
+          titleShape.current.fontName !== "(inherited)" &&
+          titleShape.current.fontName !== headingFontForTitle;
+        const sizNeedsFix = !!titleFontSize && !!titleShape.current.fontSize &&
+          Math.abs(titleShape.current.fontSize - titleFontSize) > 0.5;
         const fillNeedsFix = titleShape.shapeFill && titleShape.shapeFill !== "none" && titleShape.masterTarget?.fill === "none";
         const primaryThemeColorForTitle = themeColorList[0];
         const titleColorNeedsFix = primaryThemeColorForTitle &&
           titleShape.current.color !== "(inherited)" &&
           titleShape.current.color?.toLowerCase() !== primaryThemeColorForTitle.toLowerCase();
         const targetPadding = pptxData.layoutPositions?.["title:padding"];
-        const paddingNeedsFix = targetPadding != null; // always apply if we have a master-derived padding
+        const paddingNeedsFix = targetPadding != null;
         if (posNeedsFix || fontNeedsFix || sizNeedsFix || fillNeedsFix || titleColorNeedsFix || paddingNeedsFix) {
           addLog("Step 1: Title position & font…");
           try {
