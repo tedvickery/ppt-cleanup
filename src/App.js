@@ -1305,6 +1305,9 @@ export default function App() {
           // font writes from Office.js and prevent the master font from being applied correctly
           xml = xml.replace(/<a:latin[^>]*typeface="[^"]*"[^>]*\/>/g, "");
           xml = xml.replace(/<a:latin[^>]*typeface="[^"]*"[^>]*>[\s\S]*?<\/a:latin>/g, "");
+          // Strip auto-fit from title shape bodyPr — prevents PowerPoint shrinking font back after we set it
+          xml = xml.replace(/<a:spAutoFit\s*\/>/g, "<a:noAutofit/>");
+          xml = xml.replace(/<a:normAutofit[^/]*\/>/g, "<a:noAutofit/>");
           if (xml !== before) {
             zip.file(slidePath, xml);
             addLog("✓ Paragraph formatting reset — saving…");
