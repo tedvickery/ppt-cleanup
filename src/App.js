@@ -1364,8 +1364,7 @@ export default function App() {
         const fontNeedsFix = headingFontForTitle &&
           titleShape.current.fontName !== "(inherited)" &&
           titleShape.current.fontName !== headingFontForTitle;
-        const sizNeedsFix = !!titleFontSize && !!titleShape.current.fontSize &&
-          Math.abs(titleShape.current.fontSize - titleFontSize) > 0.5;
+        const sizNeedsFix = !!titleFontSize; // always apply master size — autofit may have changed display size
         const fillNeedsFix = titleShape.shapeFill && titleShape.shapeFill !== "none" && titleShape.masterTarget?.fill === "none";
         const primaryThemeColorForTitle = themeColorList[0];
         const titleColorNeedsFix = primaryThemeColorForTitle &&
