@@ -1263,6 +1263,7 @@ export default function App() {
       if (masters.length === 0) throw new Error("No slide masters found in this file");
       const dominantMasterIndex = cachedDominantMaster.current ?? masters[0]?.index ?? 1;
       const primaryMaster = masters.find(m => m.index === dominantMasterIndex) || masters[0];
+      addLog(`  Masters: dominant=${dominantMasterIndex} available=${masters.map(m=>m.index).join(',')}`);
       const pptxData = await readSlideWithMaster(zip, masters, primaryMaster.index, slideIndex);
       setDetectedTheme(pptxData.theme);
       setDetectedMaster(pptxData.masterPlaceholders);
