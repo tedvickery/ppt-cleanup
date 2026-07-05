@@ -1374,9 +1374,13 @@ export default function App() {
           titleShape.current.color !== "(inherited)" &&
           titleShape.current.color?.toLowerCase() !== primaryThemeColorForTitle.toLowerCase();
 <<<<<<< HEAD
+<<<<<<< HEAD
         const targetPadding = pptxData.layoutPositions?.["title:padding"];
         const paddingNeedsFix = targetPadding != null;
         if (posNeedsFix || fontNeedsFix || sizNeedsFix || fillNeedsFix || titleColorNeedsFix || paddingNeedsFix) {
+=======
+        if (posNeedsFix || fontNeedsFix || sizNeedsFix || fillNeedsFix || titleColorNeedsFix) {
+>>>>>>> parent of 2f89dcf (title pading)
 =======
         if (posNeedsFix || fontNeedsFix || sizNeedsFix || fillNeedsFix || titleColorNeedsFix) {
 >>>>>>> parent of 2f89dcf (title pading)
