@@ -1299,6 +1299,8 @@ export default function App() {
           // font writes from Office.js and prevent the master font from being applied correctly
           xml = xml.replace(/<a:latin[^>]*typeface="[^"]*"[^>]*\/>/g, "");
           xml = xml.replace(/<a:latin[^>]*typeface="[^"]*"[^>]*>[\s\S]*?<\/a:latin>/g, "");
+          // Strip run-level font size overrides (sz attribute on a:rPr) for title shapes
+          xml = xml.replace(/(<a:rPr[^>]*?)\s+sz="[^"]*"/g, "$1");
           // Strip auto-fit from title shape bodyPr — prevents PowerPoint shrinking font back after we set it
           xml = xml.replace(/<a:spAutoFit\s*\/>/g, "<a:noAutofit/>");
           xml = xml.replace(/<a:normAutofit[^/]*\/>/g, "<a:noAutofit/>");
@@ -1367,7 +1369,7 @@ export default function App() {
         const fontNeedsFix = headingFontForTitle &&
           titleShape.current.fontName !== "(inherited)" &&
           titleShape.current.fontName !== headingFontForTitle;
-        const sizNeedsFix = !!titleFontSize && (wasAutofit || (!!titleShape.current.fontSize && Math.abs(titleShape.current.fontSize - titleFontSize) > 0.5));
+        const sizNeedsFix = !!titleFontSize; // always apply master size — run-level overrides may differ from XML paragraph size
         const fillNeedsFix = titleShape.shapeFill && titleShape.shapeFill !== "none" && titleShape.masterTarget?.fill === "none";
         const primaryThemeColorForTitle = themeColorList[0];
         const titleColorNeedsFix = primaryThemeColorForTitle &&
