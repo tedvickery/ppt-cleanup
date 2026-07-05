@@ -1248,9 +1248,8 @@ export default function App() {
       }
 
       if (masters.length === 0) throw new Error("No slide masters found in this file");
-      const primaryMaster = masters[0];
-
-      // Always re-parse slide XML — cached positions go stale when shapes are moved
+      const dominantMasterIndex = cachedDominantMaster.current ?? masters[0]?.index ?? 1;
+      const primaryMaster = masters.find(m => m.index === dominantMasterIndex) || masters[0];
       const pptxData = await readSlideWithMaster(zip, masters, primaryMaster.index, slideIndex);
       setDetectedTheme(pptxData.theme);
       setDetectedMaster(pptxData.masterPlaceholders);
@@ -1359,7 +1358,7 @@ export default function App() {
 
               // Write font name and size in same context — autofit already disabled above
               const headingFont = pptxData.theme.fonts.heading;
-              const masterSize  = !hasManualOverride ? (titleMaster?.font?.size || null) : null;
+              const masterSize  = !hasManualOverride ? (titleMaster?.font?.size || titleShape.current.fontSize || null) : null;
               if (headingFont) titleOs.textFrame.textRange.font.name = headingFont;
               if (masterSize)  titleOs.textFrame.textRange.font.size = masterSize;
               await ctx.sync();
