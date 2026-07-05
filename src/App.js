@@ -1324,6 +1324,7 @@ export default function App() {
       const themeColors = pptxData.theme.colors;
       const themeColorList = Object.values(themeColors).filter(v => v);
       let totalFixes = 0;
+      const hasManualOverride = !!titleOverrides[slideIndex];
 
       // ─── STEP 1: Title — snap to master position and font ───────────────────
       const titleShape    = pptxData.slideShapes.find(s => s.phType === "title" || s.phType === "ctrTitle");
@@ -1336,12 +1337,13 @@ export default function App() {
           Math.abs(cur.left - targetTitlePos.left) > 0.05 ||
           Math.abs(cur.top  - targetTitlePos.top)  > 0.05;
         const headingFontForTitle = pptxData.theme.fonts.heading;
-        const titleFontSize = titleMaster?.font?.size || null;
+        const titleFontSize = !hasManualOverride ? (titleMaster?.font?.size || null) : null;
         const fontNeedsFix = headingFontForTitle &&
           titleShape.current.fontName !== "(inherited)" &&
           titleShape.current.fontName !== headingFontForTitle;
         const sizNeedsFix = titleFontSize && titleShape.current.fontSize &&
-          Math.abs(titleShape.current.fontSize - titleFontSize) > 1;
+          Math.abs(titleShape.current.fontSize - titleFontSize) > 1 &&
+          Math.abs(titleShape.current.fontSize - titleFontSize) <= 4;
         const fillNeedsFix = titleShape.shapeFill && titleShape.shapeFill !== "none" && titleShape.masterTarget?.fill === "none";
         const primaryThemeColorForTitle = themeColorList[0];
         const titleColorNeedsFix = primaryThemeColorForTitle &&
@@ -1466,10 +1468,13 @@ export default function App() {
         const bodyFont = pptxData.theme.fonts.body;   // minor font = body text
         const headingFont = pptxData.theme.fonts.heading; // major font = titles
 
-        // Batch: load all regular shape text ranges — font name write is unconditional, size from XML
+        // Batch: load all regular shape text ranges
+        // Excludes current title shape (handled in Step 1)
+        // When override active: original title placeholder (now phType="body") is included here
         const fontJobs = [];
         for (const ss of pptxData.slideShapes) {
-          if (ss.isTable || ss.isGroup || ss.phType === "title" || ss.phType === "ctrTitle") continue;
+          if (ss.isTable || ss.isGroup) continue;
+          if (ss.phType === "title" || ss.phType === "ctrTitle") continue; // title handled in Step 1
           const os = shapes.items.find(s => String(s.id) === String(ss.id)) || shapes.items.find(s => s.name === ss.name);
           if (!os) continue;
           try { const tr = os.textFrame.textRange; fontJobs.push({ tr, ss }); } catch (e) { /* no text frame */ }
