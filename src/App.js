@@ -1373,9 +1373,13 @@ export default function App() {
         const titleColorNeedsFix = primaryThemeColorForTitle &&
           titleShape.current.color !== "(inherited)" &&
           titleShape.current.color?.toLowerCase() !== primaryThemeColorForTitle.toLowerCase();
+<<<<<<< HEAD
         const targetPadding = pptxData.layoutPositions?.["title:padding"];
         const paddingNeedsFix = targetPadding != null;
         if (posNeedsFix || fontNeedsFix || sizNeedsFix || fillNeedsFix || titleColorNeedsFix || paddingNeedsFix) {
+=======
+        if (posNeedsFix || fontNeedsFix || sizNeedsFix || fillNeedsFix || titleColorNeedsFix) {
+>>>>>>> parent of 2f89dcf (title pading)
           addLog("Step 1: Title position & font…");
           try {
             const posFix = posNeedsFix ? {
@@ -1393,7 +1397,7 @@ export default function App() {
                 ...(sizNeedsFix ? { size: titleFontSize } : {}),
                 ...(titleColorNeedsFix ? { color: primaryThemeColorForTitle } : {}),
               } } : {}),
-              ...(targetPadding ? { padding: targetPadding } : { padding: { left: 7.2, right: 7.2, top: 3.6, bottom: 3.6 } }),
+              ...((pptxData.layoutPositions?.["title:padding"]) ? { padding: pptxData.layoutPositions["title:padding"] } : { padding: { left: 7.2, right: 7.2, top: 3.6, bottom: 3.6 } }),
               verticalAlignment: "top",
             }], themeColors);
             totalFixes++;
