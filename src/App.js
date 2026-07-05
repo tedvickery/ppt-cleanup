@@ -1342,8 +1342,7 @@ export default function App() {
 
       // ─── STEP 1: Title — snap to master position and font ───────────────────
       const titleShape    = pptxData.slideShapes.find(s => s.phType === "title" || s.phType === "ctrTitle");
-      const titleMaster = pptxData.masterPlaceholders.find(p => p.type === "title" || p.type === "ctrTitle");
-      addLog(`  titleMaster: font=${JSON.stringify(titleMaster?.font)} placeholders=${pptxData.masterPlaceholders.length}`);
+      const titleMaster   = pptxData.masterPlaceholders.find(p => p.type === "title" || p.type === "ctrTitle");
       const layoutTitlePos = pptxData.layoutPositions?.["title:0"];
       const targetTitlePos = layoutTitlePos || titleMaster?.position;
       if (titleShape && targetTitlePos) {
@@ -1380,6 +1379,7 @@ export default function App() {
           Math.abs(cur.top  - targetTitlePos.top)  > 0.05;
         const headingFontForTitle = pptxData.theme.fonts.heading;
         const titleFontSize = titleMaster?.font?.size || pptxData.layoutPositions?.["title:fontSize"] || null;
+        addLog(`  titleFontSize=${titleFontSize} layoutSize=${pptxData.layoutPositions?.["title:fontSize"]}`);
         const fontNeedsFix = headingFontForTitle &&
           titleShape.current.fontName !== "(inherited)" &&
           titleShape.current.fontName !== headingFontForTitle;
@@ -1506,10 +1506,12 @@ export default function App() {
         for (const s of shapes.items) s.load(["id", "name", "type"]);
         await ctx.sync();
 
-        // ── Font step: use theme fonts directly — most reliable source ──────────
         const nonTitleSizes = pptxData.slideShapes
           .filter(ss => ss.phType !== "title" && ss.phType !== "ctrTitle" && typeof ss.current.fontSize === "number")
           .map(ss => ss.current.fontSize);
+        const sizeFreq = nonTitleSizes.reduce((acc, s) => { acc[s] = (acc[s] || 0) + 1; return acc; }, {});
+        const normalisedSize = nonTitleSizes.length > 0 ? parseInt(Object.entries(sizeFreq).sort((a, b) => b[1] - a[1])[0][0]) : null;
+        addLog(`  normalisedSize=${normalisedSize} sizes=${JSON.stringify(sizeFreq)}`);
         const sizeFreq = nonTitleSizes.reduce((acc, s) => { acc[s] = (acc[s] || 0) + 1; return acc; }, {});
         const normalisedSize = nonTitleSizes.length > 0 ? parseInt(Object.entries(sizeFreq).sort((a, b) => b[1] - a[1])[0][0]) : null;
         const bodyFont = pptxData.theme.fonts.body;   // minor font = body text
@@ -1567,13 +1569,13 @@ export default function App() {
           try {
             if (bodyFont) { tr.font.name = bodyFont; totalFixes++; }
             const currentSize = typeof ss.current.fontSize === "number" ? ss.current.fontSize : null;
-            if (normalisedSize && currentSize !== null && Math.abs(currentSize - normalisedSize) <= 1) { tr.font.size = normalisedSize; totalFixes++; }
+            if (normalisedSize && currentSize !== null && Math.abs(currentSize - normalisedSize) <= 1) { addLog(`  Size write: ${currentSize}→${normalisedSize} shape=${ss.name}`); tr.font.size = normalisedSize; totalFixes++; }
           } catch (e) { /* skip */ }
         }
 
         // Normalise similarly-sized shapes — O(n) frequency map approach
         const sizeGroups = new Map();
-        for (const ss of pptxData.slideShapes.filter(ss => ss.phType !== "title" && ss.phType !== "ctrTitle" && ss.position && typeof ss.current.fontSize === "number" && !ss.isTable && !ss.isGroup)) {
+        for (const ss of pptxData.slideShapes.filter(ss => ss.phType !== "title" && ss.phType !== "ctrTitle" && ss.position && typeof ss.current.fontSize === "number" && ss.current.fontSize <= 72 && !ss.isTable && !ss.isGroup)) {
           const sizeKey = `${Math.round(ss.position.width * 10)}_${Math.round(ss.position.height * 10)}`;
           if (!sizeGroups.has(sizeKey)) sizeGroups.set(sizeKey, []);
           sizeGroups.get(sizeKey).push(ss);
@@ -1586,7 +1588,7 @@ export default function App() {
             if (ss.current.fontSize === groupSize || Math.abs(ss.current.fontSize - groupSize) > 1) continue;
             const os = shapes.items.find(s => String(s.id) === String(ss.id));
             if (!os) continue;
-            try { os.textFrame.textRange.font.size = groupSize; totalFixes++; } catch (e) { /* ignore */ }
+            try { addLog(`  Group size: ${ss.current.fontSize}→${groupSize} shape=${ss.name}`); os.textFrame.textRange.font.size = groupSize; totalFixes++; } catch (e) { /* ignore */ }
           }
         }
         await ctx.sync(); // ONE sync for all font/size writes
