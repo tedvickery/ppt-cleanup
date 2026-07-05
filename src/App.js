@@ -949,6 +949,7 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
             } catch (e) { /* no group */ }
           } else {
             const tr = target.textFrame.textRange;
+            try { target.textFrame.autoSizeSetting = "AutoSizeNone"; } catch (e) { /* not supported */ }
             if (fix.font) {
               if (fix.font.name)  tr.font.name = fix.font.name;
               if (fix.font.size)  tr.font.size = fix.font.size;
@@ -964,8 +965,8 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
             }
             if (fix.padding) {
               const tf = target.textFrame;
-              // Disable auto-fit before setting size/padding — otherwise PowerPoint shrinks text back
-              try { tf.autoSizeSetting = PowerPoint.ShapeAutoSize.autoSizeNone; } catch (e) { /* not supported */ }
+              // Disable auto-fit using string literal — prevents PowerPoint shrinking text back
+              try { tf.autoSizeSetting = "AutoSizeNone"; } catch (e) { /* not supported */ }
               if (fix.padding.left   != null) tf.leftMargin   = fix.padding.left;
               if (fix.padding.right  != null) tf.rightMargin  = fix.padding.right;
               if (fix.padding.top    != null) tf.topMargin    = fix.padding.top;
