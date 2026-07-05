@@ -1333,6 +1333,7 @@ export default function App() {
       if (titleShape && targetTitlePos) {
         // Read live position from Office.js — ZIP XML is stale for unsaved changes
         let cur = titleShape.position;
+        let wasAutofit = false;
         try {
           await PowerPoint.run(async (ctx) => {
             const slide = ctx.presentation.slides.getItemAt(dupIndex - 1);
@@ -1343,7 +1344,9 @@ export default function App() {
             const titleId = String(titleShape.id);
             const titleOs = slide.shapes.items.find(s => String(s.id) === titleId || s.name === titleShape.name);
             if (titleOs) {
-              // Disable autofit before font/size writes
+              titleOs.textFrame.load("autoSizeSetting");
+              await ctx.sync();
+              wasAutofit = titleOs.textFrame.autoSizeSetting !== "AutoSizeNone";
               titleOs.textFrame.autoSizeSetting = "AutoSizeNone";
               await ctx.sync();
               cur = {
@@ -1364,7 +1367,7 @@ export default function App() {
         const fontNeedsFix = headingFontForTitle &&
           titleShape.current.fontName !== "(inherited)" &&
           titleShape.current.fontName !== headingFontForTitle;
-        const sizNeedsFix = !!titleFontSize; // always apply master size — autofit may have changed display size
+        const sizNeedsFix = !!titleFontSize && (wasAutofit || (!!titleShape.current.fontSize && Math.abs(titleShape.current.fontSize - titleFontSize) > 0.5));
         const fillNeedsFix = titleShape.shapeFill && titleShape.shapeFill !== "none" && titleShape.masterTarget?.fill === "none";
         const primaryThemeColorForTitle = themeColorList[0];
         const titleColorNeedsFix = primaryThemeColorForTitle &&
