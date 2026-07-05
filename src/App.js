@@ -768,6 +768,13 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
               bottom: bodyPr.getAttribute("bIns") != null ? parseInt(bodyPr.getAttribute("bIns"), 10) / 12700 : 3.6,
             });
           }
+          // Read font size from title placeholder's text style, if present
+          const txBody = sp.getElementsByTagNameNS("*", "txBody")[0];
+          const defRPr = txBody?.getElementsByTagNameNS("*", "defRPr")[0]
+            || txBody?.getElementsByTagNameNS("*", "lvl1pPr")[0]?.getElementsByTagNameNS("*", "defRPr")[0];
+          const sz = defRPr?.getAttribute("sz");
+          if (sz) titlePositions._titleFontSizes = titlePositions._titleFontSizes || [];
+          if (sz) titlePositions._titleFontSizes.push(parseInt(sz, 10) / 100);
         }
         if (phType === "body" || phType === "obj") hasBody = true;
       }
@@ -787,7 +794,13 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
       layoutPositions["title:0"] = { left, top, width, height };
     }
 
-    // Mode vote for padding — use the most common padding found across all layouts
+    // Mode vote for title font size from layouts
+    const titleFontSizes = titlePositions._titleFontSizes || [];
+    if (titleFontSizes.length > 0) {
+      const sizeFreq = titleFontSizes.reduce((acc, s) => { acc[s] = (acc[s]||0)+1; return acc; }, {});
+      const modeSize = parseFloat(Object.entries(sizeFreq).sort((a,b) => b[1]-a[1])[0][0]);
+      layoutPositions["title:fontSize"] = modeSize;
+    }
     if (titlePaddings.length > 0) {
       const padFreq = {};
       for (const pd of titlePaddings) {
@@ -1365,7 +1378,7 @@ export default function App() {
           Math.abs(cur.left - targetTitlePos.left) > 0.05 ||
           Math.abs(cur.top  - targetTitlePos.top)  > 0.05;
         const headingFontForTitle = pptxData.theme.fonts.heading;
-        const titleFontSize = !hasManualOverride ? (titleMaster?.font?.size || null) : null;
+        const titleFontSize = titleMaster?.font?.size || pptxData.layoutPositions?.["title:fontSize"] || null;
         const fontNeedsFix = headingFontForTitle &&
           titleShape.current.fontName !== "(inherited)" &&
           titleShape.current.fontName !== headingFontForTitle;
