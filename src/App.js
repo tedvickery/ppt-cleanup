@@ -964,8 +964,8 @@ async function applyFixes(slideIndex, fixes, themeColors = {}) {
             const tr = target.textFrame.textRange;
             try { target.textFrame.autoSizeSetting = "AutoSizeNone"; } catch (e) { /* not supported */ }
             if (fix.font) {
-              if (fix.font.name)  { tr.font.name = fix.font.name; }
-              if (fix.font.size)  { console.log(`Writing size ${fix.font.size} to ${fix.shapeName}`); tr.font.size = fix.font.size; }
+              if (fix.font.name)  tr.font.name = fix.font.name;
+              if (fix.font.size)  tr.font.size = fix.font.size;
               if (fix.font.color) {
                 let textColor = snapToThemeColor(fix.font.color, themeColors);
                 const fill = fix.shapeFill;
@@ -1383,7 +1383,6 @@ export default function App() {
           titleShape.current.fontName !== "(inherited)" &&
           titleShape.current.fontName !== headingFontForTitle;
         const sizNeedsFix = !!titleFontSize; // always apply master size
-        addLog(`  Title: sizNeedsFix=${sizNeedsFix} titleFontSize=${titleFontSize} current=${titleShape.current.fontSize}`);
         const fillNeedsFix = titleShape.shapeFill && titleShape.shapeFill !== "none" && titleShape.masterTarget?.fill === "none";
         const primaryThemeColorForTitle = themeColorList[0];
         const titleColorNeedsFix = primaryThemeColorForTitle &&
