@@ -1512,8 +1512,6 @@ export default function App() {
         const sizeFreq = nonTitleSizes.reduce((acc, s) => { acc[s] = (acc[s] || 0) + 1; return acc; }, {});
         const normalisedSize = nonTitleSizes.length > 0 ? parseInt(Object.entries(sizeFreq).sort((a, b) => b[1] - a[1])[0][0]) : null;
         addLog(`  normalisedSize=${normalisedSize} sizes=${JSON.stringify(sizeFreq)}`);
-        const sizeFreq = nonTitleSizes.reduce((acc, s) => { acc[s] = (acc[s] || 0) + 1; return acc; }, {});
-        const normalisedSize = nonTitleSizes.length > 0 ? parseInt(Object.entries(sizeFreq).sort((a, b) => b[1] - a[1])[0][0]) : null;
         const bodyFont = pptxData.theme.fonts.body;   // minor font = body text
         const headingFont = pptxData.theme.fonts.heading; // major font = titles
 
