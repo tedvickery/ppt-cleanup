@@ -1263,7 +1263,6 @@ export default function App() {
       if (masters.length === 0) throw new Error("No slide masters found in this file");
       const dominantMasterIndex = cachedDominantMaster.current ?? masters[0]?.index ?? 1;
       const primaryMaster = masters.find(m => m.index === dominantMasterIndex) || masters[0];
-      addLog(`  Masters: dominant=${dominantMasterIndex} available=${masters.map(m=>m.index).join(',')}`);
       const pptxData = await readSlideWithMaster(zip, masters, primaryMaster.index, slideIndex);
       setDetectedTheme(pptxData.theme);
       setDetectedMaster(pptxData.masterPlaceholders);
@@ -1343,7 +1342,8 @@ export default function App() {
 
       // ─── STEP 1: Title — snap to master position and font ───────────────────
       const titleShape    = pptxData.slideShapes.find(s => s.phType === "title" || s.phType === "ctrTitle");
-      const titleMaster   = pptxData.masterPlaceholders.find(p => p.type === "title" || p.type === "ctrTitle");
+      const titleMaster = pptxData.masterPlaceholders.find(p => p.type === "title" || p.type === "ctrTitle");
+      addLog(`  titleMaster: font=${JSON.stringify(titleMaster?.font)} placeholders=${pptxData.masterPlaceholders.length}`);
       const layoutTitlePos = pptxData.layoutPositions?.["title:0"];
       const targetTitlePos = layoutTitlePos || titleMaster?.position;
       if (titleShape && targetTitlePos) {
@@ -1385,7 +1385,14 @@ export default function App() {
           titleShape.current.fontName !== headingFontForTitle;
         const sizNeedsFix = !!titleFontSize; // always apply master size
         const fillNeedsFix = titleShape.shapeFill && titleShape.shapeFill !== "none" && titleShape.masterTarget?.fill === "none";
-        const primaryThemeColorForTitle = themeColorList[0];
+        // Use master title placeholder colour if defined, otherwise dk1
+        const masterTitleColor = titleMaster?.font?.color;
+        const primaryThemeColorForTitle = masterTitleColor ||
+          themeColors.dk1 || themeColors.dk2 ||
+          themeColorList.find(c => {
+            const r = parseInt(c.slice(1,3),16), g = parseInt(c.slice(3,5),16), b = parseInt(c.slice(5,7),16);
+            return (r+g+b)/3 < 128;
+          }) || themeColorList[0];
         const titleColorNeedsFix = primaryThemeColorForTitle &&
           titleShape.current.color !== "(inherited)" &&
           titleShape.current.color?.toLowerCase() !== primaryThemeColorForTitle.toLowerCase();
