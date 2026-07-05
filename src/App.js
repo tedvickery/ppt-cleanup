@@ -1329,6 +1329,7 @@ export default function App() {
       // ─── STEP 1: Title — snap to master position and font ───────────────────
       const titleShape    = pptxData.slideShapes.find(s => s.phType === "title" || s.phType === "ctrTitle");
       const titleMaster   = pptxData.masterPlaceholders.find(p => p.type === "title" || p.type === "ctrTitle");
+      addLog(`  Title master: font=${titleMaster?.font?.name} size=${titleMaster?.font?.size} placeholders=${pptxData.masterPlaceholders.length}`);
       const layoutTitlePos = pptxData.layoutPositions?.["title:0"];
       const targetTitlePos = layoutTitlePos || titleMaster?.position;
       if (titleShape && targetTitlePos) {
@@ -1337,6 +1338,7 @@ export default function App() {
           Math.abs(cur.left - targetTitlePos.left) > 0.05 ||
           Math.abs(cur.top  - targetTitlePos.top)  > 0.05;
         const headingFontForTitle = pptxData.theme.fonts.heading;
+        addLog(`  Title shape: font=${titleShape.current.fontName} size=${titleShape.current.fontSize} heading=${headingFontForTitle}`);
         const titleFontSize = !hasManualOverride ? (titleMaster?.font?.size || null) : null;
         const fontNeedsFix = headingFontForTitle &&
           titleShape.current.fontName !== "(inherited)" &&
