@@ -1250,14 +1250,8 @@ export default function App() {
       if (masters.length === 0) throw new Error("No slide masters found in this file");
       const primaryMaster = masters[0];
 
-      // Use cached pptxData for this slide — re-parse only if slide changed since last run
-      let pptxData = cachedPptxData.current[slideIndex];
-      if (!pptxData) {
-        pptxData = await readSlideWithMaster(zip, masters, primaryMaster.index, slideIndex);
-        cachedPptxData.current[slideIndex] = pptxData;
-      } else {
-        addLog(`Using cached template data for slide ${slideIndex}`);
-      }
+      // Always re-parse slide XML — cached positions go stale when shapes are moved
+      const pptxData = await readSlideWithMaster(zip, masters, primaryMaster.index, slideIndex);
       setDetectedTheme(pptxData.theme);
       setDetectedMaster(pptxData.masterPlaceholders);
 
@@ -1347,8 +1341,7 @@ export default function App() {
         const fontNeedsFix = headingFontForTitle &&
           titleShape.current.fontName !== "(inherited)" &&
           titleShape.current.fontName !== headingFontForTitle;
-        const sizNeedsFix = titleFontSize && titleShape.current.fontSize &&
-          Math.abs(titleShape.current.fontSize - titleFontSize) > 1;
+        const sizNeedsFix = !!titleFontSize; // always apply master title size — XML may differ from rendered due to autofit
         const fillNeedsFix = titleShape.shapeFill && titleShape.shapeFill !== "none" && titleShape.masterTarget?.fill === "none";
         const primaryThemeColorForTitle = themeColorList[0];
         const titleColorNeedsFix = primaryThemeColorForTitle &&
