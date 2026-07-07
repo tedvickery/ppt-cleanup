@@ -779,7 +779,8 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
         if (phType === "body" || phType === "obj") hasBody = true;
       }
       firstLayoutDone = true;
-      if (layoutTitlePos && hasBody && !isCtrTitle) titlePositions.push(layoutTitlePos);
+      const SLIDE_W = 13.33;
+      if (layoutTitlePos && hasBody && !isCtrTitle && layoutTitlePos.width >= SLIDE_W * 0.5) titlePositions.push(layoutTitlePos);
     }
 
     // Simple mode vote — most common title position across all content layouts wins
