@@ -788,7 +788,6 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
       }
       firstLayoutDone = true;
       if (isCtrTitle) continue;
-      if (layoutTitlePos && layoutTitlePos.width < 13.33 * 0.25) continue;
       // Store result with flag for whether body was full-size or quarter-size
       if (hasBody || hasBodyQuarter) {
         const entry = { pos: layoutTitlePos, pad: layoutTitlePadding, strict: hasBody };
