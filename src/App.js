@@ -786,6 +786,7 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
         }
       }
       firstLayoutDone = true;
+      console.log(`Layout: hasBody=${hasBody} isCtrTitle=${isCtrTitle} titlePos=${layoutTitlePos ? `${layoutTitlePos.width.toFixed(2)}w` : 'null'}`);
       if (!hasBody || isCtrTitle) continue; // no body placeholder or centre-title layout — skip
       if (layoutTitlePos && layoutTitlePos.width < 13.33 * 0.25) continue; // narrow title < 25% slide width — skip
       if (layoutTitlePos) titlePositions.push(layoutTitlePos); // explicit position
