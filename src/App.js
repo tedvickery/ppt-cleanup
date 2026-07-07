@@ -740,7 +740,7 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
       const layoutFile = zip.file(`ppt/slideLayouts/slideLayout${layoutMatch[1]}.xml`);
       if (!layoutFile) continue;
       const layoutDoc = parseXml(await layoutFile.async("string"));
-      let layoutTitlePos = null, hasBody = false, isCtrTitle = false;
+      let layoutTitlePos = null, hasBody = false, isCtrTitle = false, layoutTitlePadding = null;
 
       for (const sp of layoutDoc.getElementsByTagNameNS("*", "sp")) {
         const ph = sp.getElementsByTagNameNS("*", "ph")[0];
@@ -766,12 +766,12 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
           // Read padding from this title placeholder's bodyPr, if present
           const bodyPr = sp.getElementsByTagNameNS("*", "bodyPr")[0];
           if (bodyPr && (bodyPr.getAttribute("lIns") != null || bodyPr.getAttribute("rIns") != null || bodyPr.getAttribute("tIns") != null || bodyPr.getAttribute("bIns") != null)) {
-            titlePaddings.push({
-              left:   bodyPr.getAttribute("lIns") != null ? parseInt(bodyPr.getAttribute("lIns"), 10) / 12700 : 7.2,
-              right:  bodyPr.getAttribute("rIns") != null ? parseInt(bodyPr.getAttribute("rIns"), 10) / 12700 : 7.2,
-              top:    bodyPr.getAttribute("tIns") != null ? parseInt(bodyPr.getAttribute("tIns"), 10) / 12700 : 3.6,
-              bottom: bodyPr.getAttribute("bIns") != null ? parseInt(bodyPr.getAttribute("bIns"), 10) / 12700 : 3.6,
-            });
+            layoutTitlePadding = {
+              left:   bodyPr.getAttribute("lIns") != null ? parseInt(bodyPr.getAttribute("lIns"), 10) / 12700 : 0,
+              right:  bodyPr.getAttribute("rIns") != null ? parseInt(bodyPr.getAttribute("rIns"), 10) / 12700 : 0,
+              top:    bodyPr.getAttribute("tIns") != null ? parseInt(bodyPr.getAttribute("tIns"), 10) / 12700 : 0,
+              bottom: bodyPr.getAttribute("bIns") != null ? parseInt(bodyPr.getAttribute("bIns"), 10) / 12700 : 0,
+            };
           }
           // Read font size from title placeholder's text style, if present
           const txBody = sp.getElementsByTagNameNS("*", "txBody")[0];
@@ -783,41 +783,32 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
         }
       }
       firstLayoutDone = true;
-      console.log(`Layout: hasBody=${hasBody} isCtrTitle=${isCtrTitle} titlePos=${layoutTitlePos ? `${layoutTitlePos.width.toFixed(2)}w` : 'null'}`);
-      if (!hasBody || isCtrTitle) continue; // no body placeholder or centre-title layout — skip
-      if (layoutTitlePos && layoutTitlePos.width < 13.33 * 0.25) continue; // narrow title < 25% slide width — skip
-      if (layoutTitlePos) titlePositions.push(layoutTitlePos); // explicit position
-      else titlePositions.push(null); // no xml position — counts as default
+      if (!hasBody || isCtrTitle) continue;
+      if (layoutTitlePos && layoutTitlePos.width < 13.33 * 0.25) continue;
+      if (layoutTitlePadding) titlePaddings.push(layoutTitlePadding);
+      if (layoutTitlePos) titlePositions.push(layoutTitlePos);
     }
 
-    // If majority of content layouts have no explicit title position, they inherit the PowerPoint default
-    // Use default position in that case — it's the correct position for standard content slides
-    const defaultVotes = titlePositions.filter(p => p === null).length;
-    const explicitPositions = titlePositions.filter(p => p !== null);
-    console.log(`Title vote: ${titlePositions.length} total, ${defaultVotes} defaults, explicit:`, JSON.stringify(explicitPositions.map(p => `${p.left.toFixed(2)},${p.top.toFixed(2)},${p.width.toFixed(2)}`)));
-
-    if (defaultVotes > explicitPositions.length) {
-      // Majority inherit default — use PowerPoint's built-in default title position
-      layoutPositions["title:0"] = { left: 0.6461, top: 0.7319, width: 8.4181, height: 1.2083 };
-    } else if (explicitPositions.length > 0) {
+    // Simple mode vote for position
+    if (titlePositions.length > 0) {
       const freq = {};
-      for (const p of explicitPositions) {
+      for (const p of titlePositions) {
         const k = `${p.left.toFixed(2)},${p.top.toFixed(2)},${p.width.toFixed(2)},${p.height.toFixed(2)}`;
         freq[k] = (freq[k] || 0) + 1;
       }
-      const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1]);
-      const topKey = sorted[0][0];
+      const topKey = Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0];
       const [left, top, width, height] = topKey.split(",").map(Number);
       layoutPositions["title:0"] = { left, top, width, height };
     }
 
-    // Mode vote for title font size from layouts
+    // Mode vote for title font size
     const titleFontSizes = titlePositions._titleFontSizes || [];
     if (titleFontSizes.length > 0) {
       const sizeFreq = titleFontSizes.reduce((acc, s) => { acc[s] = (acc[s]||0)+1; return acc; }, {});
-      const modeSize = parseFloat(Object.entries(sizeFreq).sort((a,b) => b[1]-a[1])[0][0]);
-      layoutPositions["title:fontSize"] = modeSize;
+      layoutPositions["title:fontSize"] = parseFloat(Object.entries(sizeFreq).sort((a,b) => b[1]-a[1])[0][0]);
     }
+
+    // Mode vote for padding
     if (titlePaddings.length > 0) {
       const padFreq = {};
       for (const pd of titlePaddings) {
