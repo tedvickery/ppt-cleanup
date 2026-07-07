@@ -796,6 +796,7 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
     // Use default position in that case — it's the correct position for standard content slides
     const defaultVotes = titlePositions.filter(p => p === null).length;
     const explicitPositions = titlePositions.filter(p => p !== null);
+    console.log(`Title vote: ${titlePositions.length} total, ${defaultVotes} defaults, explicit:`, JSON.stringify(explicitPositions.map(p => `${p.left.toFixed(2)},${p.top.toFixed(2)},${p.width.toFixed(2)}`)));
 
     if (defaultVotes > explicitPositions.length) {
       // Majority inherit default — use PowerPoint's built-in default title position
