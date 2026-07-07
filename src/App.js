@@ -776,21 +776,31 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
           if (sz) titlePositions._titleFontSizes = titlePositions._titleFontSizes || [];
           if (sz) titlePositions._titleFontSizes.push(parseInt(sz, 10) / 100);
         }
-        if (phType === "body" || phType === "obj") hasBody = true;
+        if ((phType === "body" || phType === "obj")) {
+          const sz = ph.getAttribute("sz") || "";
+          if (sz !== "quarter" && sz !== "half") hasBody = true;
+        }
       }
       firstLayoutDone = true;
       if (layoutTitlePos && hasBody && !isCtrTitle) titlePositions.push(layoutTitlePos);
+      else if (!layoutTitlePos && hasBody && !isCtrTitle) titlePositions.push(null); // inherits default
     }
 
-    // Simple mode vote — most common title position across all content layouts wins
-    if (titlePositions.length > 0) {
+    // If majority of content layouts have no explicit title position, they inherit the PowerPoint default
+    // Use default position in that case — it's the correct position for standard content slides
+    const defaultVotes = titlePositions.filter(p => p === null).length;
+    const explicitPositions = titlePositions.filter(p => p !== null);
+
+    if (defaultVotes > explicitPositions.length) {
+      // Majority inherit default — use PowerPoint's built-in default title position
+      layoutPositions["title:0"] = { left: 0.6461, top: 0.7319, width: 8.4181, height: 1.2083 };
+    } else if (explicitPositions.length > 0) {
       const freq = {};
-      for (const p of titlePositions) {
+      for (const p of explicitPositions) {
         const k = `${p.left.toFixed(2)},${p.top.toFixed(2)},${p.width.toFixed(2)},${p.height.toFixed(2)}`;
         freq[k] = (freq[k] || 0) + 1;
       }
       const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1]);
-      console.log("Title position vote:", JSON.stringify(sorted));
       const topKey = sorted[0][0];
       const [left, top, width, height] = topKey.split(",").map(Number);
       layoutPositions["title:0"] = { left, top, width, height };
