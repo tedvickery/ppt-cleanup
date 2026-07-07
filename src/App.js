@@ -779,8 +779,7 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
         if (phType === "body" || phType === "obj") hasBody = true;
       }
       firstLayoutDone = true;
-      const SLIDE_W = 13.33;
-      if (layoutTitlePos && hasBody && !isCtrTitle && layoutTitlePos.width >= SLIDE_W * 0.5) titlePositions.push(layoutTitlePos);
+      if (layoutTitlePos && hasBody && !isCtrTitle) titlePositions.push(layoutTitlePos);
     }
 
     // Simple mode vote — most common title position across all content layouts wins
@@ -790,7 +789,9 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
         const k = `${p.left.toFixed(2)},${p.top.toFixed(2)},${p.width.toFixed(2)},${p.height.toFixed(2)}`;
         freq[k] = (freq[k] || 0) + 1;
       }
-      const topKey = Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0];
+      const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1]);
+      console.log("Title position vote:", JSON.stringify(sorted));
+      const topKey = sorted[0][0];
       const [left, top, width, height] = topKey.split(",").map(Number);
       layoutPositions["title:0"] = { left, top, width, height };
     }
