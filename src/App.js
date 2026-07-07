@@ -740,7 +740,7 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
       const layoutFile = zip.file(`ppt/slideLayouts/slideLayout${layoutMatch[1]}.xml`);
       if (!layoutFile) continue;
       const layoutDoc = parseXml(await layoutFile.async("string"));
-      let layoutTitlePos = null, hasBody = false, isCtrTitle = false, layoutTitlePadding = null;
+      let layoutTitlePos = null, hasBody = false, hasBodyQuarter = false, isCtrTitle = false, layoutTitlePadding = null;
 
       for (const sp of layoutDoc.getElementsByTagNameNS("*", "sp")) {
         const ph = sp.getElementsByTagNameNS("*", "ph")[0];
@@ -748,8 +748,12 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
         const phType = ph.getAttribute("type") || "body";
         const phIdx  = ph.getAttribute("idx") || "0";
 
-        // Check hasBody regardless of whether xfrm exists
-        if (phType === "body" || phType === "obj") hasBody = true;
+        // Check hasBody — strict: only full-size body placeholders
+        if (phType === "body" || phType === "obj") {
+          const phSz = ph.getAttribute("sz") || "";
+          if (phSz !== "quarter" && phSz !== "half") hasBody = true;
+          else hasBodyQuarter = true; // track quarter-size separately
+        }
         if (phType === "ctrTitle") isCtrTitle = true;
 
         const xfrm = sp.getElementsByTagNameNS("*", "xfrm")[0];
@@ -783,10 +787,23 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
         }
       }
       firstLayoutDone = true;
-      if (!hasBody || isCtrTitle) continue;
+      if (isCtrTitle) continue;
       if (layoutTitlePos && layoutTitlePos.width < 13.33 * 0.25) continue;
-      if (layoutTitlePadding) titlePaddings.push(layoutTitlePadding);
-      if (layoutTitlePos) titlePositions.push(layoutTitlePos);
+      // Store result with flag for whether body was full-size or quarter-size
+      if (hasBody || hasBodyQuarter) {
+        const entry = { pos: layoutTitlePos, pad: layoutTitlePadding, strict: hasBody };
+        titlePositions._entries = titlePositions._entries || [];
+        titlePositions._entries.push(entry);
+      }
+    }
+
+    // Use strict entries (full-size body) if any exist, otherwise fall back to quarter-body layouts
+    const allEntries = titlePositions._entries || [];
+    const strictEntries = allEntries.filter(e => e.strict);
+    const qualifiedEntries = strictEntries.length > 0 ? strictEntries : allEntries;
+    for (const entry of qualifiedEntries) {
+      if (entry.pos) titlePositions.push(entry.pos);
+      if (entry.pad) titlePaddings.push(entry.pad);
     }
 
     // Simple mode vote for position
