@@ -749,10 +749,7 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
         const phIdx  = ph.getAttribute("idx") || "0";
 
         // Check hasBody regardless of whether xfrm exists
-        if (phType === "body" || phType === "obj") {
-          const sz = ph.getAttribute("sz") || "";
-          if (sz !== "quarter" && sz !== "half") hasBody = true;
-        }
+        if (phType === "body" || phType === "obj") hasBody = true;
         if (phType === "ctrTitle") isCtrTitle = true;
 
         const xfrm = sp.getElementsByTagNameNS("*", "xfrm")[0];
