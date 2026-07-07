@@ -747,10 +747,18 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
         if (!ph) continue;
         const phType = ph.getAttribute("type") || "body";
         const phIdx  = ph.getAttribute("idx") || "0";
+
+        // Check hasBody regardless of whether xfrm exists
+        if (phType === "body" || phType === "obj") {
+          const sz = ph.getAttribute("sz") || "";
+          if (sz !== "quarter" && sz !== "half") hasBody = true;
+        }
+        if (phType === "ctrTitle") isCtrTitle = true;
+
         const xfrm = sp.getElementsByTagNameNS("*", "xfrm")[0];
         const off  = xfrm?.getElementsByTagNameNS("*", "off")[0];
         const ext  = xfrm?.getElementsByTagNameNS("*", "ext")[0];
-        if (!off || !ext) continue;
+        if (!off || !ext) continue; // no explicit position — skip position reads but hasBody already set above
         const pos = {
           left: emuToInches(off.getAttribute("x")),   top:    emuToInches(off.getAttribute("y")),
           width: emuToInches(ext.getAttribute("cx")), height: emuToInches(ext.getAttribute("cy")),
@@ -776,14 +784,12 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
           if (sz) titlePositions._titleFontSizes = titlePositions._titleFontSizes || [];
           if (sz) titlePositions._titleFontSizes.push(parseInt(sz, 10) / 100);
         }
-        if ((phType === "body" || phType === "obj")) {
-          const sz = ph.getAttribute("sz") || "";
-          if (sz !== "quarter" && sz !== "half") hasBody = true;
-        }
       }
       firstLayoutDone = true;
-      if (layoutTitlePos && hasBody && !isCtrTitle) titlePositions.push(layoutTitlePos);
-      else if (!layoutTitlePos && hasBody && !isCtrTitle) titlePositions.push(null); // inherits default
+      if (!hasBody || isCtrTitle) continue; // no body placeholder or centre-title layout — skip
+      if (layoutTitlePos && layoutTitlePos.width < 13.33 * 0.25) continue; // narrow title < 25% slide width — skip
+      if (layoutTitlePos) titlePositions.push(layoutTitlePos); // explicit position
+      else titlePositions.push(null); // no xml position — counts as default
     }
 
     // If majority of content layouts have no explicit title position, they inherit the PowerPoint default
