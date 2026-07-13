@@ -1256,6 +1256,29 @@ export default function App() {
     }
   }, [addLog]);
 
+  const SUPABASE_URL = "https://ccnsmdfqpodydbdacwdt.supabase.co";
+  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNjbnNtZGZxcG9keWRiZGFjd2R0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM5NjkxNDYsImV4cCI6MjA5OTU0NTE0Nn0.BbgFFL_x1F61W37S21OHxfXv_9s21_tMuby6vzuziIg";
+
+  const trackUsage = useCallback(async (fixCount) => {
+    try {
+      let userEmail = null, userName = null;
+      try {
+        userEmail = Office.context.userProfile?.emailAddress || null;
+        userName  = Office.context.userProfile?.displayName  || null;
+      } catch (e) { /* userProfile not available in Online */ }
+      await fetch(`${SUPABASE_URL}/rest/v1/usage`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "apikey": SUPABASE_KEY,
+          "Authorization": `Bearer ${SUPABASE_KEY}`,
+          "Prefer": "return=minimal",
+        },
+        body: JSON.stringify({ user_email: userEmail, user_name: userName, slide_count: fixCount }),
+      });
+    } catch (e) { /* non-critical — don't interrupt the user */ }
+  }, []);
+
   const handleCleanup = useCallback(async () => {
     setStatus("running");
     setLog([]);
@@ -1805,12 +1828,13 @@ export default function App() {
       }
       setFixCount(totalFixes);
       setStatus("done");
+      trackUsage(totalFixes);
     } catch (err) {
       setError(err.message);
       addLog("✗ " + err.message);
       setStatus("error");
     }
-  }, [titleOverrides]);
+  }, [titleOverrides, trackUsage]);
 
   const isRunning = status === "running";
 
