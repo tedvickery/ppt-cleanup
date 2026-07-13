@@ -1902,17 +1902,21 @@ export default function App() {
 
         {detectedTheme && <ThemeCard theme={detectedTheme} masterPlaceholders={detectedMaster} />}
 
-        {/* 4. Description */}
+        {/* 4. Description — collapsible */}
         {status === "idle" && !detectedTheme && (
-          <div style={{ background: "#fff", borderRadius: 10, border: "1px solid #e5e7eb", padding: "12px 14px" }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>What cleanup does</div>
-            {["Snaps title to master position & size", "Fixes fonts to match the template", "Normalises font sizes", "Snaps colours to theme palette", "Corrects shape fill colours"].map(text => (
-              <div key={text} style={{ display: "flex", gap: 8, marginBottom: 5, alignItems: "flex-start" }}>
-                <span style={{ fontSize: 11, color: "#111111", flexShrink: 0, width: 16, textAlign: "center" }}>✓</span>
-                <span style={{ fontSize: 11, color: "#374151", lineHeight: 1.4 }}>{text}</span>
-              </div>
-            ))}
-          </div>
+          <details style={{ background: "#fff", borderRadius: 10, border: "1px solid #e5e7eb", padding: "10px 14px" }}>
+            <summary style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer", userSelect: "none", listStyle: "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              What cleanup does <span style={{ fontSize: 9 }}>▼</span>
+            </summary>
+            <div style={{ marginTop: 10 }}>
+              {["Snaps title to master position & size", "Fixes fonts to match the template", "Normalises font sizes", "Snaps colours to theme palette", "Corrects shape fill colours"].map(text => (
+                <div key={text} style={{ display: "flex", gap: 8, marginBottom: 5, alignItems: "flex-start" }}>
+                  <span style={{ fontSize: 11, color: "#111111", flexShrink: 0, width: 16, textAlign: "center" }}>✓</span>
+                  <span style={{ fontSize: 11, color: "#374151", lineHeight: 1.4 }}>{text}</span>
+                </div>
+              ))}
+            </div>
+          </details>
         )}
 
         {log.length > 0 && (
@@ -1923,9 +1927,12 @@ export default function App() {
         )}
       </div>
 
-      <div style={{ padding: "10px 16px", borderTop: "1px solid #e5e7eb", background: "#fff", display: "flex", justifyContent: "space-between" }}>
+      <div style={{ padding: "10px 16px", borderTop: "1px solid #e5e7eb", background: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <span style={{ fontSize: 9, color: "#9ca3af", fontFamily: "monospace" }}>v3.0.0</span>
-        <span style={{ fontSize: 9, color: "#9ca3af" }}>PowerPoint Add-in</span>
+        <a href="https://ppt-cleanup.vercel.app/home.html" target="_blank" rel="noreferrer"
+          style={{ fontSize: 11, color: "#2563eb", fontWeight: 600, textDecoration: "none", background: "#eff6ff", padding: "4px 10px", borderRadius: 6, border: "1px solid #bfdbfe" }}>
+          About SnapBack →
+        </a>
       </div>
     </div>
   );
