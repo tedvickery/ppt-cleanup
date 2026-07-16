@@ -1926,22 +1926,25 @@ export default function App() {
 
         {detectedTheme && <ThemeCard theme={detectedTheme} masterPlaceholders={detectedMaster} />}
 
-        {/* 4. Description — collapsible */}
-        {status === "idle" && !detectedTheme && (
-          <details style={{ background: "#fff", borderRadius: 10, border: "1px solid #e5e7eb", padding: "10px 14px" }}>
-            <summary style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer", userSelect: "none", listStyle: "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              What cleanup does <span style={{ fontSize: 9 }}>▼</span>
-            </summary>
-            <div style={{ marginTop: 10 }}>
-              {["Snaps title to master position & size", "Fixes fonts to match the template", "Normalises font sizes", "Snaps colours to theme palette", "Corrects shape fill colours"].map(text => (
-                <div key={text} style={{ display: "flex", gap: 8, marginBottom: 5, alignItems: "flex-start" }}>
-                  <span style={{ fontSize: 11, color: "#111111", flexShrink: 0, width: 16, textAlign: "center" }}>✓</span>
-                  <span style={{ fontSize: 11, color: "#374151", lineHeight: 1.4 }}>{text}</span>
-                </div>
-              ))}
-            </div>
-          </details>
-        )}
+        {/* 4. How to use — collapsible */}
+        <details style={{ background: "#fff", borderRadius: 10, border: "1px solid #e5e7eb", padding: "10px 14px" }}>
+          <summary style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer", userSelect: "none", listStyle: "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            How to use <span style={{ fontSize: 9 }}>▼</span>
+          </summary>
+          <div style={{ marginTop: 10 }}>
+            {[
+              "Open a branded master deck",
+              "Paste in your slides",
+              "Open SnapBack in the ribbon",
+              "Hit SnapBack",
+            ].map((text, i) => (
+              <div key={text} style={{ display: "flex", gap: 8, marginBottom: 6, alignItems: "flex-start" }}>
+                <span style={{ fontSize: 10, color: "#2563eb", fontWeight: 700, flexShrink: 0, width: 16 }}>{i + 1}</span>
+                <span style={{ fontSize: 11, color: "#374151", lineHeight: 1.4 }}>{text}</span>
+              </div>
+            ))}
+          </div>
+        </details>
 
         {log.length > 0 && (
           <div style={{ background: "#0f172a", borderRadius: 10, padding: "10px 12px" }}>
