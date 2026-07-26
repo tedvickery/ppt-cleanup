@@ -1433,7 +1433,9 @@ export default function App() {
         const fontNeedsFix = headingFontForTitle &&
           titleShape.current.fontName !== "(inherited)" &&
           titleShape.current.fontName !== headingFontForTitle;
-        const sizNeedsFix = !!titleFontSize; // always apply master size
+        const sizNeedsFix = !!titleFontSize && !!titleShape.current.fontSize &&
+          Math.abs(titleShape.current.fontSize - titleFontSize) > 0.5 &&
+          Math.abs(titleShape.current.fontSize - titleFontSize) <= 10;
         const fillNeedsFix = titleShape.shapeFill && titleShape.shapeFill !== "none" && titleShape.masterTarget?.fill === "none";
         // Use master title placeholder colour if defined, otherwise dk1
         const masterTitleColor = titleMaster?.font?.color;
@@ -1442,10 +1444,14 @@ export default function App() {
           themeColorList.find(c => {
             const r = parseInt(c.slice(1,3),16), g = parseInt(c.slice(3,5),16), b = parseInt(c.slice(5,7),16);
             return (r+g+b)/3 < 128;
-          }) || themeColorList[0];
+          }) || null;
+        // Only fix if: target colour is known AND current colour is not already in the theme palette
+        const currentTitleColor = titleShape.current.color;
+        const currentIsThemeColor = currentTitleColor && themeColorList.some(c => c.toLowerCase() === currentTitleColor.toLowerCase());
         const titleColorNeedsFix = primaryThemeColorForTitle &&
-          titleShape.current.color !== "(inherited)" &&
-          titleShape.current.color?.toLowerCase() !== primaryThemeColorForTitle.toLowerCase();
+          currentTitleColor &&
+          currentTitleColor !== "(inherited)" &&
+          !currentIsThemeColor;
         const targetPadding = pptxData.layoutPositions?.["title:padding"];
         const paddingNeedsFix = targetPadding != null;
         if (posNeedsFix || fontNeedsFix || sizNeedsFix || fillNeedsFix || titleColorNeedsFix || paddingNeedsFix) {
