@@ -1624,7 +1624,7 @@ export default function App() {
           try {
             if (bodyFont) { tr.font.name = bodyFont; totalFixes++; }
             const currentSize = typeof ss.current.fontSize === "number" ? ss.current.fontSize : null;
-            if (normalisedSize && currentSize !== null && Math.abs(currentSize - normalisedSize) <= 1) { tr.font.size = normalisedSize; totalFixes++; }
+            if (normalisedSize && currentSize !== null && Math.abs(currentSize - normalisedSize) <= 3) { tr.font.size = normalisedSize; totalFixes++; }
           } catch (e) { /* skip */ }
         }
 
@@ -1640,7 +1640,7 @@ export default function App() {
           const freq = group.reduce((acc, s) => { acc[s.current.fontSize] = (acc[s.current.fontSize]||0)+1; return acc; }, {});
           const groupSize = parseInt(Object.entries(freq).sort((a, b) => b[1]-a[1])[0][0]);
           for (const ss of group) {
-            if (ss.current.fontSize === groupSize || Math.abs(ss.current.fontSize - groupSize) > 1) continue;
+            if (ss.current.fontSize === groupSize || Math.abs(ss.current.fontSize - groupSize) > 3) continue;
             const os = shapes.items.find(s => String(s.id) === String(ss.id));
             if (!os) continue;
             try { os.textFrame.textRange.font.size = groupSize; totalFixes++; } catch (e) { /* ignore */ }
