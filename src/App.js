@@ -1414,6 +1414,9 @@ export default function App() {
               await ctx.sync();
               wasAutofit = titleOs.textFrame.autoSizeSetting !== "AutoSizeNone";
               titleOs.textFrame.autoSizeSetting = "AutoSizeNone";
+              // If autofit was active, write the target font size now while autofit is disabled
+              const targetSize = titleMaster?.font?.size || pptxData.layoutPositions?.["title:fontSize"] || null;
+              if (wasAutofit && targetSize) titleOs.textFrame.textRange.font.size = targetSize;
               await ctx.sync();
               cur = {
                 left:   titleOs.left   / 72,
