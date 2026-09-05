@@ -1090,6 +1090,7 @@ export default function App() {
   const [detectedMaster, setDetectedMaster] = useState([]);
   const [masterWarning, setMasterWarning] = useState(false);
   const [colorWarning, setColorWarning]   = useState(null);
+  const [detectedTitleName, setDetectedTitleName] = useState(null);
 
   // Manual title override, per slide, for this session only — { [slideIndex]: { id, name } }
   const [titleOverrides, setTitleOverrides] = useState({});
@@ -1286,6 +1287,7 @@ export default function App() {
     setFixCount(0);
     setMasterWarning(false);
     setColorWarning(null);
+    setDetectedTitleName(null);
     setDetectedTheme(null);
     setDetectedMaster([]);
 
@@ -1313,6 +1315,8 @@ export default function App() {
       const pptxData = await readSlideWithMaster(zip, masters, primaryMaster.index, slideIndex);
       setDetectedTheme(pptxData.theme);
       setDetectedMaster(pptxData.masterPlaceholders);
+      const detectedTitle = pptxData.slideShapes.find(s => s.phType === "title" || s.phType === "ctrTitle");
+      setDetectedTitleName(detectedTitle?.name || null);
 
       // Apply manual title override for this slide, if one was set this session
       const override = titleOverrides[slideIndex];
@@ -1903,10 +1907,15 @@ export default function App() {
         {/* 2. Select shape as title */}
         <div style={{ background: "#f8faff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "12px 14px" }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: "#2563eb", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>Title box</div>
+          {detectedTitleName && !overrideStatus?.ok && (
+            <div style={{ fontSize: 11, color: "#374151", marginBottom: 8, lineHeight: 1.4 }}>
+              Detected: <strong style={{ color: "#111" }}>{detectedTitleName}</strong>
+            </div>
+          )}
           <div style={{ fontSize: 11, color: "#374151", marginBottom: 10, lineHeight: 1.4 }}>
             {overrideStatus?.ok
               ? <span style={{ color: "#15803d", fontWeight: 600 }}>✓ {overrideStatus.msg}</span>
-              : "Click your title box on the slide, then tap the button below to tell SnapBack which box is the title."}
+              : "Click your title box on the slide, then tap below if this is wrong."}
           </div>
           <button onClick={handleSetTitleOverride} disabled={isRunning}
             style={{ width: "100%", padding: "9px 0", background: "#2563eb", color: "#fff", border: "none", borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: "pointer", letterSpacing: "0.02em" }}>
