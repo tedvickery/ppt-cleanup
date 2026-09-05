@@ -1450,10 +1450,12 @@ export default function App() {
           }) || null;
         // Only fix if: target colour is known AND current colour is not already in the theme palette
         const currentTitleColor = titleShape.current.color;
-        const currentIsThemeColor = currentTitleColor && themeColorList.some(c => c.toLowerCase() === currentTitleColor.toLowerCase());
+        const normalisedCurrent = currentTitleColor && currentTitleColor !== "(inherited)"
+          ? (currentTitleColor.startsWith("#") ? currentTitleColor : `#${currentTitleColor}`)
+          : null;
+        const currentIsThemeColor = normalisedCurrent && themeColorList.some(c => c.toLowerCase() === normalisedCurrent.toLowerCase());
         const titleColorNeedsFix = primaryThemeColorForTitle &&
-          currentTitleColor &&
-          currentTitleColor !== "(inherited)" &&
+          normalisedCurrent &&
           !currentIsThemeColor;
         const targetPadding = pptxData.layoutPositions?.["title:padding"];
         const paddingNeedsFix = targetPadding != null;
