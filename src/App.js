@@ -1901,17 +1901,21 @@ export default function App() {
         {error && <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 12px", fontSize: 11, color: "#991b1b" }}><strong>Error:</strong> {error}</div>}
 
         {/* 2. Select shape as title */}
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={handleSetTitleOverride} disabled={isRunning}
-            style={{ flex: 1, padding: "8px 0", background: "#fff", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
-            Use selected shape as title
-          </button>
-        </div>
-        {overrideStatus && (
-          <div style={{ background: overrideStatus.ok ? "#f0fdf4" : "#fef2f2", border: `1px solid ${overrideStatus.ok ? "#bbf7d0" : "#fecaca"}`, borderRadius: 8, padding: "8px 12px", fontSize: 11, color: overrideStatus.ok ? "#166534" : "#991b1b" }}>
-            {overrideStatus.msg}
+        <div style={{ background: "#f8faff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "12px 14px" }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#2563eb", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>Title box</div>
+          <div style={{ fontSize: 11, color: "#374151", marginBottom: 10, lineHeight: 1.4 }}>
+            {overrideStatus?.ok
+              ? <span style={{ color: "#15803d", fontWeight: 600 }}>✓ {overrideStatus.msg}</span>
+              : "Click your title box on the slide, then tap the button below to tell SnapBack which box is the title."}
           </div>
-        )}
+          <button onClick={handleSetTitleOverride} disabled={isRunning}
+            style={{ width: "100%", padding: "9px 0", background: "#2563eb", color: "#fff", border: "none", borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: "pointer", letterSpacing: "0.02em" }}>
+            Set selected shape as title
+          </button>
+          {overrideStatus && !overrideStatus.ok && (
+            <div style={{ marginTop: 8, fontSize: 11, color: "#991b1b" }}>{overrideStatus.msg}</div>
+          )}
+        </div>
 
         {/* 3. Template ready / file status */}
         {!fileReady && !fileError && (
