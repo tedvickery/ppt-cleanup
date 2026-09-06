@@ -1893,16 +1893,48 @@ export default function App() {
 
       <div style={{ flex: 1, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
 
-        {/* 1. Action buttons */}
+        {/* 1. How to use — collapsed by default */}
+        <details style={{ background: "#fff", borderRadius: 10, border: "1px solid #e5e7eb", padding: "10px 14px" }}>
+          <summary style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer", userSelect: "none", listStyle: "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            How to use <span style={{ fontSize: 9 }}>▼</span>
+          </summary>
+          <div style={{ marginTop: 10 }}>
+            {["Open a branded master deck", "Paste in your slides", "Open SnapBack in the ribbon", "Hit SnapBack"].map((text, i) => (
+              <div key={text} style={{ display: "flex", gap: 8, marginBottom: 6, alignItems: "flex-start" }}>
+                <span style={{ fontSize: 10, color: "#2563eb", fontWeight: 700, flexShrink: 0, width: 16 }}>{i + 1}</span>
+                <span style={{ fontSize: 11, color: "#374151", lineHeight: 1.4 }}>{text}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+
+        {/* 2. Select title box */}
+        <div style={{ background: "#f8faff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "12px 14px" }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#2563eb", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>Title box</div>
+          <div style={{ fontSize: 11, color: "#374151", marginBottom: 10, lineHeight: 1.4 }}>
+            {overrideStatus?.ok
+              ? <span style={{ color: "#15803d", fontWeight: 600 }}>✓ {overrideStatus.msg}</span>
+              : "Click your title box on the slide, then tap below if SnapBack's detected title is wrong."}
+          </div>
+          <button onClick={handleSetTitleOverride} disabled={isRunning}
+            style={{ width: "100%", padding: "9px 0", background: "#2563eb", color: "#fff", border: "none", borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: "pointer", letterSpacing: "0.02em" }}>
+            Set selected shape as title
+          </button>
+          {overrideStatus && !overrideStatus.ok && (
+            <div style={{ marginTop: 8, fontSize: 11, color: "#991b1b" }}>{overrideStatus.msg}</div>
+          )}
+        </div>
+
+        {/* 3. Fix buttons */}
         <div style={{ display: "flex", gap: 6 }}>
           {[
-            { mode: "title",   label: "Title",   icon: "📐" },
-            { mode: "fonts",   label: "Fonts",   icon: "🔤" },
-            { mode: "colours", label: "Colours", icon: "🎨" },
+            { mode: "title",   label: "Fix Title",   icon: "📐" },
+            { mode: "fonts",   label: "Fix Fonts",   icon: "🔤" },
+            { mode: "colours", label: "Fix Colours", icon: "🎨" },
           ].map(({ mode, label, icon }) => (
             <button key={mode} onClick={() => handleCleanup(mode)} disabled={isRunning}
-              style={{ flex: 1, padding: "10px 0", background: "#f3f4f6", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-              <span style={{ fontSize: 16 }}>{icon}</span>
+              style={{ flex: 1, padding: "10px 4px", background: "#f3f4f6", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 10, fontWeight: 700, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+              <span style={{ fontSize: 15 }}>{icon}</span>
               <span>{label}</span>
             </button>
           ))}
@@ -1928,36 +1960,14 @@ export default function App() {
         )}
         {error && <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 12px", fontSize: 11, color: "#991b1b" }}><strong>Error:</strong> {error}</div>}
 
-        {/* 2. Select shape as title */}
-        <div style={{ background: "#f8faff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "12px 14px" }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: "#2563eb", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>Title box</div>
-          {detectedTitleName && !overrideStatus?.ok && (
-            <div style={{ fontSize: 11, color: "#374151", marginBottom: 8, lineHeight: 1.4 }}>
-              Detected: <strong style={{ color: "#111" }}>{detectedTitleName}</strong>
-            </div>
-          )}
-          <div style={{ fontSize: 11, color: "#374151", marginBottom: 10, lineHeight: 1.4 }}>
-            {overrideStatus?.ok
-              ? <span style={{ color: "#15803d", fontWeight: 600 }}>✓ {overrideStatus.msg}</span>
-              : "Click your title box on the slide, then tap below if this is wrong."}
-          </div>
-          <button onClick={handleSetTitleOverride} disabled={isRunning}
-            style={{ width: "100%", padding: "9px 0", background: "#2563eb", color: "#fff", border: "none", borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: "pointer", letterSpacing: "0.02em" }}>
-            Set selected shape as title
-          </button>
-          {overrideStatus && !overrideStatus.ok && (
-            <div style={{ marginTop: 8, fontSize: 11, color: "#991b1b" }}>{overrideStatus.msg}</div>
-          )}
-        </div>
-
-        {/* 3. Template ready / file status */}
+        {/* 4. Detected from file — includes title detection */}
         {!fileReady && !fileError && (
           <div style={{ background: "#fff", borderRadius: 8, border: "1px solid #e5e7eb", padding: "10px 14px", fontSize: 11, color: "#6b7280", display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ width: 10, height: 10, border: "2px solid #d1d5db", borderTop: "2px solid #6b7280", borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block", flexShrink: 0 }} />
             Loading template in background…
           </div>
         )}
-        {fileReady && status === "idle" && (
+        {fileReady && (
           <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "8px 12px", fontSize: 11, color: "#166534", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <span>✓ Template ready: <strong>{cachedMasters.current?.[0]?.name}</strong></span>
             <button onClick={async () => { setFileReady(false); setFileError(null); try { const { zip, masters, dominantMasterIndex } = await readPptxFile(); cachedZip.current = zip; cachedMasters.current = masters; cachedDominantMaster.current = dominantMasterIndex; cachedPptxData.current = {}; cachedTemplateShapes.current = null; setFileReady(true); } catch (e) { setFileError(e.message); } }}
@@ -1973,26 +1983,11 @@ export default function App() {
         )}
 
         {detectedTheme && <ThemeCard theme={detectedTheme} masterPlaceholders={detectedMaster} />}
-
-        {/* 4. How to use — collapsible */}
-        <details style={{ background: "#fff", borderRadius: 10, border: "1px solid #e5e7eb", padding: "10px 14px" }}>
-          <summary style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer", userSelect: "none", listStyle: "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            How to use <span style={{ fontSize: 9 }}>▼</span>
-          </summary>
-          <div style={{ marginTop: 10 }}>
-            {[
-              "Open a branded master deck",
-              "Paste in your slides",
-              "Open SnapBack in the ribbon",
-              "Hit SnapBack",
-            ].map((text, i) => (
-              <div key={text} style={{ display: "flex", gap: 8, marginBottom: 6, alignItems: "flex-start" }}>
-                <span style={{ fontSize: 10, color: "#2563eb", fontWeight: 700, flexShrink: 0, width: 16 }}>{i + 1}</span>
-                <span style={{ fontSize: 11, color: "#374151", lineHeight: 1.4 }}>{text}</span>
-              </div>
-            ))}
+        {detectedTitleName && (
+          <div style={{ fontSize: 11, color: "#6b7280", padding: "2px 4px" }}>
+            Title detected: <strong style={{ color: "#374151" }}>{detectedTitleName}</strong>
           </div>
-        </details>
+        )}
 
         {log.length > 0 && (
           <div style={{ background: "#0f172a", borderRadius: 10, padding: "10px 12px" }}>
