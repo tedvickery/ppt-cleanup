@@ -1280,7 +1280,7 @@ export default function App() {
     } catch (e) { /* non-critical — don't interrupt the user */ }
   }, []);
 
-  const handleCleanup = useCallback(async () => {
+  const handleCleanup = useCallback(async (fixMode = "all") => {
     setStatus("running");
     setLog([]);
     setError(null);
@@ -1396,6 +1396,7 @@ export default function App() {
       const hasManualOverride = !!titleOverrides[slideIndex];
 
       // ─── STEP 1: Title — snap to master position and font ───────────────────
+      if (fixMode === "all" || fixMode === "title") {
       const titleShape    = pptxData.slideShapes.find(s => s.phType === "title" || s.phType === "ctrTitle");
       const titleMaster   = pptxData.masterPlaceholders.find(p => p.type === "title" || p.type === "ctrTitle");
       const layoutTitlePos = pptxData.layoutPositions?.["title:0"];
@@ -1558,11 +1559,13 @@ export default function App() {
             }
           } catch (e) { addLog(`⚠ Step 1 error: ${e.message}`); }
         }
-      }
+      } // end if (titleShape && targetTitlePos)
+      } // end Step 1
 
       // ─── STEPS 2 + 3: Fonts, sizes, colours — single PowerPoint.run ────────────
-      addLog("Step 2: Fonts & colours…");
-      const usedColors = new Set(); // track which theme colours are used — for ranking check
+      const usedColors = new Set();
+      if (fixMode === "all" || fixMode === "fonts" || fixMode === "colours") {
+      addLog(fixMode === "colours" ? "Step 2: Colours…" : fixMode === "fonts" ? "Step 2: Fonts…" : "Step 2: Fonts & colours…");
       await PowerPoint.run(async (ctx) => {
         const slides = ctx.presentation.slides;
         slides.load("items");
@@ -1631,7 +1634,8 @@ export default function App() {
           } catch (e) { /* no children */ }
         }
 
-        // Write all font/size changes — no syncs needed
+        // Write all font/size changes — skip if colours-only mode
+        if (fixMode !== "colours") {
         for (const { tr, ss } of [...fontJobs, ...tableCellJobs, ...groupTrJobs]) {
           try {
             if (bodyFont) { tr.font.name = bodyFont; totalFixes++; }
@@ -1659,8 +1663,10 @@ export default function App() {
           }
         }
         await ctx.sync(); // ONE sync for all font/size writes
+        } // end font-only block
 
         // ── Colour step ──────────────────────────────────────────────────────────
+        if (fixMode !== "fonts") {
         addLog("Step 3: Colours…");
         let bgColor = "#FFFFFF";
 
@@ -1826,7 +1832,9 @@ export default function App() {
         }
 
         await ctx.sync(); // final write sync
+        } // end colour step
       });
+      } // end Steps 2+3
 
 
 
@@ -1885,12 +1893,25 @@ export default function App() {
 
       <div style={{ flex: 1, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
 
-        {/* 1. SnapBack button */}
-        <button className="btn" onClick={handleCleanup} disabled={isRunning}
+        {/* 1. Action buttons */}
+        <div style={{ display: "flex", gap: 6 }}>
+          {[
+            { mode: "title",   label: "Title",   icon: "📐" },
+            { mode: "fonts",   label: "Fonts",   icon: "🔤" },
+            { mode: "colours", label: "Colours", icon: "🎨" },
+          ].map(({ mode, label, icon }) => (
+            <button key={mode} onClick={() => handleCleanup(mode)} disabled={isRunning}
+              style={{ flex: 1, padding: "10px 0", background: "#f3f4f6", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+              <span style={{ fontSize: 16 }}>{icon}</span>
+              <span>{label}</span>
+            </button>
+          ))}
+        </div>
+        <button className="btn" onClick={() => handleCleanup("all")} disabled={isRunning}
           style={{ width: "100%", padding: "14px 0", background: status === "done" ? "#15803d" : "#111111", color: "#fff", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.2s ease", boxShadow: "0 4px 14px rgba(0,0,0,0.28)" }}>
           {isRunning ? (
             <><span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.3)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block" }} />Working…</>
-          ) : status === "done" ? "✓ Done — clean another?" : "SnapBack"}
+          ) : status === "done" ? "✓ Done — clean another?" : "SnapBack — Fix Everything"}
         </button>
 
         {status === "done" && fixCount > 0  && <FixBadge count={fixCount} />}
