@@ -1458,9 +1458,12 @@ export default function App() {
           ? (currentTitleColor.startsWith("#") ? currentTitleColor : `#${currentTitleColor}`)
           : null;
         const currentIsThemeColor = normalisedCurrent && themeColorList.some(c => c.toLowerCase() === normalisedCurrent.toLowerCase());
-        const titleColorNeedsFix = primaryThemeColorForTitle &&
-          normalisedCurrent &&
-          !currentIsThemeColor;
+        const titleColorNeedsFix = primaryThemeColorForTitle && normalisedCurrent && (
+          masterTitleColor
+            ? normalisedCurrent.toLowerCase() !== masterTitleColor.toLowerCase() // master known — must match exactly
+            : !currentIsThemeColor // master unknown — only fix if not a theme colour
+        );
+        addLog(`  Title colour: current=${normalisedCurrent} isTheme=${currentIsThemeColor} target=${primaryThemeColorForTitle} needsFix=${titleColorNeedsFix}`);
         const targetPadding = pptxData.layoutPositions?.["title:padding"];
         const paddingNeedsFix = targetPadding != null;
         if (posNeedsFix || fontNeedsFix || sizNeedsFix || fillNeedsFix || titleColorNeedsFix || paddingNeedsFix) {
