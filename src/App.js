@@ -1392,7 +1392,6 @@ export default function App() {
     setMasterWarning(false);
     setColorWarning(null);
     setDetectedTitleName(null);
-    setReviewCounts(null);
     setDetectedTheme(null);
     setDetectedMaster([]);
 
@@ -1960,6 +1959,16 @@ export default function App() {
       setFixCount(totalFixes);
       setStatus("done");
       trackUsage(totalFixes);
+      // Update review counts — zero out the mode that was just fixed
+      if (reviewCounts) {
+        setReviewCounts(prev => prev ? {
+          ...prev,
+          ...(fixMode === "title"   ? { title: 0 }   : {}),
+          ...(fixMode === "fonts"   ? { fonts: 0 }   : {}),
+          ...(fixMode === "colours" ? { colours: 0 } : {}),
+          ...(fixMode === "all"     ? { title: 0, fonts: 0, colours: 0 } : {}),
+        } : null);
+      }
     } catch (err) {
       setError(err.message);
       addLog("✗ " + err.message);
