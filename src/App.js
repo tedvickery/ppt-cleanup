@@ -1360,16 +1360,18 @@ export default function App() {
           if (fontJobs.length > 0) await ctx.sync();
           for (const s of shapes.items) {
             try {
+              const fillType = String(s.fill.type).toLowerCase();
+              if (fillType === "nofill" || fillType === "null" || fillType === "undefined") continue;
               const fg = s.fill.foregroundColor;
               const fillColor = fg ? (fg.startsWith("#") ? fg : `#${fg}`) : null;
-              if (fillColor && !themeColorList.some(c => c.toLowerCase() === fillColor.toLowerCase())) colourCount++;
+              if (fillColor && snapToThemeColor(fillColor, themeColors).toLowerCase() !== fillColor.toLowerCase()) colourCount++;
             } catch (e) { /* skip */ }
           }
           for (const s of fontJobs) {
             try {
               const fc = s.textFrame.textRange.font.color;
               const fontColor = fc && fc !== "null" ? (fc.startsWith("#") ? fc : `#${fc}`) : null;
-              if (fontColor && !themeColorList.some(c => c.toLowerCase() === fontColor.toLowerCase())) colourCount++;
+              if (fontColor && snapToThemeColor(fontColor, themeColors).toLowerCase() !== fontColor.toLowerCase()) colourCount++;
             } catch (e) { /* skip */ }
           }
         });
