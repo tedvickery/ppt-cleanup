@@ -1344,18 +1344,28 @@ export default function App() {
         const shapes = slide.shapes;
         shapes.load("items");
         await ctx.sync();
-        for (const s of shapes.items) { try { s.fill.load(["type", "foregroundColor"]); s.textFrame.textRange.font.load("color"); } catch (e) { /* skip */ } }
+        for (const s of shapes.items) {
+          try { s.fill.load(["type", "foregroundColor"]); } catch (e) { /* skip */ }
+        }
         await ctx.sync();
+        // Load font colours separately — only for shapes with text
+        const fontJobs = [];
+        for (const s of shapes.items) {
+          try { s.textFrame.textRange.font.load("color"); fontJobs.push(s); } catch (e) { /* no text */ }
+        }
+        if (fontJobs.length > 0) await ctx.sync();
         for (const s of shapes.items) {
           try {
             const fg = s.fill.foregroundColor;
             const fillColor = fg ? (fg.startsWith("#") ? fg : `#${fg}`) : null;
             if (fillColor && !themeColorList.some(c => c.toLowerCase() === fillColor.toLowerCase())) colourCount++;
           } catch (e) { /* skip */ }
+        }
+        for (const s of fontJobs) {
           try {
             const fc = s.textFrame.textRange.font.color;
-            const fontColor = fc ? (fc.startsWith("#") ? fc : `#${fc}`) : null;
-            if (fontColor && fontColor !== "null" && !themeColorList.some(c => c.toLowerCase() === fontColor.toLowerCase())) colourCount++;
+            const fontColor = fc && fc !== "null" ? (fc.startsWith("#") ? fc : `#${fc}`) : null;
+            if (fontColor && !themeColorList.some(c => c.toLowerCase() === fontColor.toLowerCase())) colourCount++;
           } catch (e) { /* skip */ }
         }
       });
