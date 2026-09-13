@@ -1091,6 +1091,7 @@ export default function App() {
   const [masterWarning, setMasterWarning] = useState(false);
   const [colorWarning, setColorWarning]   = useState(null);
   const [detectedTitleName, setDetectedTitleName] = useState(null);
+  const [reviewCounts, setReviewCounts]   = useState(null);
 
   // Manual title override, per slide, for this session only — { [slideIndex]: { id, name } }
   const [titleOverrides, setTitleOverrides] = useState({});
@@ -1280,6 +1281,94 @@ export default function App() {
     } catch (e) { /* non-critical — don't interrupt the user */ }
   }, []);
 
+  const handleReview = useCallback(async () => {
+    setStatus("running");
+    setLog([]);
+    setError(null);
+    addLog("Reviewing slide…");
+    try {
+      const zip = cachedZip.current;
+      const masters = cachedMasters.current;
+      if (!zip || !masters) throw new Error("No template loaded — run SnapBack first");
+
+      const slideIndex = await getSelectedSlideIndex();
+      const dominantMasterIndex = cachedDominantMaster.current ?? masters[0]?.index ?? 1;
+      const primaryMaster = masters.find(m => m.index === dominantMasterIndex) || masters[0];
+      const pptxData = await readSlideWithMaster(zip, masters, primaryMaster.index, slideIndex);
+
+      // Apply title override if set
+      const override = titleOverrides[slideIndex];
+      if (override) {
+        const alreadyTitle = pptxData.slideShapes.find(s => s.phType === "title" || s.phType === "ctrTitle");
+        const target = pptxData.slideShapes.find(s => String(s.id) === String(override.id)) || pptxData.slideShapes.find(s => s.name === override.name);
+        if (target) { if (alreadyTitle && alreadyTitle !== target) alreadyTitle.phType = "body"; target.phType = "title"; }
+      }
+
+      const themeColors = pptxData.theme.colors;
+      const themeColorList = Object.values(themeColors).filter(v => v);
+
+      // ── Count title fixes needed ──────────────────────────────────────────
+      const titleShape = pptxData.slideShapes.find(s => s.phType === "title" || s.phType === "ctrTitle");
+      const titleMaster = pptxData.masterPlaceholders.find(p => p.type === "title" || p.type === "ctrTitle");
+      const targetTitlePos = pptxData.layoutPositions?.["title:0"] || titleMaster?.position;
+      let titleCount = 0;
+      if (titleShape && targetTitlePos) {
+        const cur = titleShape.position;
+        if (!cur || Math.abs(cur.left - targetTitlePos.left) > 0.05 || Math.abs(cur.top - targetTitlePos.top) > 0.05) titleCount++;
+        const headingFont = pptxData.theme.fonts.heading;
+        if (headingFont && titleShape.current.fontName !== "(inherited)" && titleShape.current.fontName !== headingFont) titleCount++;
+        const titleFontSize = titleMaster?.font?.size || pptxData.layoutPositions?.["title:fontSize"] || null;
+        if (titleFontSize && titleShape.current.fontSize && Math.abs(titleShape.current.fontSize - titleFontSize) > 0.5 && Math.abs(titleShape.current.fontSize - titleFontSize) <= 10) titleCount++;
+        const masterTitleColor = titleMaster?.font?.color;
+        const normCurrent = titleShape.current.color && titleShape.current.color !== "(inherited)" ? (titleShape.current.color.startsWith("#") ? titleShape.current.color : `#${titleShape.current.color}`) : null;
+        if (normCurrent && masterTitleColor && normCurrent.toLowerCase() !== masterTitleColor.toLowerCase()) titleCount++;
+        if (pptxData.layoutPositions?.["title:padding"]) titleCount++;
+      }
+
+      // ── Count font fixes needed ───────────────────────────────────────────
+      const bodyFont = pptxData.theme.fonts.body;
+      const nonTitleSizes = pptxData.slideShapes.filter(ss => ss.phType !== "title" && ss.phType !== "ctrTitle" && typeof ss.current.fontSize === "number").map(ss => ss.current.fontSize);
+      const sizeFreq = nonTitleSizes.reduce((acc, s) => { acc[s] = (acc[s]||0)+1; return acc; }, {});
+      const normalisedSize = nonTitleSizes.length > 1 ? parseInt(Object.entries(sizeFreq).sort((a,b) => b[1]-a[1])[0][0]) : null;
+      let fontCount = 0;
+      for (const ss of pptxData.slideShapes) {
+        if (ss.phType === "title" || ss.phType === "ctrTitle" || ss.isTable || ss.isGroup) continue;
+        if (bodyFont && ss.current.fontName !== "(inherited)" && ss.current.fontName !== bodyFont) fontCount++;
+        if (normalisedSize && typeof ss.current.fontSize === "number" && Math.abs(ss.current.fontSize - normalisedSize) > 0 && Math.abs(ss.current.fontSize - normalisedSize) <= 3) fontCount++;
+      }
+
+      // ── Count colour fixes needed (requires Office.js read) ──────────────
+      let colourCount = 0;
+      await PowerPoint.run(async (ctx) => {
+        const slide = ctx.presentation.slides.getItemAt(slideIndex - 1);
+        const shapes = slide.shapes;
+        shapes.load("items");
+        await ctx.sync();
+        for (const s of shapes.items) { try { s.fill.load(["type", "foregroundColor"]); s.textFrame.textRange.font.load("color"); } catch (e) { /* skip */ } }
+        await ctx.sync();
+        for (const s of shapes.items) {
+          try {
+            const fg = s.fill.foregroundColor;
+            const fillColor = fg ? (fg.startsWith("#") ? fg : `#${fg}`) : null;
+            if (fillColor && !themeColorList.some(c => c.toLowerCase() === fillColor.toLowerCase())) colourCount++;
+          } catch (e) { /* skip */ }
+          try {
+            const fc = s.textFrame.textRange.font.color;
+            const fontColor = fc ? (fc.startsWith("#") ? fc : `#${fc}`) : null;
+            if (fontColor && fontColor !== "null" && !themeColorList.some(c => c.toLowerCase() === fontColor.toLowerCase())) colourCount++;
+          } catch (e) { /* skip */ }
+        }
+      });
+
+      setReviewCounts({ title: titleCount, fonts: fontCount, colours: colourCount });
+      addLog(`✓ Review done — title: ${titleCount}, fonts: ${fontCount}, colours: ${colourCount}`);
+      setStatus("idle");
+    } catch (e) {
+      addLog(`⚠ Review failed: ${e.message}`);
+      setStatus("idle");
+    }
+  }, [titleOverrides, addLog]);
+
   const handleCleanup = useCallback(async (fixMode = "all") => {
     setStatus("running");
     setLog([]);
@@ -1288,6 +1377,7 @@ export default function App() {
     setMasterWarning(false);
     setColorWarning(null);
     setDetectedTitleName(null);
+    setReviewCounts(null);
     setDetectedTheme(null);
     setDetectedMaster([]);
 
@@ -1925,17 +2015,22 @@ export default function App() {
           )}
         </div>
 
-        {/* 3. Fix buttons */}
+        {/* 3. Review + Fix buttons */}
+        <button onClick={handleReview} disabled={isRunning}
+          style={{ width: "100%", padding: "10px 0", background: "#fff", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+          🔍 Review slide
+        </button>
         <div style={{ display: "flex", gap: 6 }}>
           {[
-            { mode: "title",   label: "Fix Title",   icon: "📐" },
-            { mode: "fonts",   label: "Fix Fonts",   icon: "🔤" },
-            { mode: "colours", label: "Fix Colours", icon: "🎨" },
-          ].map(({ mode, label, icon }) => (
+            { mode: "title",   label: "Fix Title",   icon: "📐", count: reviewCounts?.title },
+            { mode: "fonts",   label: "Fix Fonts",   icon: "🔤", count: reviewCounts?.fonts },
+            { mode: "colours", label: "Fix Colours", icon: "🎨", count: reviewCounts?.colours },
+          ].map(({ mode, label, icon, count }) => (
             <button key={mode} onClick={() => handleCleanup(mode)} disabled={isRunning}
-              style={{ flex: 1, padding: "10px 4px", background: "#f3f4f6", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 10, fontWeight: 700, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+              style={{ flex: 1, padding: "10px 4px", background: count > 0 ? "#fefce8" : "#f3f4f6", color: "#374151", border: `1px solid ${count > 0 ? "#fde68a" : "#e5e7eb"}`, borderRadius: 8, fontSize: 10, fontWeight: 700, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
               <span style={{ fontSize: 15 }}>{icon}</span>
               <span>{label}</span>
+              {count != null && <span style={{ fontSize: 9, color: count > 0 ? "#92400e" : "#6b7280", fontWeight: 600 }}>{count} fix{count !== 1 ? "es" : ""}</span>}
             </button>
           ))}
         </div>
