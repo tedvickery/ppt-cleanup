@@ -1523,7 +1523,10 @@ export default function App() {
               await ctx.sync();
               wasAutofit = titleOs.textFrame.autoSizeSetting !== "AutoSizeNone";
               titleOs.textFrame.autoSizeSetting = "AutoSizeNone";
-              // If autofit was active, write the target font size now while autofit is disabled
+              // Always write heading font name here — most reliable place before applyFixes runs
+              const headingFontNow = pptxData.theme.fonts.heading;
+              if (headingFontNow) titleOs.textFrame.textRange.font.name = headingFontNow;
+              // If autofit was active, write size now while autofit is disabled
               const targetSize = titleMaster?.font?.size || pptxData.layoutPositions?.["title:fontSize"] || null;
               if (wasAutofit && targetSize) titleOs.textFrame.textRange.font.size = targetSize;
               await ctx.sync();
@@ -1542,9 +1545,7 @@ export default function App() {
           Math.abs(cur.top  - targetTitlePos.top)  > 0.05;
         const headingFontForTitle = pptxData.theme.fonts.heading;
         const titleFontSize = titleMaster?.font?.size || pptxData.layoutPositions?.["title:fontSize"] || null;
-        const fontNeedsFix = headingFontForTitle &&
-          titleShape.current.fontName !== "(inherited)" &&
-          titleShape.current.fontName !== headingFontForTitle;
+        const fontNeedsFix = !!headingFontForTitle; // always apply heading font to title
         const sizNeedsFix = !!titleFontSize && !!titleShape.current.fontSize &&
           Math.abs(titleShape.current.fontSize - titleFontSize) > 0.5 &&
           Math.abs(titleShape.current.fontSize - titleFontSize) <= 10;
