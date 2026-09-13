@@ -1308,73 +1308,78 @@ export default function App() {
       const themeColorList = Object.values(themeColors).filter(v => v);
 
       // ── Count title fixes needed ──────────────────────────────────────────
-      const titleShape = pptxData.slideShapes.find(s => s.phType === "title" || s.phType === "ctrTitle");
-      const titleMaster = pptxData.masterPlaceholders.find(p => p.type === "title" || p.type === "ctrTitle");
-      const targetTitlePos = pptxData.layoutPositions?.["title:0"] || titleMaster?.position;
       let titleCount = 0;
-      if (titleShape && targetTitlePos) {
-        const cur = titleShape.position;
-        if (!cur || Math.abs(cur.left - targetTitlePos.left) > 0.05 || Math.abs(cur.top - targetTitlePos.top) > 0.05) titleCount++;
-        const headingFont = pptxData.theme.fonts.heading;
-        if (headingFont && titleShape.current.fontName !== "(inherited)" && titleShape.current.fontName !== headingFont) titleCount++;
-        const titleFontSize = titleMaster?.font?.size || pptxData.layoutPositions?.["title:fontSize"] || null;
-        if (titleFontSize && titleShape.current.fontSize && Math.abs(titleShape.current.fontSize - titleFontSize) > 0.5 && Math.abs(titleShape.current.fontSize - titleFontSize) <= 10) titleCount++;
-        const masterTitleColor = titleMaster?.font?.color;
-        const normCurrent = titleShape.current.color && titleShape.current.color !== "(inherited)" ? (titleShape.current.color.startsWith("#") ? titleShape.current.color : `#${titleShape.current.color}`) : null;
-        if (normCurrent && masterTitleColor && normCurrent.toLowerCase() !== masterTitleColor.toLowerCase()) titleCount++;
-        if (pptxData.layoutPositions?.["title:padding"]) titleCount++;
-      }
+      try {
+        const titleShape = pptxData.slideShapes.find(s => s.phType === "title" || s.phType === "ctrTitle");
+        const titleMaster = pptxData.masterPlaceholders.find(p => p.type === "title" || p.type === "ctrTitle");
+        const targetTitlePos = pptxData.layoutPositions?.["title:0"] || titleMaster?.position;
+        if (titleShape && targetTitlePos) {
+          const cur = titleShape.position;
+          if (!cur || Math.abs(cur.left - targetTitlePos.left) > 0.05 || Math.abs(cur.top - targetTitlePos.top) > 0.05) titleCount++;
+          const headingFont = pptxData.theme.fonts.heading;
+          if (headingFont && titleShape.current.fontName !== "(inherited)" && titleShape.current.fontName !== headingFont) titleCount++;
+          const titleFontSize = titleMaster?.font?.size || pptxData.layoutPositions?.["title:fontSize"] || null;
+          if (titleFontSize && titleShape.current.fontSize && Math.abs(titleShape.current.fontSize - titleFontSize) > 0.5 && Math.abs(titleShape.current.fontSize - titleFontSize) <= 10) titleCount++;
+          const masterTitleColor = titleMaster?.font?.color;
+          const normCurrent = titleShape.current.color && titleShape.current.color !== "(inherited)" ? (titleShape.current.color.startsWith("#") ? titleShape.current.color : `#${titleShape.current.color}`) : null;
+          if (normCurrent && masterTitleColor && normCurrent.toLowerCase() !== masterTitleColor.toLowerCase()) titleCount++;
+          if (pptxData.layoutPositions?.["title:padding"]) titleCount++;
+        }
+      } catch (e) { addLog(`  Title count error: ${e.message}`); }
 
       // ── Count font fixes needed ───────────────────────────────────────────
-      const bodyFont = pptxData.theme.fonts.body;
-      const nonTitleSizes = pptxData.slideShapes.filter(ss => ss.phType !== "title" && ss.phType !== "ctrTitle" && typeof ss.current.fontSize === "number").map(ss => ss.current.fontSize);
-      const sizeFreq = nonTitleSizes.reduce((acc, s) => { acc[s] = (acc[s]||0)+1; return acc; }, {});
-      const normalisedSize = nonTitleSizes.length > 1 ? parseInt(Object.entries(sizeFreq).sort((a,b) => b[1]-a[1])[0][0]) : null;
       let fontCount = 0;
-      for (const ss of pptxData.slideShapes) {
-        if (ss.phType === "title" || ss.phType === "ctrTitle" || ss.isTable || ss.isGroup) continue;
-        if (bodyFont && ss.current.fontName !== "(inherited)" && ss.current.fontName !== bodyFont) fontCount++;
-        if (normalisedSize && typeof ss.current.fontSize === "number" && Math.abs(ss.current.fontSize - normalisedSize) > 0 && Math.abs(ss.current.fontSize - normalisedSize) <= 3) fontCount++;
-      }
+      try {
+        const bodyFont = pptxData.theme.fonts.body;
+        const nonTitleSizes = pptxData.slideShapes.filter(ss => ss.phType !== "title" && ss.phType !== "ctrTitle" && typeof ss.current.fontSize === "number").map(ss => ss.current.fontSize);
+        const sizeFreq = nonTitleSizes.reduce((acc, s) => { acc[s] = (acc[s]||0)+1; return acc; }, {});
+        const normalisedSize = nonTitleSizes.length > 1 ? parseInt(Object.entries(sizeFreq).sort((a,b) => b[1]-a[1])[0][0]) : null;
+        for (const ss of pptxData.slideShapes) {
+          if (ss.phType === "title" || ss.phType === "ctrTitle" || ss.isTable || ss.isGroup) continue;
+          if (bodyFont && ss.current.fontName !== "(inherited)" && ss.current.fontName !== bodyFont) fontCount++;
+          if (normalisedSize && typeof ss.current.fontSize === "number" && Math.abs(ss.current.fontSize - normalisedSize) > 0 && Math.abs(ss.current.fontSize - normalisedSize) <= 3) fontCount++;
+        }
+      } catch (e) { addLog(`  Font count error: ${e.message}`); }
 
-      // ── Count colour fixes needed (requires Office.js read) ──────────────
+      // ── Count colour fixes needed ─────────────────────────────────────────
       let colourCount = 0;
-      await PowerPoint.run(async (ctx) => {
-        const slide = ctx.presentation.slides.getItemAt(slideIndex - 1);
-        const shapes = slide.shapes;
-        shapes.load("items");
-        await ctx.sync();
-        for (const s of shapes.items) {
-          try { s.fill.load(["type", "foregroundColor"]); } catch (e) { /* skip */ }
-        }
-        await ctx.sync();
-        // Load font colours separately — only for shapes with text
-        const fontJobs = [];
-        for (const s of shapes.items) {
-          try { s.textFrame.textRange.font.load("color"); fontJobs.push(s); } catch (e) { /* no text */ }
-        }
-        if (fontJobs.length > 0) await ctx.sync();
-        for (const s of shapes.items) {
-          try {
-            const fg = s.fill.foregroundColor;
-            const fillColor = fg ? (fg.startsWith("#") ? fg : `#${fg}`) : null;
-            if (fillColor && !themeColorList.some(c => c.toLowerCase() === fillColor.toLowerCase())) colourCount++;
-          } catch (e) { /* skip */ }
-        }
-        for (const s of fontJobs) {
-          try {
-            const fc = s.textFrame.textRange.font.color;
-            const fontColor = fc && fc !== "null" ? (fc.startsWith("#") ? fc : `#${fc}`) : null;
-            if (fontColor && !themeColorList.some(c => c.toLowerCase() === fontColor.toLowerCase())) colourCount++;
-          } catch (e) { /* skip */ }
-        }
-      });
+      try {
+        await PowerPoint.run(async (ctx) => {
+          const slide = ctx.presentation.slides.getItemAt(slideIndex - 1);
+          const shapes = slide.shapes;
+          shapes.load("items");
+          await ctx.sync();
+          for (const s of shapes.items) {
+            try { s.fill.load(["type", "foregroundColor"]); } catch (e) { /* skip */ }
+          }
+          await ctx.sync();
+          const fontJobs = [];
+          for (const s of shapes.items) {
+            try { s.textFrame.textRange.font.load("color"); fontJobs.push(s); } catch (e) { /* no text */ }
+          }
+          if (fontJobs.length > 0) await ctx.sync();
+          for (const s of shapes.items) {
+            try {
+              const fg = s.fill.foregroundColor;
+              const fillColor = fg ? (fg.startsWith("#") ? fg : `#${fg}`) : null;
+              if (fillColor && !themeColorList.some(c => c.toLowerCase() === fillColor.toLowerCase())) colourCount++;
+            } catch (e) { /* skip */ }
+          }
+          for (const s of fontJobs) {
+            try {
+              const fc = s.textFrame.textRange.font.color;
+              const fontColor = fc && fc !== "null" ? (fc.startsWith("#") ? fc : `#${fc}`) : null;
+              if (fontColor && !themeColorList.some(c => c.toLowerCase() === fontColor.toLowerCase())) colourCount++;
+            } catch (e) { /* skip */ }
+          }
+        });
+      } catch (e) { addLog(`  Colour count error: ${e.message}`); }
 
       setReviewCounts({ title: titleCount, fonts: fontCount, colours: colourCount });
       addLog(`✓ Review done — title: ${titleCount}, fonts: ${fontCount}, colours: ${colourCount}`);
       setStatus("idle");
     } catch (e) {
-      addLog(`⚠ Review failed: ${e.message}`);
+      addLog(`⚠ Review failed: ${e.message} — ${e.stack?.split('\n')[1] || ''}`);
       setStatus("idle");
     }
   }, [titleOverrides, addLog]);
