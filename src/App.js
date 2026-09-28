@@ -1364,14 +1364,14 @@ export default function App() {
               if (fillType === "nofill" || fillType === "null" || fillType === "undefined") continue;
               const fg = s.fill.foregroundColor;
               const fillColor = fg ? (fg.startsWith("#") ? fg : `#${fg}`) : null;
-              if (fillColor && snapToThemeColor(fillColor, themeColors).toLowerCase() !== fillColor.toLowerCase()) colourCount++;
+              if (fillColor && !themeColorList.some(c => c.toLowerCase() === fillColor.toLowerCase())) colourCount++;
             } catch (e) { /* skip */ }
           }
           for (const s of fontJobs) {
             try {
               const fc = s.textFrame.textRange.font.color;
               const fontColor = fc && fc !== "null" ? (fc.startsWith("#") ? fc : `#${fc}`) : null;
-              if (fontColor && snapToThemeColor(fontColor, themeColors).toLowerCase() !== fontColor.toLowerCase()) colourCount++;
+              if (fontColor && !themeColorList.some(c => c.toLowerCase() === fontColor.toLowerCase())) colourCount++;
             } catch (e) { /* skip */ }
           }
         });
