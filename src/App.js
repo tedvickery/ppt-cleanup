@@ -1048,16 +1048,16 @@ function ThemeCard({ theme, masterPlaceholders }) {
   if (!theme) return null;
   const colors = Object.entries(theme.colors).filter(([, v]) => v);
   return (
-    <div style={{ background: "#fff", borderRadius: 10, border: "1px solid #e5e7eb", padding: "12px 14px" }}>
+    <div style={{ background: "#fff", borderRadius: 0, border: "1px solid #e5e7eb", padding: "12px 14px" }}>
       <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>Detected from file</div>
       <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
-        {theme.fonts.heading && <span style={{ fontSize: 10, background: "#eff6ff", color: "#1e40af", padding: "2px 8px", borderRadius: 20, border: "1px solid #bfdbfe" }}>Aa {theme.fonts.heading}</span>}
-        {theme.fonts.body && theme.fonts.body !== theme.fonts.heading && <span style={{ fontSize: 10, background: "#f5f3ff", color: "#6d28d9", padding: "2px 8px", borderRadius: 20, border: "1px solid #ddd6fe" }}>Aa {theme.fonts.body}</span>}
+        {theme.fonts.heading && <span style={{ fontSize: 10, background: "#eff6ff", color: "#1e40af", padding: "2px 8px", borderRadius: 0, border: "1px solid #bfdbfe" }}>Aa {theme.fonts.heading}</span>}
+        {theme.fonts.body && theme.fonts.body !== theme.fonts.heading && <span style={{ fontSize: 10, background: "#f5f3ff", color: "#6d28d9", padding: "2px 8px", borderRadius: 0, border: "1px solid #ddd6fe" }}>Aa {theme.fonts.body}</span>}
       </div>
       <div style={{ display: "flex", gap: 3, marginBottom: 8, flexWrap: "wrap" }}>
         {colors.map(([k, v]) => (
           <div key={k} title={`${k}: ${v}`}
-            style={{ width: 18, height: 18, borderRadius: 4, background: v, border: "1px solid rgba(0,0,0,0.12)", flexShrink: 0 }} />
+            style={{ width: 18, height: 18, borderRadius: 0, background: v, border: "1px solid rgba(0,0,0,0.12)", flexShrink: 0 }} />
         ))}
       </div>
       <div style={{ fontSize: 10, color: "#9ca3af" }}>{masterPlaceholders.length} master placeholder{masterPlaceholders.length !== 1 ? "s" : ""} · read from XML</div>
@@ -1067,7 +1067,7 @@ function ThemeCard({ theme, masterPlaceholders }) {
 
 function FixBadge({ count }) {
   return (
-    <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+    <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 0, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
       <span style={{ fontSize: 20 }}>✓</span>
       <div>
         <div style={{ fontSize: 12, fontWeight: 700, color: "#166534" }}>Cleanup complete</div>
@@ -1991,7 +1991,7 @@ export default function App() {
 
       <div style={{ background: "#111111", padding: "18px 16px 14px", color: "#fff" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>✦</div>
+          <div style={{ width: 32, height: 32, borderRadius: 0, background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>✦</div>
           <div>
             <div style={{ fontWeight: 700, fontSize: 15 }}>SnapBack</div>
             <div style={{ fontSize: 10, opacity: 0.75 }}>Fixes your slides</div>
@@ -2010,7 +2010,7 @@ export default function App() {
       <div style={{ flex: 1, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
 
         {/* 1. How to use — collapsed by default */}
-        <details style={{ background: "#fff", borderRadius: 10, border: "1px solid #e5e7eb", padding: "10px 14px" }}>
+        <details style={{ background: "#fff", borderRadius: 0, border: "1px solid #e5e7eb", padding: "10px 14px" }}>
           <summary style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer", userSelect: "none", listStyle: "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             How to use <span style={{ fontSize: 9 }}>▼</span>
           </summary>
@@ -2025,7 +2025,7 @@ export default function App() {
         </details>
 
         {/* 2. Select title box */}
-        <div style={{ background: "#f8faff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "12px 14px" }}>
+        <div style={{ background: "#f8faff", border: "1px solid #bfdbfe", borderRadius: 0, padding: "12px 14px" }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: "#2563eb", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>Title box</div>
           <div style={{ fontSize: 11, color: "#374151", marginBottom: 10, lineHeight: 1.4 }}>
             {overrideStatus?.ok
@@ -2033,7 +2033,7 @@ export default function App() {
               : "Click your title box on the slide, then tap below if SnapBack's detected title is wrong."}
           </div>
           <button onClick={handleSetTitleOverride} disabled={isRunning}
-            style={{ width: "100%", padding: "9px 0", background: "#2563eb", color: "#fff", border: "none", borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: "pointer", letterSpacing: "0.02em" }}>
+            style={{ width: "100%", padding: "9px 0", background: "#2563eb", color: "#fff", border: "none", borderRadius: 0, fontSize: 12, fontWeight: 700, cursor: "pointer", letterSpacing: "0.02em" }}>
             Set selected shape as title
           </button>
           {overrideStatus && !overrideStatus.ok && (
@@ -2043,60 +2043,59 @@ export default function App() {
 
         {/* 3. Review + Fix buttons */}
         <button onClick={handleReview} disabled={isRunning}
-          style={{ width: "100%", padding: "10px 0", background: "#fff", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-          🔍 Review slide
+          style={{ width: "100%", padding: "10px 0", background: "#fff", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 0, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+          Review slide
         </button>
         <div style={{ display: "flex", gap: 6 }}>
           {[
-            { mode: "title",   label: "Fix Title",   icon: "📐", count: reviewCounts?.title },
-            { mode: "fonts",   label: "Fix Fonts",   icon: "🔤", count: reviewCounts?.fonts },
-            { mode: "colours", label: "Fix Colours", icon: "🎨", count: reviewCounts?.colours },
-          ].map(({ mode, label, icon, count }) => (
+            { mode: "title",   label: "Fix Title",   count: reviewCounts?.title },
+            { mode: "fonts",   label: "Fix Fonts",   count: reviewCounts?.fonts },
+            { mode: "colours", label: "Fix Colours", count: reviewCounts?.colours },
+          ].map(({ mode, label, count }) => (
             <button key={mode} onClick={() => handleCleanup(mode)} disabled={isRunning}
-              style={{ flex: 1, padding: "10px 4px", background: count > 0 ? "#fefce8" : "#f3f4f6", color: "#374151", border: `1px solid ${count > 0 ? "#fde68a" : "#e5e7eb"}`, borderRadius: 8, fontSize: 10, fontWeight: 700, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-              <span style={{ fontSize: 15 }}>{icon}</span>
+              style={{ flex: 1, padding: "10px 4px", background: count > 0 ? "#fefce8" : "#f3f4f6", color: "#374151", border: `1px solid ${count > 0 ? "#fde68a" : "#e5e7eb"}`, borderRadius: 0, fontSize: 10, fontWeight: 700, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
               <span>{label}</span>
               {count != null && <span style={{ fontSize: 9, color: count > 0 ? "#92400e" : "#6b7280", fontWeight: 600 }}>{count} fix{count !== 1 ? "es" : ""}</span>}
             </button>
           ))}
         </div>
         <button className="btn" onClick={() => handleCleanup("all")} disabled={isRunning}
-          style={{ width: "100%", padding: "14px 0", background: status === "done" ? "#15803d" : "#111111", color: "#fff", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.2s ease", boxShadow: "0 4px 14px rgba(0,0,0,0.28)" }}>
+          style={{ width: "100%", padding: "14px 0", background: status === "done" ? "#15803d" : "#111111", color: "#fff", border: "none", borderRadius: 0, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.2s ease", boxShadow: "0 4px 14px rgba(0,0,0,0.28)" }}>
           {isRunning ? (
             <><span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.3)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block" }} />Working…</>
           ) : status === "done" ? "✓ Done — clean another?" : "SnapBack — Fix Everything"}
         </button>
 
         {status === "done" && fixCount > 0  && <FixBadge count={fixCount} />}
-        {status === "done" && fixCount === 0 && <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "10px 14px", fontSize: 11, color: "#166534" }}>✓ Slide already matches the master — no changes needed.</div>}
+        {status === "done" && fixCount === 0 && <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 0, padding: "10px 14px", fontSize: 11, color: "#166534" }}>✓ Slide already matches the master — no changes needed.</div>}
         {status === "done" && masterWarning && (
-          <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "10px 14px", fontSize: 11, color: "#92400e" }}>
+          <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 0, padding: "10px 14px", fontSize: 11, color: "#92400e" }}>
             ⚠ Looks like this slide might not be aligned to the master template. Consider copying the contents of this slide to a new blank slide.
           </div>
         )}
         {status === "done" && colorWarning && (
-          <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "10px 14px", fontSize: 11, color: "#92400e" }}>
+          <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 0, padding: "10px 14px", fontSize: 11, color: "#92400e" }}>
             ⚠ {colorWarning}
           </div>
         )}
-        {error && <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 12px", fontSize: 11, color: "#991b1b" }}><strong>Error:</strong> {error}</div>}
+        {error && <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 0, padding: "10px 12px", fontSize: 11, color: "#991b1b" }}><strong>Error:</strong> {error}</div>}
 
         {/* 4. Detected from file — includes title detection */}
         {!fileReady && !fileError && (
-          <div style={{ background: "#fff", borderRadius: 8, border: "1px solid #e5e7eb", padding: "10px 14px", fontSize: 11, color: "#6b7280", display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ background: "#fff", borderRadius: 0, border: "1px solid #e5e7eb", padding: "10px 14px", fontSize: 11, color: "#6b7280", display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ width: 10, height: 10, border: "2px solid #d1d5db", borderTop: "2px solid #6b7280", borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block", flexShrink: 0 }} />
             Loading template in background…
           </div>
         )}
         {fileReady && (
-          <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "8px 12px", fontSize: 11, color: "#166534", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 0, padding: "8px 12px", fontSize: 11, color: "#166534", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <span>✓ Template ready: <strong>{cachedMasters.current?.[0]?.name}</strong></span>
             <button onClick={async () => { setFileReady(false); setFileError(null); try { const { zip, masters, dominantMasterIndex } = await readPptxFile(); cachedZip.current = zip; cachedMasters.current = masters; cachedDominantMaster.current = dominantMasterIndex; cachedPptxData.current = {}; cachedTemplateShapes.current = null; setFileReady(true); } catch (e) { setFileError(e.message); } }}
               style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#15803d", textDecoration: "underline", padding: 0 }}>↺ Reload</button>
           </div>
         )}
         {fileError && (
-          <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "8px 12px", fontSize: 11, color: "#991b1b", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 0, padding: "8px 12px", fontSize: 11, color: "#991b1b", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <span>⚠ {fileError}</span>
             <button onClick={async () => { setFileReady(false); setFileError(null); try { const { zip, masters, dominantMasterIndex } = await readPptxFile(); cachedZip.current = zip; cachedMasters.current = masters; cachedDominantMaster.current = dominantMasterIndex; cachedPptxData.current = {}; cachedTemplateShapes.current = null; setFileReady(true); } catch (e) { setFileError(e.message); } }}
               style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#991b1b", textDecoration: "underline", padding: 0 }}>↺ Retry</button>
@@ -2111,7 +2110,7 @@ export default function App() {
         )}
 
         {log.length > 0 && (
-          <div style={{ background: "#0f172a", borderRadius: 10, padding: "10px 12px" }}>
+          <div style={{ background: "#0f172a", borderRadius: 0, padding: "10px 12px" }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: "#64748b", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>Activity</div>
             {log.map((entry, i) => <LogLine key={i} entry={entry} />)}
           </div>
@@ -2121,7 +2120,7 @@ export default function App() {
       <div style={{ padding: "10px 16px", borderTop: "1px solid #e5e7eb", background: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <span style={{ fontSize: 9, color: "#9ca3af", fontFamily: "monospace" }}>v3.0.0</span>
         <a href="https://ppt-cleanup.vercel.app/home.html" target="_blank" rel="noreferrer"
-          style={{ fontSize: 11, color: "#2563eb", fontWeight: 600, textDecoration: "none", background: "#eff6ff", padding: "4px 10px", borderRadius: 6, border: "1px solid #bfdbfe" }}>
+          style={{ fontSize: 11, color: "#2563eb", fontWeight: 600, textDecoration: "none", background: "#eff6ff", padding: "4px 10px", borderRadius: 0, border: "1px solid #bfdbfe" }}>
           About SnapBack →
         </a>
       </div>
