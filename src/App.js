@@ -262,10 +262,27 @@ function parseMasterXml(xml, theme) {
     placeholders.push({ type: phType, idx: phIdx, font: { name: fontName, size: fontSize, color, bold }, alignment, position, fill: masterFill, paraFormat, padding });
   }
 
-  // Fallback: if no placeholders found, try reading font from <p:txStyles> which some
-  // modern masters use instead of placeholder shapes to define default text formatting
+  // Always read txStyles.titleStyle font — it often has the full font name (e.g. "Montserrat SemiBold")
+  // even when placeholder shapes exist but only store the generic "+mj-lt" reference
+  const txStyles = doc.getElementsByTagNameNS("*", "txStyles")[0];
+  if (txStyles) {
+    const titleStyleEl = txStyles.getElementsByTagNameNS("*", "titleStyle")[0];
+    if (titleStyleEl) {
+      const lvl1pPr    = titleStyleEl.getElementsByTagNameNS("*", "lvl1pPr")[0];
+      const lvl1DefRPr = lvl1pPr?.getElementsByTagNameNS("*", "defRPr")[0];
+      const latin = lvl1DefRPr?.getElementsByTagNameNS("*", "latin")[0];
+      const tf = latin?.getAttribute("typeface");
+      // Only use if it's an explicit font name (not a +mj/+mn reference)
+      if (tf && !tf.startsWith("+")) {
+        const titlePh = placeholders.find(p => p.type === "title" || p.type === "ctrTitle");
+        if (titlePh) titlePh.font.name = tf;
+        else placeholders.push({ type: "title", idx: "0", font: { name: tf, size: null, color: null, bold: null }, alignment: "left", position: null, fill: null, paraFormat: {} });
+      }
+    }
+  }
+
+  // Fallback: if no placeholders found, try reading all styles from <p:txStyles>
   if (placeholders.length === 0) {
-    const txStyles = doc.getElementsByTagNameNS("*", "txStyles")[0];
     if (txStyles) {
       const styleMap = { titleStyle: "title", bodyStyle: "body", otherStyle: "body" };
       for (const [elName, phType] of Object.entries(styleMap)) {
@@ -1526,7 +1543,7 @@ export default function App() {
               wasAutofit = titleOs.textFrame.autoSizeSetting !== "AutoSizeNone";
               titleOs.textFrame.autoSizeSetting = "AutoSizeNone";
               // Always write heading font name here — most reliable place before applyFixes runs
-              const headingFontNow = pptxData.theme.fonts.heading;
+              const headingFontNow = titleMaster?.font?.name || pptxData.theme.fonts.heading;
               if (headingFontNow) titleOs.textFrame.textRange.font.name = headingFontNow;
               // If autofit was active, write size now while autofit is disabled
               const targetSize = titleMaster?.font?.size || pptxData.layoutPositions?.["title:fontSize"] || null;
@@ -1545,7 +1562,7 @@ export default function App() {
         const posNeedsFix = !cur ||
           Math.abs(cur.left - targetTitlePos.left) > 0.05 ||
           Math.abs(cur.top  - targetTitlePos.top)  > 0.05;
-        const headingFontForTitle = pptxData.theme.fonts.heading;
+        const headingFontForTitle = titleMaster?.font?.name || pptxData.theme.fonts.heading;
         const titleFontSize = titleMaster?.font?.size || pptxData.layoutPositions?.["title:fontSize"] || null;
         const fontNeedsFix = !!headingFontForTitle; // always apply heading font to title
         const sizNeedsFix = !!titleFontSize && !!titleShape.current.fontSize &&
