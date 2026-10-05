@@ -25,6 +25,49 @@
       line-height: 1.6;
     }
 
+    .install-cta {
+      background: var(--black);
+      padding: 16px 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+    .install-cta p {
+      font-size: 13px;
+      color: #d4d4d4;
+      font-weight: 500;
+    }
+    .install-cta p strong { color: var(--white); }
+    .cta-buttons { display: flex; gap: 10px; flex-shrink: 0; }
+    .btn-download {
+      display: inline-block;
+      padding: 9px 18px;
+      background: var(--snap);
+      color: var(--white);
+      font-family: 'Montserrat', sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+      text-decoration: none;
+      border: none;
+      cursor: pointer;
+      letter-spacing: 0.03em;
+    }
+    .btn-email {
+      display: inline-block;
+      padding: 9px 18px;
+      background: transparent;
+      color: var(--white);
+      font-family: 'Montserrat', sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+      text-decoration: none;
+      border: 1px solid #555;
+      cursor: pointer;
+      letter-spacing: 0.03em;
+    }
+    .btn-email:hover { border-color: #999; }
+
     nav {
       display: flex;
       align-items: center;
@@ -226,6 +269,14 @@
 </head>
 <body>
 
+<div class="install-cta">
+  <p><strong>SnapBack is free to use.</strong> Download the manifest and install in PowerPoint, or forward to your IT admin for company-wide deployment.</p>
+  <div class="cta-buttons">
+    <a class="btn-download" href="https://ppt-cleanup.vercel.app/manifest.xml" download="manifest.xml">Download manifest</a>
+    <button class="btn-email" onclick="copyIT(this)">Copy IT admin email</button>
+  </div>
+</div>
+
 <nav>
   <a class="logo" href="/">Snap<span>Back</span></a>
 </nav>
@@ -370,5 +421,27 @@
   <span>Made for humans who have better things to do</span>
 </footer>
 
+<script>
+function copyIT(btn) {
+  const text = `Hi,
+
+Could you please deploy a PowerPoint add-in for our team?
+
+SnapBack snaps slide fonts, colours and title positions back to our branded master template in one click. It's free, web-hosted, and requires no software installation.
+
+To deploy:
+1. Go to admin.microsoft.com
+2. Settings → Integrated Apps → Upload custom apps
+3. Paste this manifest URL: https://ppt-cleanup.vercel.app/manifest.xml
+
+It will appear for everyone in the org under Insert → Add-ins → My Organisation.
+
+Thanks`;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy IT admin email', 2000);
+  });
+}
+</script>
 </body>
 </html>
