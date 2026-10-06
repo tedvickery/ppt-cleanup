@@ -411,6 +411,41 @@
   </div>
 </section>
 
+<section style="background: #f8f8f8; padding: 80px 24px; border-top: 1px solid #e5e5e5;">
+  <div style="max-width: 640px; margin: 0 auto;">
+    <div class="section-label">For InfoSec and IT</div>
+    <h2 style="font-size: 28px; font-weight: 800; letter-spacing: -1px; margin-bottom: 24px; line-height: 1.2;">Nothing leaves PowerPoint.</h2>
+    <p style="font-size: 16px; color: #4b4b4b; line-height: 1.8; font-weight: 500; margin-bottom: 20px;">SnapBack runs entirely within PowerPoint. It reads your master template and applies formatting changes to the open slide — that's it. No data is sent to external servers, no slide content is transmitted anywhere, and nothing is stored outside of PowerPoint's own memory.</p>
+    <p style="font-size: 16px; color: #4b4b4b; line-height: 1.8; font-weight: 500; margin-bottom: 40px;">The add-in is a hosted web app served over HTTPS from Vercel. The only external call it makes is loading the add-in interface itself when PowerPoint opens it — identical to loading any internal web tool. Once loaded, all processing is local.</p>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2px; background: #e5e5e5; border: 2px solid #e5e5e5;">
+      <div style="background: #fff; padding: 24px;">
+        <div style="font-size: 13px; font-weight: 700; margin-bottom: 6px;">No slide data transmitted</div>
+        <div style="font-size: 13px; color: #6b6b6b; font-weight: 500; line-height: 1.5;">Slide content, text and images never leave PowerPoint. All formatting logic runs in-memory inside the add-in.</div>
+      </div>
+      <div style="background: #fff; padding: 24px;">
+        <div style="font-size: 13px; font-weight: 700; margin-bottom: 6px;">No AI or third-party processing</div>
+        <div style="font-size: 13px; color: #6b6b6b; font-weight: 500; line-height: 1.5;">SnapBack uses no AI models. It applies deterministic formatting rules — no content is analysed or interpreted externally.</div>
+      </div>
+      <div style="background: #fff; padding: 24px;">
+        <div style="font-size: 13px; font-weight: 700; margin-bottom: 6px;">No persistent storage</div>
+        <div style="font-size: 13px; color: #6b6b6b; font-weight: 500; line-height: 1.5;">Nothing is written to disk or stored in the cloud. Changes are made directly to the open PowerPoint file in memory.</div>
+      </div>
+      <div style="background: #fff; padding: 24px;">
+        <div style="font-size: 13px; font-weight: 700; margin-bottom: 6px;">Standard Microsoft deployment</div>
+        <div style="font-size: 13px; color: #6b6b6b; font-weight: 500; line-height: 1.5;">Deployed via Microsoft 365 Admin Centre — the same mechanism used for any approved Office add-in. Full IT control over rollout and removal.</div>
+      </div>
+      <div style="background: #fff; padding: 24px;">
+        <div style="font-size: 13px; font-weight: 700; margin-bottom: 6px;">HTTPS only</div>
+        <div style="font-size: 13px; color: #6b6b6b; font-weight: 500; line-height: 1.5;">The add-in interface is served over HTTPS with standard browser security. No special network permissions or firewall rules required.</div>
+      </div>
+      <div style="background: #fff; padding: 24px;">
+        <div style="font-size: 13px; font-weight: 700; margin-bottom: 6px;">Fully reversible</div>
+        <div style="font-size: 13px; color: #6b6b6b; font-weight: 500; line-height: 1.5;">Every change SnapBack makes is a standard PowerPoint edit. Ctrl+Z undoes everything instantly. No risk to the original file.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <section class="undo">
   <h2>Don't like it? Undo it.</h2>
   <p>Every change SnapBack makes is a normal PowerPoint edit. Press <span class="kbd">Ctrl + Z</span> and everything goes back to exactly how it was. No commitment required.</p>
