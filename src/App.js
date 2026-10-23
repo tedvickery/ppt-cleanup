@@ -1338,8 +1338,12 @@ export default function App() {
           const titleFontSize = titleMaster?.font?.size || pptxData.layoutPositions?.["title:fontSize"] || null;
           if (titleFontSize && titleShape.current.fontSize && Math.abs(titleShape.current.fontSize - titleFontSize) > 0.5 && Math.abs(titleShape.current.fontSize - titleFontSize) <= 10) titleCount++;
           const masterTitleColor = titleMaster?.font?.color;
+          const reviewThemeColors = pptxData.theme?.colors || {};
+          const reviewThemeColorList = Object.values(reviewThemeColors).filter(v => v);
+          const targetTitleColor = masterTitleColor || reviewThemeColors.dk1 || reviewThemeColors.dk2 ||
+            reviewThemeColorList.find(c => { const r=parseInt(c.slice(1,3),16),g=parseInt(c.slice(3,5),16),b=parseInt(c.slice(5,7),16); return (r+g+b)/3 < 128; }) || null;
           const normCurrent = titleShape.current.color && titleShape.current.color !== "(inherited)" ? (titleShape.current.color.startsWith("#") ? titleShape.current.color : `#${titleShape.current.color}`) : null;
-          if (normCurrent && masterTitleColor && normCurrent.toLowerCase() !== masterTitleColor.toLowerCase()) titleCount++;
+          if (normCurrent && targetTitleColor && normCurrent.toLowerCase() !== targetTitleColor.toLowerCase()) titleCount++;
           if (pptxData.layoutPositions?.["title:padding"]) titleCount++;
         }
       } catch (e) { addLog(`  Title count error: ${e.message}`); }
@@ -1577,17 +1581,13 @@ export default function App() {
             const r = parseInt(c.slice(1,3),16), g = parseInt(c.slice(3,5),16), b = parseInt(c.slice(5,7),16);
             return (r+g+b)/3 < 128;
           }) || null;
-        // Only fix if: target colour is known AND current colour is not already in the theme palette
+        // Fix if: target colour is known AND current colour doesn't already match it
         const currentTitleColor = titleShape.current.color;
         const normalisedCurrent = currentTitleColor && currentTitleColor !== "(inherited)"
           ? (currentTitleColor.startsWith("#") ? currentTitleColor : `#${currentTitleColor}`)
           : null;
-        const currentIsThemeColor = normalisedCurrent && themeColorList.some(c => c.toLowerCase() === normalisedCurrent.toLowerCase());
-        const titleColorNeedsFix = primaryThemeColorForTitle && normalisedCurrent && (
-          masterTitleColor
-            ? normalisedCurrent.toLowerCase() !== masterTitleColor.toLowerCase() // master known — must match exactly
-            : !currentIsThemeColor // master unknown — only fix if not a theme colour
-        );
+        const titleColorNeedsFix = primaryThemeColorForTitle && normalisedCurrent &&
+          normalisedCurrent.toLowerCase() !== primaryThemeColorForTitle.toLowerCase();
         addLog(`  Title colour: current=${normalisedCurrent} isTheme=${currentIsThemeColor} target=${primaryThemeColorForTitle} needsFix=${titleColorNeedsFix}`);
         const targetPadding = pptxData.layoutPositions?.["title:padding"];
         const paddingNeedsFix = targetPadding != null;
