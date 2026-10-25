@@ -275,8 +275,14 @@ function parseMasterXml(xml, theme) {
       // Only use if it's an explicit font name (not a +mj/+mn reference)
       if (tf && !tf.startsWith("+")) {
         const titlePh = placeholders.find(p => p.type === "title" || p.type === "ctrTitle");
-        if (titlePh) titlePh.font.name = tf;
-        else placeholders.push({ type: "title", idx: "0", font: { name: tf, size: null, color: null, bold: null }, alignment: "left", position: null, fill: null, paraFormat: {} });
+        if (titlePh) {
+          // Only override if the placeholder resolved to the generic theme font (not already an explicit named variant)
+          const currentName = titlePh.font.name;
+          const isGeneric = !currentName || currentName === theme.fonts.heading || currentName === theme.fonts.body;
+          if (isGeneric) titlePh.font.name = tf;
+        } else {
+          placeholders.push({ type: "title", idx: "0", font: { name: tf, size: null, color: null, bold: null }, alignment: "left", position: null, fill: null, paraFormat: {} });
+        }
       }
     }
   }
