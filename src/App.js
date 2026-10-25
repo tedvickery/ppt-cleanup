@@ -1383,54 +1383,46 @@ export default function App() {
       } catch (e) { addLog(`  Font count error: ${e.message}`); }
 
       // ── Count colour fixes needed ─────────────────────────────────────────
+      // Count colour fixes — one shape per PowerPoint.run to isolate InvalidArgument errors
+      const fillSamples = [], fontSamples = [];
       let colourCount = 0;
-      try {
-        await PowerPoint.run(async (ctx) => {
-          const slide = ctx.presentation.slides.getItemAt(slideIndex - 1);
-          const shapes = slide.shapes;
-          shapes.load("items");
-          await ctx.sync();
-          // Load shape type so we can skip groups/connectors
-          for (const s of shapes.items) s.load(["name", "type"]);
-          await ctx.sync();
-          // Only attempt fill/font on supported shape types
-          const supported = shapes.items.filter(s => {
-            const t = String(s.type).toLowerCase();
-            return t !== "group" && t !== "line" && t !== "unsupported";
-          });
-          for (const s of supported) {
-            try { s.fill.load(["type", "foregroundColor"]); } catch (e) { /* skip */ }
-          }
-          if (supported.length > 0) await ctx.sync();
-          const fontJobs = [];
-          for (const s of supported) {
-            try { s.textFrame.textRange.font.load("color"); fontJobs.push(s); } catch (e) { /* no text */ }
-          }
-          if (fontJobs.length > 0) await ctx.sync();
-          const fillSamples = [], fontSamples = [];
-          for (const s of supported) {
+      for (const slideShape of pptxData.slideShapes) {
+        try {
+          await PowerPoint.run(async (ctx) => {
+            const slide = ctx.presentation.slides.getItemAt(slideIndex - 1);
+            slide.shapes.load("items");
+            await ctx.sync();
+            const s = slide.shapes.items.find(sh => String(sh.id) === String(slideShape.id) || sh.name === slideShape.name);
+            if (!s) return;
             try {
+              s.fill.load(["type", "foregroundColor"]);
+              await ctx.sync();
               const fillType = String(s.fill.type).toLowerCase();
-              if (fillType === "nofill" || fillType === "null" || fillType === "undefined") continue;
-              const fg = s.fill.foregroundColor;
-              const fillColor = fg ? (fg.startsWith("#") ? fg.toUpperCase() : `#${fg.toUpperCase()}`) : null;
-              fillSamples.push(`${s.name}:${fillColor}`);
-              if (fillColor && !themeColorList.some(c => c.toLowerCase() === fillColor.toLowerCase())) colourCount++;
-            } catch (e) { /* skip */ }
-          }
-          for (const s of fontJobs) {
+              if (fillType !== "nofill" && fillType !== "null" && fillType !== "undefined") {
+                const fg = s.fill.foregroundColor;
+                const fillColor = fg && fg !== "null" ? (fg.startsWith("#") ? fg.toUpperCase() : `#${fg.toUpperCase()}`) : null;
+                if (fillColor) {
+                  fillSamples.push(`${s.name}:${fillColor}`);
+                  if (!themeColorList.some(c => c.toLowerCase() === fillColor.toLowerCase())) colourCount++;
+                }
+              }
+            } catch (e) { /* shape doesn't support fill */ }
             try {
+              s.textFrame.textRange.font.load("color");
+              await ctx.sync();
               const fc = s.textFrame.textRange.font.color;
               const fontColor = fc && fc !== "null" ? (fc.startsWith("#") ? fc.toUpperCase() : `#${fc.toUpperCase()}`) : null;
-              fontSamples.push(`${s.name}:${fontColor}`);
-              if (fontColor && !themeColorList.some(c => c.toLowerCase() === fontColor.toLowerCase())) colourCount++;
-            } catch (e) { /* skip */ }
-          }
-          addLog(`  Colour review — palette: [${themeColorList.slice(0,4).join(",")}…]`);
-          addLog(`  Fill samples: ${fillSamples.slice(0,5).join(" | ") || "none"}`);
-          addLog(`  Font samples: ${fontSamples.slice(0,5).join(" | ") || "none"}`);
-        });
-      } catch (e) { addLog(`  Colour count error: ${e.message}`); }
+              if (fontColor) {
+                fontSamples.push(`${s.name}:${fontColor}`);
+                if (!themeColorList.some(c => c.toLowerCase() === fontColor.toLowerCase())) colourCount++;
+              }
+            } catch (e) { /* shape has no text */ }
+          });
+        } catch (e) { /* skip this shape entirely */ }
+      }
+      addLog(`  Colour review — palette: [${themeColorList.slice(0,4).join(",")}…]`);
+      addLog(`  Fill samples: ${fillSamples.slice(0,5).join(" | ") || "none"}`);
+      addLog(`  Font samples: ${fontSamples.slice(0,5).join(" | ") || "none"}`);
 
       setReviewCounts({ title: titleCount, fonts: fontCount, colours: colourCount });
       addLog(`✓ Review done — title: ${titleCount}, fonts: ${fontCount}, colours: ${colourCount}`);
