@@ -1384,7 +1384,6 @@ export default function App() {
 
       // ── Count colour fixes needed ─────────────────────────────────────────
       // Count colour fixes — one shape per PowerPoint.run to isolate InvalidArgument errors
-      const fillSamples = [], fontSamples = [];
       let colourCount = 0;
       for (const slideShape of pptxData.slideShapes) {
         try {
@@ -1401,10 +1400,7 @@ export default function App() {
               if (fillType !== "nofill" && fillType !== "null" && fillType !== "undefined") {
                 const fg = s.fill.foregroundColor;
                 const fillColor = fg && fg !== "null" ? (fg.startsWith("#") ? fg.toUpperCase() : `#${fg.toUpperCase()}`) : null;
-                if (fillColor) {
-                  fillSamples.push(`${s.name}:${fillColor}`);
-                  if (!themeColorList.some(c => c.toLowerCase() === fillColor.toLowerCase())) colourCount++;
-                }
+                if (fillColor && !themeColorList.some(c => c.toLowerCase() === fillColor.toLowerCase())) colourCount++;
               }
             } catch (e) { /* shape doesn't support fill */ }
             try {
@@ -1412,17 +1408,11 @@ export default function App() {
               await ctx.sync();
               const fc = s.textFrame.textRange.font.color;
               const fontColor = fc && fc !== "null" ? (fc.startsWith("#") ? fc.toUpperCase() : `#${fc.toUpperCase()}`) : null;
-              if (fontColor) {
-                fontSamples.push(`${s.name}:${fontColor}`);
-                if (!themeColorList.some(c => c.toLowerCase() === fontColor.toLowerCase())) colourCount++;
-              }
+              if (fontColor && !themeColorList.some(c => c.toLowerCase() === fontColor.toLowerCase())) colourCount++;
             } catch (e) { /* shape has no text */ }
           });
         } catch (e) { /* skip this shape entirely */ }
       }
-      addLog(`  Colour review — palette: [${themeColorList.slice(0,4).join(",")}…]`);
-      addLog(`  Fill samples: ${fillSamples.slice(0,5).join(" | ") || "none"}`);
-      addLog(`  Font samples: ${fontSamples.slice(0,5).join(" | ") || "none"}`);
 
       setReviewCounts({ title: titleCount, fonts: fontCount, colours: colourCount });
       addLog(`✓ Review done — title: ${titleCount}, fonts: ${fontCount}, colours: ${colourCount}`);
@@ -1473,7 +1463,6 @@ export default function App() {
 
       // Apply manual title override for this slide, if one was set this session
       const override = titleOverrides[slideIndex];
-      let demotedTitleId = null;
       if (override) {
         const alreadyTitle = pptxData.slideShapes.find(s => s.phType === "title" || s.phType === "ctrTitle");
         const target = pptxData.slideShapes.find(s => String(s.id) === String(override.id))
@@ -1481,7 +1470,6 @@ export default function App() {
         if (target) {
           if (alreadyTitle && alreadyTitle !== target) {
             alreadyTitle.phType = "body"; // demote previous auto-detected title
-            demotedTitleId = String(alreadyTitle.id);
           }
           target.phType = "title";
           addLog(`Using manual title override: "${target.name}"`);
