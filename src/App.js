@@ -2050,6 +2050,12 @@ export default function App() {
         button:focus { outline: 2px solid #1967d2; outline-offset: 1px; }
       `}</style>
 
+      {/* Header */}
+      <div style={{ padding: "14px 14px 10px", borderBottom: "1px solid #e8eaed", background: "#fff" }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: "#1a1a2e" }}>SnapBack</div>
+        <div style={{ fontSize: 10, color: "#9aa0a6", marginTop: 2, fontStyle: "italic" }}>Made for humans who have better things to do</div>
+      </div>
+
       {/* Main list */}
       <div style={{ flex: 1, padding: "12px 12px 0", display: "flex", flexDirection: "column", gap: 4 }}>
 
@@ -2239,7 +2245,7 @@ export default function App() {
 
       {/* Footer */}
       <div style={{ padding: "10px 14px", borderTop: "1px solid #e8eaed", background: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontSize: 10, color: "#9aa0a6" }}>SnapBack v3.0.0 · <span style={{ color: status === "done" ? "#188038" : status === "running" ? "#1967d2" : "#9aa0a6" }}>{status === "running" ? "Working…" : status === "done" ? "Done" : "Ready"}</span></span>
+        <span style={{ fontSize: 10, color: "#9aa0a6" }}>v3.0.0 · <span style={{ color: status === "done" ? "#188038" : status === "running" ? "#1967d2" : "#9aa0a6" }}>{status === "running" ? "Working…" : status === "done" ? "Done" : "Ready"}</span></span>
         <a href="https://ppt-cleanup.vercel.app/home.html" target="_blank" rel="noreferrer"
           style={{ fontSize: 11, color: "#1967d2", fontWeight: 500, textDecoration: "none" }}>
           About →
