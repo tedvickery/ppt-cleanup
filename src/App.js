@@ -800,13 +800,20 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
               bottom: bodyPr.getAttribute("bIns") != null ? parseInt(bodyPr.getAttribute("bIns"), 10) / 12700 : 0,
             };
           }
-          // Read font size from title placeholder's text style, if present
+          // Read font name and size from title placeholder's text style, if present
           const txBody = sp.getElementsByTagNameNS("*", "txBody")[0];
           const defRPr = txBody?.getElementsByTagNameNS("*", "defRPr")[0]
             || txBody?.getElementsByTagNameNS("*", "lvl1pPr")[0]?.getElementsByTagNameNS("*", "defRPr")[0];
           const sz = defRPr?.getAttribute("sz");
           if (sz) titlePositions._titleFontSizes = titlePositions._titleFontSizes || [];
           if (sz) titlePositions._titleFontSizes.push(parseInt(sz, 10) / 100);
+          // Read explicit font name from layout title placeholder (e.g. "Montserrat SemiBold")
+          const layoutTitleLatin = defRPr?.getElementsByTagNameNS("*", "latin")[0];
+          const layoutTitleFont = layoutTitleLatin?.getAttribute("typeface");
+          if (layoutTitleFont && !layoutTitleFont.startsWith("+")) {
+            titlePositions._titleFontNames = titlePositions._titleFontNames || [];
+            titlePositions._titleFontNames.push(layoutTitleFont);
+          }
         }
       }
       firstLayoutDone = true;
@@ -838,6 +845,13 @@ async function readSlideWithMaster(zip, masters, chosenMasterIndex, selectedSlid
       const topKey = Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0];
       const [left, top, width, height] = topKey.split(",").map(Number);
       layoutPositions["title:0"] = { left, top, width, height };
+    }
+
+    // Mode vote for title font name from layouts (most reliable source — overrides txStyles)
+    const titleFontNames = titlePositions._titleFontNames || [];
+    if (titleFontNames.length > 0) {
+      const nameFreq = titleFontNames.reduce((acc, n) => { acc[n] = (acc[n]||0)+1; return acc; }, {});
+      layoutPositions["title:fontName"] = Object.entries(nameFreq).sort((a,b) => b[1]-a[1])[0][0];
     }
 
     // Mode vote for title font size
@@ -1339,7 +1353,7 @@ export default function App() {
         if (titleShape && targetTitlePos) {
           const cur = titleShape.position;
           if (!cur || Math.abs(cur.left - targetTitlePos.left) > 0.05 || Math.abs(cur.top - targetTitlePos.top) > 0.05) titleCount++;
-          const headingFont = pptxData.theme.fonts.heading;
+          const headingFont = pptxData.layoutPositions?.["title:fontName"] || titleMaster?.font?.name || pptxData.theme.fonts.heading;
           if (headingFont && titleShape.current.fontName !== "(inherited)" && titleShape.current.fontName !== headingFont) titleCount++;
           const titleFontSize = titleMaster?.font?.size || pptxData.layoutPositions?.["title:fontSize"] || null;
           if (titleFontSize && titleShape.current.fontSize && Math.abs(titleShape.current.fontSize - titleFontSize) > 0.5 && Math.abs(titleShape.current.fontSize - titleFontSize) <= 10) titleCount++;
@@ -1553,7 +1567,7 @@ export default function App() {
               wasAutofit = titleOs.textFrame.autoSizeSetting !== "AutoSizeNone";
               titleOs.textFrame.autoSizeSetting = "AutoSizeNone";
               // Always write heading font name here — most reliable place before applyFixes runs
-              const headingFontNow = titleMaster?.font?.name || pptxData.theme.fonts.heading;
+              const headingFontNow = pptxData.layoutPositions?.["title:fontName"] || titleMaster?.font?.name || pptxData.theme.fonts.heading;
               if (headingFontNow) titleOs.textFrame.textRange.font.name = headingFontNow;
               // If autofit was active, write size now while autofit is disabled
               const targetSize = titleMaster?.font?.size || pptxData.layoutPositions?.["title:fontSize"] || null;
@@ -1572,7 +1586,8 @@ export default function App() {
         const posNeedsFix = !cur ||
           Math.abs(cur.left - targetTitlePos.left) > 0.05 ||
           Math.abs(cur.top  - targetTitlePos.top)  > 0.05;
-        const headingFontForTitle = titleMaster?.font?.name || pptxData.theme.fonts.heading;
+        const headingFontForTitle = pptxData.layoutPositions?.["title:fontName"] || titleMaster?.font?.name || pptxData.theme.fonts.heading;
+        addLog(`  Title font source: layout=${pptxData.layoutPositions?.["title:fontName"]||"none"} master=${titleMaster?.font?.name||"none"} theme=${pptxData.theme.fonts.heading||"none"} → using=${headingFontForTitle||"none"}`);
         const titleFontSize = titleMaster?.font?.size || pptxData.layoutPositions?.["title:fontSize"] || null;
         const fontNeedsFix = !!headingFontForTitle; // always apply heading font to title
         const sizNeedsFix = !!titleFontSize && !!titleShape.current.fontSize &&
