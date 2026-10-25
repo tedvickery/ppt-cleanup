@@ -1588,7 +1588,7 @@ export default function App() {
           : null;
         const titleColorNeedsFix = primaryThemeColorForTitle && normalisedCurrent &&
           normalisedCurrent.toLowerCase() !== primaryThemeColorForTitle.toLowerCase();
-        addLog(`  Title colour: current=${normalisedCurrent} isTheme=${currentIsThemeColor} target=${primaryThemeColorForTitle} needsFix=${titleColorNeedsFix}`);
+        addLog(`  Title colour: current=${normalisedCurrent} target=${primaryThemeColorForTitle} needsFix=${titleColorNeedsFix}`);
         const targetPadding = pptxData.layoutPositions?.["title:padding"];
         const paddingNeedsFix = targetPadding != null;
         if (posNeedsFix || fontNeedsFix || sizNeedsFix || fillNeedsFix || titleColorNeedsFix || paddingNeedsFix) {
