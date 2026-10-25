@@ -1399,12 +1399,14 @@ export default function App() {
             try { s.textFrame.textRange.font.load("color"); fontJobs.push(s); } catch (e) { /* no text */ }
           }
           if (fontJobs.length > 0) await ctx.sync();
+          const fillSamples = [], fontSamples = [];
           for (const s of shapes.items) {
             try {
               const fillType = String(s.fill.type).toLowerCase();
               if (fillType === "nofill" || fillType === "null" || fillType === "undefined") continue;
               const fg = s.fill.foregroundColor;
               const fillColor = fg ? (fg.startsWith("#") ? fg : `#${fg}`) : null;
+              fillSamples.push(`${s.name}:${fillColor}`);
               if (fillColor && !themeColorList.some(c => c.toLowerCase() === fillColor.toLowerCase())) colourCount++;
             } catch (e) { /* skip */ }
           }
@@ -1412,9 +1414,13 @@ export default function App() {
             try {
               const fc = s.textFrame.textRange.font.color;
               const fontColor = fc && fc !== "null" ? (fc.startsWith("#") ? fc : `#${fc}`) : null;
+              fontSamples.push(`${s.name}:${fontColor}`);
               if (fontColor && !themeColorList.some(c => c.toLowerCase() === fontColor.toLowerCase())) colourCount++;
             } catch (e) { /* skip */ }
           }
+          addLog(`  Colour review — palette: [${themeColorList.slice(0,4).join(",")}…]`);
+          addLog(`  Fill samples: ${fillSamples.slice(0,5).join(" | ") || "none"}`);
+          addLog(`  Font samples: ${fontSamples.slice(0,5).join(" | ") || "none"}`);
         });
       } catch (e) { addLog(`  Colour count error: ${e.message}`); }
 
