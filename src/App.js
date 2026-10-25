@@ -2082,34 +2082,13 @@ export default function App() {
         </details>
 
         {/* Select title box */}
-        <details style={{ background: "#fff", border: "1px solid #e8eaed", borderRadius: 0 }}>
-          <summary style={{ padding: "9px 14px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer", listStyle: "none", userSelect: "none" }}>
-            <div style={{ width: 30, height: 30, borderRadius: "50%", background: "#e8f0fe", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <span style={{ fontSize: 13, color: "#1967d2", fontWeight: 700, fontStyle: "italic", border: "1.5px dashed #1967d2", padding: "0 3px" }}>T</span>
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "#1a1a2e" }}>Select title box</div>
-              <div style={{ fontSize: 10, color: "#6b7280" }}>
-                {overrideStatus?.ok
-                  ? <span style={{ color: "#188038" }}>✓ {overrideStatus.msg}</span>
-                  : "Only needed if the title is not detected automatically."}
-              </div>
-            </div>
-            <span style={{ fontSize: 14, color: "#bdc1c6" }}>›</span>
-          </summary>
-          <div style={{ padding: "0 14px 14px 62px" }}>
-            <div style={{ fontSize: 11, color: "#374151", marginBottom: 10, lineHeight: 1.5 }}>
-              Click your title box on the slide, then tap the button below.
-            </div>
-            <button onClick={handleSetTitleOverride} disabled={isRunning}
-              style={{ width: "100%", padding: "8px 0", background: "#1967d2", color: "#fff", border: "none", borderRadius: 0, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-              Set selected shape as title
-            </button>
-            {overrideStatus && !overrideStatus.ok && (
-              <div style={{ marginTop: 8, fontSize: 11, color: "#c5221f" }}>{overrideStatus.msg}</div>
-            )}
-          </div>
-        </details>
+        <Row
+          iconBg="#e8f0fe" iconColor="#1967d2"
+          icon={<span style={{ fontSize: 13, fontWeight: 700, fontStyle: "italic", border: "1.5px dashed #1967d2", padding: "0 3px" }}>T</span>}
+          title="Select title box"
+          subtitle={overrideStatus?.ok ? `✓ ${overrideStatus.msg}` : "Only needed if title is not detected automatically."}
+          onClick={handleSetTitleOverride} disabled={isRunning}
+        />
 
         {/* Review slide */}
         <Row
