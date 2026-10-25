@@ -1129,6 +1129,7 @@ export default function App() {
   const [colorWarning, setColorWarning]   = useState(null);
   const [detectedTitleName, setDetectedTitleName] = useState(null);
   const [reviewCounts, setReviewCounts]   = useState(null);
+  const [themeOpen, setThemeOpen]         = useState(false);
 
   // Manual title override, per slide, for this session only — { [slideIndex]: { id, name } }
   const [titleOverrides, setTitleOverrides] = useState({});
@@ -2012,148 +2013,236 @@ export default function App() {
 
   const isRunning = status === "running";
 
+  // Reload helper
+  const handleReload = async () => {
+    setFileReady(false); setFileError(null);
+    try {
+      const { zip, masters, dominantMasterIndex } = await readPptxFile();
+      cachedZip.current = zip; cachedMasters.current = masters;
+      cachedDominantMaster.current = dominantMasterIndex;
+      cachedPptxData.current = {}; cachedTemplateShapes.current = null;
+      setFileReady(true);
+    } catch (e) { setFileError(e.message); }
+  };
+
+  // Row component — icon circle + title/subtitle + optional badge + chevron
+  const Row = ({ iconBg, iconColor, icon, title, subtitle, count, countColor, countBg, onClick, disabled, solid }) => (
+    <button onClick={onClick} disabled={disabled}
+      style={{ width: "100%", background: solid ? "#1f3f7a" : "#fff", border: solid ? "none" : "1px solid #e8eaed", borderRadius: 0, padding: "13px 14px", display: "flex", alignItems: "center", gap: 12, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.55 : 1, textAlign: "left" }}>
+      <div style={{ width: 36, height: 36, borderRadius: "50%", background: iconBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <span style={{ fontSize: 16, color: iconColor }}>{icon}</span>
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: solid ? "#fff" : "#1a1a2e", lineHeight: 1.3 }}>{title}</div>
+        <div style={{ fontSize: 11, color: solid ? "rgba(255,255,255,0.7)" : "#6b7280", lineHeight: 1.4, marginTop: 1 }}>{subtitle}</div>
+      </div>
+      {count != null && count > 0 && (
+        <div style={{ background: countBg || "#e8f0fe", color: countColor || "#1967d2", borderRadius: "50%", minWidth: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, flexShrink: 0, padding: "0 4px" }}>{count}</div>
+      )}
+      <span style={{ fontSize: 14, color: solid ? "rgba(255,255,255,0.6)" : "#bdc1c6", flexShrink: 0 }}>›</span>
+    </button>
+  );
+
   return (
     <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", background: "#f8f9fb", minHeight: "100vh", display: "flex", flexDirection: "column", maxWidth: 340, margin: "0 auto" }}>
       <style>{`
         @keyframes spin { to { transform: rotate(360deg) } }
-        @keyframes fadeIn { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:translateY(0)} }
-        .btn:hover:not(:disabled) { background: #174f8a !important; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(31,92,158,0.4) !important; }
-        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        button:focus { outline: 2px solid #1967d2; outline-offset: 1px; }
       `}</style>
 
-      <div style={{ background: "#111111", padding: "18px 16px 14px", color: "#fff" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 0, background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>✦</div>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 15 }}>SnapBack</div>
-            <div style={{ fontSize: 10, opacity: 0.75 }}>Fixes your slides</div>
-          </div>
-          <div style={{ marginLeft: "auto" }}>
-            <span style={{ fontSize: 10, opacity: 0.7 }}>
-              {status === "idle" && "Ready"}
-              {status === "running" && "Working…"}
-              {status === "done" && "✓ Done"}
-              {status === "error" && "✗ Error"}
-            </span>
-          </div>
-        </div>
-      </div>
+      {/* Main list */}
+      <div style={{ flex: 1, padding: "12px 12px 0", display: "flex", flexDirection: "column", gap: 4 }}>
 
-      <div style={{ flex: 1, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-
-        {/* 1. How to use — collapsed by default */}
-        <details style={{ background: "#fff", borderRadius: 0, border: "1px solid #e5e7eb", padding: "10px 14px" }}>
-          <summary style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer", userSelect: "none", listStyle: "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            How to use <span style={{ fontSize: 9 }}>▼</span>
+        {/* How to */}
+        <details style={{ background: "#fff", border: "1px solid #e8eaed", borderRadius: 0 }}>
+          <summary style={{ padding: "13px 14px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer", listStyle: "none", userSelect: "none" }}>
+            <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#f1f3f4", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <span style={{ fontSize: 16, color: "#5f6368" }}>?</span>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#1a1a2e" }}>How to</div>
+              <div style={{ fontSize: 11, color: "#6b7280" }}>Quick guide to using SnapBack</div>
+            </div>
+            <span style={{ fontSize: 14, color: "#bdc1c6" }}>›</span>
           </summary>
-          <div style={{ marginTop: 10 }}>
+          <div style={{ padding: "0 14px 14px 62px" }}>
             {["Open a branded master deck", "Paste in your slides", "Open SnapBack in the ribbon", "Hit SnapBack"].map((text, i) => (
-              <div key={text} style={{ display: "flex", gap: 8, marginBottom: 6, alignItems: "flex-start" }}>
-                <span style={{ fontSize: 10, color: "#2563eb", fontWeight: 700, flexShrink: 0, width: 16 }}>{i + 1}</span>
+              <div key={text} style={{ display: "flex", gap: 8, marginBottom: 5, alignItems: "flex-start" }}>
+                <span style={{ fontSize: 11, color: "#1967d2", fontWeight: 700, flexShrink: 0, width: 14 }}>{i + 1}.</span>
                 <span style={{ fontSize: 11, color: "#374151", lineHeight: 1.4 }}>{text}</span>
               </div>
             ))}
           </div>
         </details>
 
-        {/* 2. Select title box */}
-        <div style={{ background: "#f8faff", border: "1px solid #bfdbfe", borderRadius: 0, padding: "12px 14px" }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: "#2563eb", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>Title box</div>
-          <div style={{ fontSize: 11, color: "#374151", marginBottom: 10, lineHeight: 1.4 }}>
-            {overrideStatus?.ok
-              ? <span style={{ color: "#15803d", fontWeight: 600 }}>✓ {overrideStatus.msg}</span>
-              : "Click your title box on the slide, then tap below if SnapBack's detected title is wrong."}
-          </div>
-          <button onClick={handleSetTitleOverride} disabled={isRunning}
-            style={{ width: "100%", padding: "9px 0", background: "#2563eb", color: "#fff", border: "none", borderRadius: 0, fontSize: 12, fontWeight: 700, cursor: "pointer", letterSpacing: "0.02em" }}>
-            Set selected shape as title
-          </button>
-          {overrideStatus && !overrideStatus.ok && (
-            <div style={{ marginTop: 8, fontSize: 11, color: "#991b1b" }}>{overrideStatus.msg}</div>
-          )}
-        </div>
-
-        {/* 3. Review + Fix buttons */}
-        <button onClick={handleReview} disabled={isRunning}
-          style={{ width: "100%", padding: "10px 0", background: "#fff", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 0, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-          Review slide
-        </button>
-        <div style={{ display: "flex", gap: 6 }}>
-          {[
-            { mode: "title",   label: "Fix Title",   count: reviewCounts?.title },
-            { mode: "fonts",   label: "Fix Fonts",   count: reviewCounts?.fonts },
-            { mode: "colours", label: "Fix Colours", count: reviewCounts?.colours },
-          ].map(({ mode, label, count }) => (
-            <button key={mode} onClick={() => handleCleanup(mode)} disabled={isRunning}
-              style={{ flex: 1, padding: "10px 4px", background: count > 0 ? "#fefce8" : "#f3f4f6", color: "#374151", border: `1px solid ${count > 0 ? "#fde68a" : "#e5e7eb"}`, borderRadius: 0, fontSize: 10, fontWeight: 700, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-              <span>{label}</span>
-              {count != null && <span style={{ fontSize: 9, color: count > 0 ? "#92400e" : "#6b7280", fontWeight: 600 }}>{count} fix{count !== 1 ? "es" : ""}</span>}
+        {/* Select title box */}
+        <details style={{ background: "#fff", border: "1px solid #e8eaed", borderRadius: 0 }}>
+          <summary style={{ padding: "13px 14px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer", listStyle: "none", userSelect: "none" }}>
+            <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#e8f0fe", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <span style={{ fontSize: 15, color: "#1967d2", fontWeight: 700, fontStyle: "italic", border: "1.5px dashed #1967d2", padding: "0 4px" }}>T</span>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#1a1a2e" }}>Select title box</div>
+              <div style={{ fontSize: 11, color: "#6b7280" }}>
+                {overrideStatus?.ok
+                  ? <span style={{ color: "#188038" }}>✓ {overrideStatus.msg}</span>
+                  : "Only needed if the title is not detected automatically."}
+              </div>
+            </div>
+            <span style={{ fontSize: 14, color: "#bdc1c6" }}>›</span>
+          </summary>
+          <div style={{ padding: "0 14px 14px 62px" }}>
+            <div style={{ fontSize: 11, color: "#374151", marginBottom: 10, lineHeight: 1.5 }}>
+              Click your title box on the slide, then tap the button below.
+            </div>
+            <button onClick={handleSetTitleOverride} disabled={isRunning}
+              style={{ width: "100%", padding: "8px 0", background: "#1967d2", color: "#fff", border: "none", borderRadius: 0, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+              Set selected shape as title
             </button>
-          ))}
-        </div>
-        <button className="btn" onClick={() => handleCleanup("all")} disabled={isRunning}
-          style={{ width: "100%", padding: "14px 0", background: status === "done" ? "#15803d" : "#111111", color: "#fff", border: "none", borderRadius: 0, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.2s ease", boxShadow: "0 4px 14px rgba(0,0,0,0.28)" }}>
-          {isRunning ? (
-            <><span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.3)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block" }} />Working…</>
-          ) : status === "done" ? "✓ Done — clean another?" : "SnapBack — Fix Everything"}
-        </button>
-
-        {status === "done" && fixCount > 0  && <FixBadge count={fixCount} />}
-        {status === "done" && fixCount === 0 && <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 0, padding: "10px 14px", fontSize: 11, color: "#166534" }}>✓ Slide already matches the master — no changes needed.</div>}
-        {status === "done" && masterWarning && (
-          <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 0, padding: "10px 14px", fontSize: 11, color: "#92400e" }}>
-            ⚠ Looks like this slide might not be aligned to the master template. Consider copying the contents of this slide to a new blank slide.
+            {overrideStatus && !overrideStatus.ok && (
+              <div style={{ marginTop: 8, fontSize: 11, color: "#c5221f" }}>{overrideStatus.msg}</div>
+            )}
           </div>
+        </details>
+
+        {/* Review slide */}
+        <Row
+          iconBg="#e6f4ea" iconColor="#188038" icon="◎"
+          title="Review slide"
+          subtitle={isRunning && status === "running" ? "Checking…" : "Check the detected issues before applying fixes."}
+          onClick={handleReview} disabled={isRunning}
+        />
+
+        {/* Title fixes */}
+        <Row
+          iconBg="#e8f0fe" iconColor="#1967d2" icon="T"
+          title="Title fixes"
+          subtitle="Standardise title formatting across slides."
+          count={reviewCounts?.title} countBg="#e8f0fe" countColor="#1967d2"
+          onClick={() => handleCleanup("title")} disabled={isRunning}
+        />
+
+        {/* Font fixes */}
+        <Row
+          iconBg="#e6f4ea" iconColor="#188038" icon="Aa"
+          title="Font fixes"
+          subtitle="Apply the selected font family and/or size."
+          count={reviewCounts?.fonts} countBg="#e6f4ea" countColor="#188038"
+          onClick={() => handleCleanup("fonts")} disabled={isRunning}
+        />
+
+        {/* Colour fixes */}
+        <Row
+          iconBg="#f3e8fd" iconColor="#8430ce" icon="◈"
+          title="Colour fixes"
+          subtitle="Correct text colours to match your theme palette."
+          count={reviewCounts?.colours} countBg="#f3e8fd" countColor="#8430ce"
+          onClick={() => handleCleanup("colours")} disabled={isRunning}
+        />
+
+        {/* Fix all */}
+        <Row
+          iconBg="rgba(255,255,255,0.15)" iconColor="#fff"
+          icon={isRunning ? <span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.4)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block" }} /> : "✦"}
+          title={isRunning ? "Working…" : status === "done" ? "Done — fix another?" : "Fix all"}
+          subtitle="Apply all three fixes at once."
+          onClick={() => handleCleanup("all")} disabled={isRunning}
+          solid
+        />
+
+        {/* Status messages */}
+        {status === "done" && fixCount === 0 && (
+          <div style={{ background: "#e6f4ea", border: "1px solid #ceead6", padding: "10px 14px", fontSize: 11, color: "#188038" }}>✓ Slide already matches the master — no changes needed.</div>
+        )}
+        {status === "done" && masterWarning && (
+          <div style={{ background: "#fef7e0", border: "1px solid #fde68a", padding: "10px 14px", fontSize: 11, color: "#7d5c00" }}>⚠ This slide may not be aligned to the master. Try copying its contents to a new blank slide.</div>
         )}
         {status === "done" && colorWarning && (
-          <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 0, padding: "10px 14px", fontSize: 11, color: "#92400e" }}>
-            ⚠ {colorWarning}
-          </div>
+          <div style={{ background: "#fef7e0", border: "1px solid #fde68a", padding: "10px 14px", fontSize: 11, color: "#7d5c00" }}>⚠ {colorWarning}</div>
         )}
-        {error && <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 0, padding: "10px 12px", fontSize: 11, color: "#991b1b" }}><strong>Error:</strong> {error}</div>}
+        {error && (
+          <div style={{ background: "#fce8e6", border: "1px solid #f5c6c2", padding: "10px 14px", fontSize: 11, color: "#c5221f" }}><strong>Error:</strong> {error}</div>
+        )}
 
-        {/* 4. Detected from file — includes title detection */}
+        {/* Template status */}
         {!fileReady && !fileError && (
-          <div style={{ background: "#fff", borderRadius: 0, border: "1px solid #e5e7eb", padding: "10px 14px", fontSize: 11, color: "#6b7280", display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ padding: "10px 14px", fontSize: 11, color: "#6b7280", display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ width: 10, height: 10, border: "2px solid #d1d5db", borderTop: "2px solid #6b7280", borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block", flexShrink: 0 }} />
-            Loading template in background…
+            Loading template…
           </div>
         )}
         {fileReady && (
-          <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 0, padding: "8px 12px", fontSize: 11, color: "#166534", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span>✓ Template ready: <strong>{cachedMasters.current?.[0]?.name}</strong></span>
-            <button onClick={async () => { setFileReady(false); setFileError(null); try { const { zip, masters, dominantMasterIndex } = await readPptxFile(); cachedZip.current = zip; cachedMasters.current = masters; cachedDominantMaster.current = dominantMasterIndex; cachedPptxData.current = {}; cachedTemplateShapes.current = null; setFileReady(true); } catch (e) { setFileError(e.message); } }}
-              style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#15803d", textDecoration: "underline", padding: 0 }}>↺ Reload</button>
+          <div style={{ padding: "6px 14px", fontSize: 11, color: "#188038", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span>✓ Template ready</span>
+            <button onClick={handleReload} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#1967d2", textDecoration: "underline", padding: 0 }}>↺ Reload</button>
           </div>
         )}
         {fileError && (
-          <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 0, padding: "8px 12px", fontSize: 11, color: "#991b1b", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ padding: "6px 14px", fontSize: 11, color: "#c5221f", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <span>⚠ {fileError}</span>
-            <button onClick={async () => { setFileReady(false); setFileError(null); try { const { zip, masters, dominantMasterIndex } = await readPptxFile(); cachedZip.current = zip; cachedMasters.current = masters; cachedDominantMaster.current = dominantMasterIndex; cachedPptxData.current = {}; cachedTemplateShapes.current = null; setFileReady(true); } catch (e) { setFileError(e.message); } }}
-              style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#991b1b", textDecoration: "underline", padding: 0 }}>↺ Retry</button>
+            <button onClick={handleReload} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#c5221f", textDecoration: "underline", padding: 0 }}>↺ Retry</button>
           </div>
         )}
 
-        {detectedTheme && <ThemeCard theme={detectedTheme} masterPlaceholders={detectedMaster} />}
-        {detectedTitleName && (
-          <div style={{ fontSize: 11, color: "#6b7280", padding: "2px 4px" }}>
-            Title detected: <strong style={{ color: "#374151" }}>{detectedTitleName}</strong>
+        {/* Theme information — collapsible */}
+        {detectedTheme && (
+          <div style={{ background: "#fff", border: "1px solid #e8eaed", borderRadius: 0, marginTop: 4 }}>
+            <button onClick={() => setThemeOpen(o => !o)}
+              style={{ width: "100%", background: "none", border: "none", padding: "13px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", textAlign: "left" }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "#1a1a2e" }}>Theme information</span>
+              <span style={{ fontSize: 13, color: "#5f6368", transform: themeOpen ? "rotate(180deg)" : "none", display: "inline-block", transition: "transform 0.2s" }}>⌄</span>
+            </button>
+            {themeOpen && (
+              <div style={{ padding: "0 14px 14px", borderTop: "1px solid #f1f3f4" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginTop: 10 }}>
+                  <tbody>
+                    {[
+                      ["Theme", detectedTheme.name || "Office"],
+                      ["Heading font", detectedTheme.fonts.heading],
+                      ["Body font", detectedTheme.fonts.body],
+                    ].map(([label, value]) => value ? (
+                      <tr key={label}>
+                        <td style={{ color: "#6b7280", paddingBottom: 6, paddingRight: 12, verticalAlign: "top", width: "40%" }}>{label}</td>
+                        <td style={{ color: "#1a1a2e", fontWeight: 500, paddingBottom: 6 }}>{value}</td>
+                      </tr>
+                    ) : null)}
+                    <tr>
+                      <td style={{ color: "#6b7280", paddingTop: 2, verticalAlign: "middle" }}>Theme colours</td>
+                      <td style={{ paddingTop: 2 }}>
+                        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                          {Object.values(detectedTheme.colors).filter(v => v).map((c, i) => (
+                            <div key={i} title={c} style={{ width: 16, height: 16, borderRadius: "50%", background: c, border: "1px solid rgba(0,0,0,0.1)", flexShrink: 0 }} />
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+                {detectedTitleName && (
+                  <div style={{ fontSize: 11, color: "#6b7280", marginTop: 8 }}>Title shape: <strong style={{ color: "#374151" }}>{detectedTitleName}</strong></div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
+        {/* Activity log */}
         {log.length > 0 && (
-          <div style={{ background: "#0f172a", borderRadius: 0, padding: "10px 12px" }}>
+          <div style={{ background: "#0f172a", padding: "10px 12px", marginTop: 4 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: "#64748b", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>Activity</div>
             {log.map((entry, i) => <LogLine key={i} entry={entry} />)}
           </div>
         )}
+
+        <div style={{ height: 16 }} />
       </div>
 
-      <div style={{ padding: "10px 16px", borderTop: "1px solid #e5e7eb", background: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontSize: 9, color: "#9ca3af", fontFamily: "monospace" }}>v3.0.0</span>
+      {/* Footer */}
+      <div style={{ padding: "10px 14px", borderTop: "1px solid #e8eaed", background: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ fontSize: 10, color: "#9aa0a6" }}>SnapBack v3.0.0 · <span style={{ color: status === "done" ? "#188038" : status === "running" ? "#1967d2" : "#9aa0a6" }}>{status === "running" ? "Working…" : status === "done" ? "Done" : "Ready"}</span></span>
         <a href="https://ppt-cleanup.vercel.app/home.html" target="_blank" rel="noreferrer"
-          style={{ fontSize: 11, color: "#2563eb", fontWeight: 600, textDecoration: "none", background: "#eff6ff", padding: "4px 10px", borderRadius: 0, border: "1px solid #bfdbfe" }}>
-          About SnapBack →
+          style={{ fontSize: 11, color: "#1967d2", fontWeight: 500, textDecoration: "none" }}>
+          About →
         </a>
       </div>
     </div>
