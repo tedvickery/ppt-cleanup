@@ -2028,13 +2028,13 @@ export default function App() {
   // Row component — icon circle + title/subtitle + optional badge + chevron
   const Row = ({ iconBg, iconColor, icon, title, subtitle, count, countColor, countBg, onClick, disabled, solid }) => (
     <button onClick={onClick} disabled={disabled}
-      style={{ width: "100%", background: solid ? "#1f3f7a" : "#fff", border: solid ? "none" : "1px solid #e8eaed", borderRadius: 0, padding: "13px 14px", display: "flex", alignItems: "center", gap: 12, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.55 : 1, textAlign: "left" }}>
-      <div style={{ width: 36, height: 36, borderRadius: "50%", background: iconBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-        <span style={{ fontSize: 16, color: iconColor }}>{icon}</span>
+      style={{ width: "100%", background: solid ? "#1f3f7a" : "#fff", border: solid ? "none" : "1px solid #e8eaed", borderRadius: 0, padding: "9px 14px", display: "flex", alignItems: "center", gap: 10, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.55 : 1, textAlign: "left" }}>
+      <div style={{ width: 30, height: 30, borderRadius: "50%", background: iconBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <span style={{ fontSize: 14, color: iconColor }}>{icon}</span>
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: solid ? "#fff" : "#1a1a2e", lineHeight: 1.3 }}>{title}</div>
-        <div style={{ fontSize: 11, color: solid ? "rgba(255,255,255,0.7)" : "#6b7280", lineHeight: 1.4, marginTop: 1 }}>{subtitle}</div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: solid ? "#fff" : "#1a1a2e", lineHeight: 1.3 }}>{title}</div>
+        <div style={{ fontSize: 10, color: solid ? "rgba(255,255,255,0.7)" : "#6b7280", lineHeight: 1.3, marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{subtitle}</div>
       </div>
       {count != null && count > 0 && (
         <div style={{ background: countBg || "#e8f0fe", color: countColor || "#1967d2", borderRadius: "50%", minWidth: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, flexShrink: 0, padding: "0 4px" }}>{count}</div>
@@ -2055,13 +2055,13 @@ export default function App() {
 
         {/* How to */}
         <details style={{ background: "#fff", border: "1px solid #e8eaed", borderRadius: 0 }}>
-          <summary style={{ padding: "13px 14px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer", listStyle: "none", userSelect: "none" }}>
-            <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#f1f3f4", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <span style={{ fontSize: 16, color: "#5f6368" }}>?</span>
+          <summary style={{ padding: "9px 14px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer", listStyle: "none", userSelect: "none" }}>
+            <div style={{ width: 30, height: 30, borderRadius: "50%", background: "#f1f3f4", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <span style={{ fontSize: 14, color: "#5f6368" }}>?</span>
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "#1a1a2e" }}>How to</div>
-              <div style={{ fontSize: 11, color: "#6b7280" }}>Quick guide to using SnapBack</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#1a1a2e" }}>How to</div>
+              <div style={{ fontSize: 10, color: "#6b7280" }}>Quick guide to using SnapBack</div>
             </div>
             <span style={{ fontSize: 14, color: "#bdc1c6" }}>›</span>
           </summary>
@@ -2077,13 +2077,13 @@ export default function App() {
 
         {/* Select title box */}
         <details style={{ background: "#fff", border: "1px solid #e8eaed", borderRadius: 0 }}>
-          <summary style={{ padding: "13px 14px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer", listStyle: "none", userSelect: "none" }}>
-            <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#e8f0fe", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <span style={{ fontSize: 15, color: "#1967d2", fontWeight: 700, fontStyle: "italic", border: "1.5px dashed #1967d2", padding: "0 4px" }}>T</span>
+          <summary style={{ padding: "9px 14px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer", listStyle: "none", userSelect: "none" }}>
+            <div style={{ width: 30, height: 30, borderRadius: "50%", background: "#e8f0fe", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <span style={{ fontSize: 13, color: "#1967d2", fontWeight: 700, fontStyle: "italic", border: "1.5px dashed #1967d2", padding: "0 3px" }}>T</span>
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "#1a1a2e" }}>Select title box</div>
-              <div style={{ fontSize: 11, color: "#6b7280" }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#1a1a2e" }}>Select title box</div>
+              <div style={{ fontSize: 10, color: "#6b7280" }}>
                 {overrideStatus?.ok
                   ? <span style={{ color: "#188038" }}>✓ {overrideStatus.msg}</span>
                   : "Only needed if the title is not detected automatically."}
