@@ -1390,22 +1390,30 @@ export default function App() {
           const shapes = slide.shapes;
           shapes.load("items");
           await ctx.sync();
-          for (const s of shapes.items) {
+          // Load shape type so we can skip groups/connectors
+          for (const s of shapes.items) s.load(["name", "type"]);
+          await ctx.sync();
+          // Only attempt fill/font on supported shape types
+          const supported = shapes.items.filter(s => {
+            const t = String(s.type).toLowerCase();
+            return t !== "group" && t !== "line" && t !== "unsupported";
+          });
+          for (const s of supported) {
             try { s.fill.load(["type", "foregroundColor"]); } catch (e) { /* skip */ }
           }
-          await ctx.sync();
+          if (supported.length > 0) await ctx.sync();
           const fontJobs = [];
-          for (const s of shapes.items) {
+          for (const s of supported) {
             try { s.textFrame.textRange.font.load("color"); fontJobs.push(s); } catch (e) { /* no text */ }
           }
           if (fontJobs.length > 0) await ctx.sync();
           const fillSamples = [], fontSamples = [];
-          for (const s of shapes.items) {
+          for (const s of supported) {
             try {
               const fillType = String(s.fill.type).toLowerCase();
               if (fillType === "nofill" || fillType === "null" || fillType === "undefined") continue;
               const fg = s.fill.foregroundColor;
-              const fillColor = fg ? (fg.startsWith("#") ? fg : `#${fg}`) : null;
+              const fillColor = fg ? (fg.startsWith("#") ? fg.toUpperCase() : `#${fg.toUpperCase()}`) : null;
               fillSamples.push(`${s.name}:${fillColor}`);
               if (fillColor && !themeColorList.some(c => c.toLowerCase() === fillColor.toLowerCase())) colourCount++;
             } catch (e) { /* skip */ }
@@ -1413,7 +1421,7 @@ export default function App() {
           for (const s of fontJobs) {
             try {
               const fc = s.textFrame.textRange.font.color;
-              const fontColor = fc && fc !== "null" ? (fc.startsWith("#") ? fc : `#${fc}`) : null;
+              const fontColor = fc && fc !== "null" ? (fc.startsWith("#") ? fc.toUpperCase() : `#${fc.toUpperCase()}`) : null;
               fontSamples.push(`${s.name}:${fontColor}`);
               if (fontColor && !themeColorList.some(c => c.toLowerCase() === fontColor.toLowerCase())) colourCount++;
             } catch (e) { /* skip */ }
