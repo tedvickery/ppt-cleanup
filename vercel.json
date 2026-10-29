@@ -8,5 +8,8 @@
         { "key": "Access-Control-Allow-Origin", "value": "*" }
       ]
     }
+  ],
+  "routes": [
+    { "src": "/home", "dest": "/home.html" }
   ]
 }
