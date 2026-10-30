@@ -1179,7 +1179,7 @@ export default function App() {
         return;
       }
       setTitleOverrides(prev => ({ ...prev, [slideIndex]: shape }));
-      setOverrideStatus({ ok: true, msg: `"${shape.name}" set as title for slide ${slideIndex}` });
+      setOverrideStatus({ ok: true, msg: `Title selected for slide ${slideIndex}` });
     } catch (e) {
       setOverrideStatus({ ok: false, msg: e.message });
     }
@@ -2129,7 +2129,7 @@ export default function App() {
         <Row
           iconBg="rgba(255,255,255,0.15)" iconColor="#fff"
           icon={isRunning ? <span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.4)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block" }} /> : "✦"}
-          title={isRunning ? "Working…" : status === "done" ? "Done — fix another?" : "Fix all"}
+          title={isRunning ? "Working…" : status === "done" ? "Done: fix another?" : "SnapBack: fix all"}
           subtitle="Apply all three fixes at once."
           onClick={() => handleCleanup("all")} disabled={isRunning}
           solid
