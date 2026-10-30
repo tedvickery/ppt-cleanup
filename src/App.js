@@ -2026,7 +2026,7 @@ export default function App() {
   };
 
   // Row component — icon circle + title/subtitle + optional badge + chevron
-  const Row = ({ iconBg, iconColor, icon, title, subtitle, count, countColor, countBg, onClick, disabled, solid, flash }) => (
+  const Row = ({ iconBg, iconColor, icon, title, subtitle, count, countColor, countBg, onClick, disabled, solid, flash, noChevron }) => (
     <button onClick={onClick} disabled={disabled}
       style={{ width: "100%", background: solid ? "#1f3f7a" : "#fff", border: solid ? "none" : `1px solid ${flash ? "#f5c6c2" : "#e8eaed"}`, borderRadius: 0, padding: "9px 14px", display: "flex", alignItems: "center", gap: 10, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.55 : 1, textAlign: "left", animation: flash ? "flashRed 0.6s ease-in-out 3" : "none" }}>
       <div style={{ width: 30, height: 30, borderRadius: "50%", background: iconBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -2039,7 +2039,7 @@ export default function App() {
       {count != null && count > 0 && (
         <div style={{ background: countBg || "#e8f0fe", color: countColor || "#1967d2", borderRadius: "50%", minWidth: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, flexShrink: 0, padding: "0 4px" }}>{count}</div>
       )}
-      <span style={{ fontSize: 14, color: solid ? "rgba(255,255,255,0.6)" : "#bdc1c6", flexShrink: 0 }}>›</span>
+      {!noChevron && <span style={{ fontSize: 14, color: solid ? "rgba(255,255,255,0.6)" : "#bdc1c6", flexShrink: 0 }}>›</span>}
     </button>
   );
 
@@ -2094,44 +2094,45 @@ export default function App() {
           iconColor={overrideStatus?.ok === false ? "#c5221f" : "#1967d2"}
           icon={<span style={{ fontSize: 13, fontWeight: 700, fontStyle: "italic", border: `1.5px dashed ${overrideStatus?.ok === false ? "#c5221f" : "#1967d2"}`, padding: "0 3px" }}>T</span>}
           title="Select title box"
-          subtitle={overrideStatus?.ok === true ? `✓ ${overrideStatus.msg}` : overrideStatus?.ok === false ? `⚠ ${overrideStatus.msg}` : "Only needed if title is not detected automatically."}
+          subtitle={overrideStatus?.ok === true ? `✓ ${overrideStatus.msg}` : overrideStatus?.ok === false ? `⚠ ${overrideStatus.msg}` : null}
           onClick={handleSetTitleOverride} disabled={isRunning}
           flash={overrideStatus?.ok === false}
+          noChevron
         />
 
         {/* Review slide */}
         <Row
           iconBg="#e6f4ea" iconColor="#188038" icon="◎"
           title="Review slide"
-          subtitle={isRunning && status === "running" ? "Checking…" : "Check the detected issues before applying fixes."}
           onClick={handleReview} disabled={isRunning}
+          noChevron
         />
 
         {/* Title fixes */}
         <Row
           iconBg="#e8f0fe" iconColor="#1967d2" icon="T"
           title="Title fixes"
-          subtitle="Standardise title formatting across slides."
           count={reviewCounts?.title} countBg="#e8f0fe" countColor="#1967d2"
           onClick={() => handleCleanup("title")} disabled={isRunning}
+          noChevron
         />
 
         {/* Font fixes */}
         <Row
           iconBg="#e6f4ea" iconColor="#188038" icon="Aa"
           title="Font fixes"
-          subtitle="Apply the selected font family and/or size."
           count={reviewCounts?.fonts} countBg="#e6f4ea" countColor="#188038"
           onClick={() => handleCleanup("fonts")} disabled={isRunning}
+          noChevron
         />
 
         {/* Colour fixes */}
         <Row
           iconBg="#f3e8fd" iconColor="#8430ce" icon="◈"
           title="Colour fixes"
-          subtitle="Correct text colours to match your theme palette."
           count={reviewCounts?.colours} countBg="#f3e8fd" countColor="#8430ce"
           onClick={() => handleCleanup("colours")} disabled={isRunning}
+          noChevron
         />
 
         {/* Fix all */}
