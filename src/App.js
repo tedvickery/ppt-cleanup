@@ -2026,9 +2026,9 @@ export default function App() {
   };
 
   // Row component — icon circle + title/subtitle + optional badge + chevron
-  const Row = ({ iconBg, iconColor, icon, title, subtitle, count, countColor, countBg, onClick, disabled, solid }) => (
+  const Row = ({ iconBg, iconColor, icon, title, subtitle, count, countColor, countBg, onClick, disabled, solid, flash }) => (
     <button onClick={onClick} disabled={disabled}
-      style={{ width: "100%", background: solid ? "#1f3f7a" : "#fff", border: solid ? "none" : "1px solid #e8eaed", borderRadius: 0, padding: "9px 14px", display: "flex", alignItems: "center", gap: 10, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.55 : 1, textAlign: "left" }}>
+      style={{ width: "100%", background: solid ? "#1f3f7a" : "#fff", border: solid ? "none" : `1px solid ${flash ? "#f5c6c2" : "#e8eaed"}`, borderRadius: 0, padding: "9px 14px", display: "flex", alignItems: "center", gap: 10, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.55 : 1, textAlign: "left", animation: flash ? "flashRed 0.6s ease-in-out 3" : "none" }}>
       <div style={{ width: 30, height: 30, borderRadius: "50%", background: iconBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
         <span style={{ fontSize: 14, color: iconColor }}>{icon}</span>
       </div>
@@ -2047,6 +2047,13 @@ export default function App() {
     <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", background: "#f8f9fb", minHeight: "100vh", display: "flex", flexDirection: "column", maxWidth: 340, margin: "0 auto" }}>
       <style>{`
         @keyframes spin { to { transform: rotate(360deg) } }
+        @keyframes flashRed {
+          0%   { background: #fce8e6; }
+          25%  { background: #f5c6c2; }
+          50%  { background: #fce8e6; }
+          75%  { background: #f5c6c2; }
+          100% { background: #fce8e6; }
+        }
         button:focus { outline: 2px solid #1967d2; outline-offset: 1px; }
       `}</style>
 
@@ -2089,6 +2096,7 @@ export default function App() {
           title="Select title box"
           subtitle={overrideStatus?.ok === true ? `✓ ${overrideStatus.msg}` : overrideStatus?.ok === false ? `⚠ ${overrideStatus.msg}` : "Only needed if title is not detected automatically."}
           onClick={handleSetTitleOverride} disabled={isRunning}
+          flash={overrideStatus?.ok === false}
         />
 
         {/* Review slide */}
