@@ -1483,7 +1483,7 @@ export default function App() {
       // the tool can't snap the title without knowing which shape it is
       const resolvedTitle = pptxData.slideShapes.find(s => s.phType === "title" || s.phType === "ctrTitle");
       if (!resolvedTitle) {
-        setError("No title box found on this slide. Select the title shape and click \"Use selected shape as title\", then try again.");
+        setOverrideStatus({ ok: false, msg: "Title not found — click a title shape on the slide first" });
         setStatus("idle");
         return;
       }
@@ -2083,10 +2083,11 @@ export default function App() {
 
         {/* Select title box */}
         <Row
-          iconBg="#e8f0fe" iconColor="#1967d2"
-          icon={<span style={{ fontSize: 13, fontWeight: 700, fontStyle: "italic", border: "1.5px dashed #1967d2", padding: "0 3px" }}>T</span>}
+          iconBg={overrideStatus?.ok === false ? "#fce8e6" : "#e8f0fe"}
+          iconColor={overrideStatus?.ok === false ? "#c5221f" : "#1967d2"}
+          icon={<span style={{ fontSize: 13, fontWeight: 700, fontStyle: "italic", border: `1.5px dashed ${overrideStatus?.ok === false ? "#c5221f" : "#1967d2"}`, padding: "0 3px" }}>T</span>}
           title="Select title box"
-          subtitle={overrideStatus?.ok ? `✓ ${overrideStatus.msg}` : "Only needed if title is not detected automatically."}
+          subtitle={overrideStatus?.ok === true ? `✓ ${overrideStatus.msg}` : overrideStatus?.ok === false ? `⚠ ${overrideStatus.msg}` : "Only needed if title is not detected automatically."}
           onClick={handleSetTitleOverride} disabled={isRunning}
         />
 
