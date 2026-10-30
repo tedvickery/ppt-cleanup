@@ -1483,7 +1483,7 @@ export default function App() {
       // the tool can't snap the title without knowing which shape it is
       const resolvedTitle = pptxData.slideShapes.find(s => s.phType === "title" || s.phType === "ctrTitle");
       if (!resolvedTitle) {
-        setOverrideStatus({ ok: false, msg: "Title not found — click a title shape on the slide first" });
+        setOverrideStatus({ ok: false, msg: "Click title box & click this button" });
         setStatus("idle");
         return;
       }
