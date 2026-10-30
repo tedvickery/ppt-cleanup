@@ -1342,6 +1342,14 @@ export default function App() {
         if (target) { if (alreadyTitle && alreadyTitle !== target) alreadyTitle.phType = "body"; target.phType = "title"; }
       }
 
+      // Bail if no title shape found
+      const resolvedTitleCheck = pptxData.slideShapes.find(s => s.phType === "title" || s.phType === "ctrTitle");
+      if (!resolvedTitleCheck) {
+        setOverrideStatus({ ok: false, msg: "Click title box & click this button" });
+        setStatus("idle");
+        return;
+      }
+
       const themeColors = pptxData.theme.colors;
       const themeColorList = Object.values(themeColors).filter(v => v);
 
@@ -1995,13 +2003,13 @@ export default function App() {
       setFixCount(totalFixes);
       setStatus("done");
       trackUsage(totalFixes);
-      // Zero out the count for the mode that was just fixed
+      // Clear counts for the mode that was just fixed
       setReviewCounts(prev => {
         if (!prev) return null;
         return {
-          title:   fixMode === "title"   || fixMode === "all" ? 0 : prev.title,
-          fonts:   fixMode === "fonts"   || fixMode === "all" ? 0 : prev.fonts,
-          colours: fixMode === "colours" || fixMode === "all" ? 0 : prev.colours,
+          title:   fixMode === "title"   || fixMode === "all" ? null : prev.title,
+          fonts:   fixMode === "fonts"   || fixMode === "all" ? null : prev.fonts,
+          colours: fixMode === "colours" || fixMode === "all" ? null : prev.colours,
         };
       });
     } catch (err) {
