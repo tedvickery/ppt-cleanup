@@ -1320,7 +1320,7 @@ export default function App() {
   }, []);
 
   const handleReview = useCallback(async () => {
-    setStatus("running");
+    setStatus("reviewing");
     setLog([]);
     setError(null);
     addLog("Reviewing slide…");
@@ -2011,7 +2011,7 @@ export default function App() {
     }
   }, [titleOverrides, trackUsage]);
 
-  const isRunning = status === "running";
+  const isRunning = status === "running" || status === "reviewing";
 
   // Reload helper
   const handleReload = async () => {
@@ -2112,7 +2112,7 @@ export default function App() {
         <Row
           iconBg="#e8f0fe" iconColor="#1967d2" icon="T"
           title="Title fixes"
-          count={reviewCounts?.title} countBg="#e8f0fe" countColor="#1967d2"
+          subtitle={reviewCounts?.title != null ? `${reviewCounts.title} fixes needed` : null}
           onClick={() => handleCleanup("title")} disabled={isRunning}
           noChevron
         />
@@ -2121,7 +2121,7 @@ export default function App() {
         <Row
           iconBg="#e6f4ea" iconColor="#188038" icon="Aa"
           title="Font fixes"
-          count={reviewCounts?.fonts} countBg="#e6f4ea" countColor="#188038"
+          subtitle={reviewCounts?.fonts != null ? `${reviewCounts.fonts} fixes needed` : null}
           onClick={() => handleCleanup("fonts")} disabled={isRunning}
           noChevron
         />
@@ -2130,7 +2130,7 @@ export default function App() {
         <Row
           iconBg="#f3e8fd" iconColor="#8430ce" icon="◈"
           title="Colour fixes"
-          count={reviewCounts?.colours} countBg="#f3e8fd" countColor="#8430ce"
+          subtitle={reviewCounts?.colours != null ? `${reviewCounts.colours} fixes needed` : null}
           onClick={() => handleCleanup("colours")} disabled={isRunning}
           noChevron
         />
@@ -2139,7 +2139,7 @@ export default function App() {
         <Row
           iconBg="rgba(255,255,255,0.15)" iconColor="#fff"
           icon={isRunning ? <span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.4)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block" }} /> : "✦"}
-          title={isRunning ? "Working…" : status === "done" ? "Done: fix another?" : "SnapBack: fix all"}
+          title={status === "reviewing" ? "Reviewing…" : status === "running" ? "Working…" : status === "done" ? "Done: fix another?" : "SnapBack: fix all"}
           subtitle="Apply all three fixes at once."
           onClick={() => handleCleanup("all")} disabled={isRunning}
           solid
