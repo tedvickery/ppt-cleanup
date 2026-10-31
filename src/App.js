@@ -737,7 +737,22 @@ async function readPptxFile() {
   const bytes = await getFileBytes();
   const zip = await JSZip.loadAsync(bytes);
   const { masters, dominantMasterIndex } = await readAllMasters(zip);
-  return { zip, masters, dominantMasterIndex };
+  // Read slide dimensions from presentation.xml (EMUs: 914400 per inch)
+  let slideWidth = 13.33, slideHeight = 7.5; // fallback to standard widescreen
+  try {
+    const presFile = zip.file("ppt/presentation.xml");
+    if (presFile) {
+      const presXml = parseXml(await presFile.async("string"));
+      const sldSz = presXml.getElementsByTagNameNS("*", "sldSz")[0];
+      if (sldSz) {
+        const cx = parseInt(sldSz.getAttribute("cx"), 10);
+        const cy = parseInt(sldSz.getAttribute("cy"), 10);
+        if (cx) slideWidth  = cx / 914400;
+        if (cy) slideHeight = cy / 914400;
+      }
+    }
+  } catch (e) { /* use fallback */ }
+  return { zip, masters, dominantMasterIndex, slideWidth, slideHeight };
 }
 
 /* ── Phase 2: read slide data using chosen master ───────────────────────── */
@@ -1142,6 +1157,7 @@ export default function App() {
   const cachedZip       = useRef(null);
   const cachedMasters   = useRef(null);
   const cachedDominantMaster = useRef(1);
+  const cachedSlideSize = useRef({ width: 13.33, height: 7.5 });
   const cachedTemplateShapes = useRef(null); // pre-computed once from reference slides
   const cachedPptxData  = useRef({}); // keyed by slideIndex — slide shapes cached between runs
 
@@ -1150,11 +1166,12 @@ export default function App() {
     let cancelled = false;
     async function loadFile() {
       try {
-        const { zip, masters, dominantMasterIndex } = await readPptxFile();
+        const { zip, masters, dominantMasterIndex, slideWidth, slideHeight } = await readPptxFile();
         if (cancelled) return;
         cachedZip.current          = zip;
         cachedMasters.current      = masters;
         cachedDominantMaster.current = dominantMasterIndex;
+        cachedSlideSize.current    = { width: slideWidth, height: slideHeight };
         setFileReady(true);
       } catch (e) {
         if (cancelled) return;
@@ -1458,11 +1475,12 @@ export default function App() {
       let zip = cachedZip.current;
       let masters = cachedMasters.current;
       if (!zip || !masters) {
-        let dominantMasterIndex;
-        ({ zip, masters, dominantMasterIndex } = await readPptxFile());
+        let dominantMasterIndex, slideWidth, slideHeight;
+        ({ zip, masters, dominantMasterIndex, slideWidth, slideHeight } = await readPptxFile());
         cachedZip.current          = zip;
         cachedMasters.current      = masters;
         cachedDominantMaster.current = dominantMasterIndex;
+        cachedSlideSize.current    = { width: slideWidth, height: slideHeight };
       }
 
       if (masters.length === 0) throw new Error("No slide masters found in this file");
@@ -1590,9 +1608,16 @@ export default function App() {
           });
         } catch (e) { /* fall back to XML position */ }
 
-        const posNeedsFix = !cur ||
+        // If the title is more than 30% of the slide dimension away from the expected position,
+        // it's likely intentionally placed (section header, divider, etc.) — skip repositioning
+        const SLIDE_W = cachedSlideSize.current.width, SLIDE_H = cachedSlideSize.current.height;
+        const tooFarH = cur && Math.abs(cur.left - targetTitlePos.left) > SLIDE_W * 0.30;
+        const tooFarV = cur && Math.abs(cur.top  - targetTitlePos.top)  > SLIDE_H * 0.30;
+        const posSkipped = tooFarH || tooFarV;
+        if (posSkipped) addLog(`  Title position skipped — box is >30% from expected (intentional layout?)`);
+        const posNeedsFix = !posSkipped && (!cur ||
           Math.abs(cur.left - targetTitlePos.left) > 0.05 ||
-          Math.abs(cur.top  - targetTitlePos.top)  > 0.05;
+          Math.abs(cur.top  - targetTitlePos.top)  > 0.05);
         const headingFontForTitle = pptxData.layoutPositions?.["title:fontName"] || titleMaster?.font?.name || pptxData.theme.fonts.heading;
         addLog(`  Title font source: layout=${pptxData.layoutPositions?.["title:fontName"]||"none"} master=${titleMaster?.font?.name||"none"} theme=${pptxData.theme.fonts.heading||"none"} → using=${headingFontForTitle||"none"}`);
         const titleFontSize = titleMaster?.font?.size || pptxData.layoutPositions?.["title:fontSize"] || null;
@@ -1644,7 +1669,6 @@ export default function App() {
 
             // ── Squeeze all content shapes to fit new available space ──────────
             if (posNeedsFix && cur) {
-              const SLIDE_W = 13.33, SLIDE_H = 7.5;
               const titleH = cur.height || 0.5;
 
               const oldTitleBottom = cur.top  + titleH;
@@ -2029,9 +2053,10 @@ export default function App() {
   const handleReload = async () => {
     setFileReady(false); setFileError(null);
     try {
-      const { zip, masters, dominantMasterIndex } = await readPptxFile();
+      const { zip, masters, dominantMasterIndex, slideWidth, slideHeight } = await readPptxFile();
       cachedZip.current = zip; cachedMasters.current = masters;
       cachedDominantMaster.current = dominantMasterIndex;
+      cachedSlideSize.current = { width: slideWidth, height: slideHeight };
       cachedPptxData.current = {}; cachedTemplateShapes.current = null;
       setFileReady(true);
     } catch (e) { setFileError(e.message); }
