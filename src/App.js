@@ -1201,6 +1201,8 @@ export default function App() {
         return;
       }
       setTitleOverrides(prev => ({ ...prev, [slideIndex]: shape }));
+      // Invalidate cached slide data so the next fix re-reads with the new override applied
+      if (cachedPptxData.current[slideIndex]) delete cachedPptxData.current[slideIndex];
       setOverrideStatus({ ok: true, msg: `Title selected for slide ${slideIndex}` });
     } catch (e) {
       setOverrideStatus({ ok: false, msg: e.message });
