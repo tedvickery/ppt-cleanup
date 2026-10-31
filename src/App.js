@@ -1734,7 +1734,7 @@ export default function App() {
                 });
 
                 // If vertical space shrank by more than 10%, warn about possible text overflow
-                if (ratioV < 0.90) setOverflowWarning(true);
+                if (ratioV < 0.95) setOverflowWarning(true);
               }
             }
           } catch (e) { addLog(`⚠ Step 1 error: ${e.message}`); }
