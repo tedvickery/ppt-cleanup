@@ -1731,27 +1731,63 @@ export default function App() {
                       s.height = oldHeight * ratioV * inchToPt;
                     }
 
-                    // Reduce body font size proportionally to the vertical space lost
-                    if (bodyFontReduction > 0) {
-                      try {
-                        s.textFrame.load("hasText");
-                        await ctx.sync();
-                        if (s.textFrame.hasText) {
-                          s.textFrame.textRange.load("font/size");
-                          await ctx.sync();
-                          const currentSize = s.textFrame.textRange.font.size;
-                          if (currentSize && currentSize > 0) {
-                            s.textFrame.textRange.font.size = Math.max(8, currentSize - bodyFontReduction);
-                          }
-                        }
-                      } catch (e) { /* shape may not have a text frame */ }
-                    }
-
                     squeezed++;
                   }
                   await ctx.sync();
                   addLog(`  ✓ Squeezed ${squeezed} shapes`);
                 });
+
+                // Reduce body font sizes via XML — more reliable than Office.js for run-level sz
+                if (bodyFontReduction > 0) {
+                  try {
+                    const slidePath = `ppt/slides/slide${dupIndex}.xml`;
+                    const slideFile = zip.file(slidePath);
+                    if (slideFile) {
+                      let xml = await slideFile.async("string");
+                      const slideDoc = parseXml(xml);
+                      const titleIdStr = String(titleShape.id);
+                      let fontFixed = 0;
+                      for (const sp of slideDoc.getElementsByTagNameNS("*", "sp")) {
+                        // Skip the title shape
+                        const nvSpPr = sp.getElementsByTagNameNS("*", "nvSpPr")[0];
+                        const cNvPr = nvSpPr?.getElementsByTagNameNS("*", "cNvPr")[0];
+                        const spId = cNvPr?.getAttribute("id");
+                        if (spId === titleIdStr) continue;
+                        // Reduce sz on every run rPr
+                        for (const rPr of sp.getElementsByTagNameNS("*", "rPr")) {
+                          const sz = rPr.getAttribute("sz");
+                          if (sz) {
+                            const current = parseInt(sz, 10); // in hundredths of a point
+                            const reduced = Math.max(800, current - bodyFontReduction * 100);
+                            rPr.setAttribute("sz", String(reduced));
+                            fontFixed++;
+                          }
+                        }
+                        // Also reduce sz on paragraph/list-level defRPr
+                        for (const defRPr of sp.getElementsByTagNameNS("*", "defRPr")) {
+                          const sz = defRPr.getAttribute("sz");
+                          if (sz) {
+                            const current = parseInt(sz, 10);
+                            const reduced = Math.max(800, current - bodyFontReduction * 100);
+                            defRPr.setAttribute("sz", String(reduced));
+                            fontFixed++;
+                          }
+                        }
+                      }
+                      if (fontFixed > 0) {
+                        const serialiser = new XMLSerializer();
+                        zip.file(slidePath, serialiser.serializeToString(slideDoc));
+                        const newBytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+                        await new Promise((resolve, reject) => {
+                          Office.context.document.setFileAsync(newBytes.buffer, { fileType: Office.FileType.Compressed }, r =>
+                            r.status === Office.AsyncResultStatus.Succeeded ? resolve() : reject(new Error(r.error?.message))
+                          );
+                        });
+                        addLog(`  ✓ Body font reduced by ${bodyFontReduction}pt (${fontFixed} runs)`);
+                      }
+                    }
+                  } catch (e) { addLog(`  ⚠ Body font reduce failed: ${e.message}`); }
+                }
               }
             }
           } catch (e) { addLog(`⚠ Step 1 error: ${e.message}`); }
