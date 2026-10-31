@@ -1144,6 +1144,7 @@ export default function App() {
   const [colorWarning, setColorWarning]   = useState(null);
   const [detectedTitleName, setDetectedTitleName] = useState(null);
   const [reviewCounts, setReviewCounts]   = useState(null);
+  const [overflowWarning, setOverflowWarning] = useState(false);
   const [themeOpen, setThemeOpen]         = useState(false);
   const [logOpen, setLogOpen]             = useState(false);
 
@@ -1460,6 +1461,7 @@ export default function App() {
     setFixCount(0);
     setMasterWarning(false);
     setColorWarning(null);
+    setOverflowWarning(false);
     setDetectedTitleName(null);
     setDetectedTheme(null);
     setDetectedMaster([]);
@@ -1685,14 +1687,8 @@ export default function App() {
               const needsH = Math.abs(ratioH - 1) > 0.005;
               const needsLeft = Math.abs(ratioLeft - 1) > 0.005;
 
-              // For every 10% reduction in vertical space, reduce body font by 1pt (max 5pt, floor 8pt)
-              let bodyFontReduction = 0;
-              if (ratioV < 0.95) {
-                bodyFontReduction = Math.min(3, Math.floor((1 - ratioV) / 0.05));
-              }
-
-              if (needsV || needsH || needsLeft || bodyFontReduction > 0) {
-                addLog(`  Squeezing content: V=${ratioV.toFixed(3)} H=${ratioH.toFixed(3)} L=${ratioLeft.toFixed(3)}${bodyFontReduction > 0 ? ` fontReduce=${bodyFontReduction}pt` : ""}`);
+              if (needsV || needsH || needsLeft) {
+                addLog(`  Squeezing content: V=${ratioV.toFixed(3)} H=${ratioH.toFixed(3)} L=${ratioLeft.toFixed(3)}`);
                 await PowerPoint.run(async (ctx) => {
                   const slide = ctx.presentation.slides.getItemAt(dupIndex - 1);
                   const allShapes = slide.shapes;
@@ -1737,57 +1733,8 @@ export default function App() {
                   addLog(`  ✓ Squeezed ${squeezed} shapes`);
                 });
 
-                // Reduce body font sizes via XML — more reliable than Office.js for run-level sz
-                if (bodyFontReduction > 0) {
-                  try {
-                    const slidePath = `ppt/slides/slide${dupIndex}.xml`;
-                    const slideFile = zip.file(slidePath);
-                    if (slideFile) {
-                      let xml = await slideFile.async("string");
-                      const slideDoc = parseXml(xml);
-                      const titleIdStr = String(titleShape.id);
-                      let fontFixed = 0;
-                      for (const sp of slideDoc.getElementsByTagNameNS("*", "sp")) {
-                        // Skip the title shape
-                        const nvSpPr = sp.getElementsByTagNameNS("*", "nvSpPr")[0];
-                        const cNvPr = nvSpPr?.getElementsByTagNameNS("*", "cNvPr")[0];
-                        const spId = cNvPr?.getAttribute("id");
-                        if (spId === titleIdStr) continue;
-                        // Reduce sz on every run rPr
-                        for (const rPr of sp.getElementsByTagNameNS("*", "rPr")) {
-                          const sz = rPr.getAttribute("sz");
-                          if (sz) {
-                            const current = parseInt(sz, 10); // in hundredths of a point
-                            const reduced = Math.max(800, current - bodyFontReduction * 100);
-                            rPr.setAttribute("sz", String(reduced));
-                            fontFixed++;
-                          }
-                        }
-                        // Also reduce sz on paragraph/list-level defRPr
-                        for (const defRPr of sp.getElementsByTagNameNS("*", "defRPr")) {
-                          const sz = defRPr.getAttribute("sz");
-                          if (sz) {
-                            const current = parseInt(sz, 10);
-                            const reduced = Math.max(800, current - bodyFontReduction * 100);
-                            defRPr.setAttribute("sz", String(reduced));
-                            fontFixed++;
-                          }
-                        }
-                      }
-                      if (fontFixed > 0) {
-                        const serialiser = new XMLSerializer();
-                        zip.file(slidePath, serialiser.serializeToString(slideDoc));
-                        const newBytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
-                        await new Promise((resolve, reject) => {
-                          Office.context.document.setFileAsync(newBytes.buffer, { fileType: Office.FileType.Compressed }, r =>
-                            r.status === Office.AsyncResultStatus.Succeeded ? resolve() : reject(new Error(r.error?.message))
-                          );
-                        });
-                        addLog(`  ✓ Body font reduced by ${bodyFontReduction}pt (${fontFixed} runs)`);
-                      }
-                    }
-                  } catch (e) { addLog(`  ⚠ Body font reduce failed: ${e.message}`); }
-                }
+                // If vertical space shrank by more than 10%, warn about possible text overflow
+                if (ratioV < 0.90) setOverflowWarning(true);
               }
             }
           } catch (e) { addLog(`⚠ Step 1 error: ${e.message}`); }
@@ -2222,8 +2169,9 @@ export default function App() {
         <Row
           iconBg="#e6f4ea" iconColor="#188038" icon="Aa"
           title="Font fixes"
-          subtitle={reviewCounts?.fonts != null ? `${reviewCounts.fonts} fixes needed` : null}
+          subtitle={overflowWarning ? "⚠ check for text overflow" : reviewCounts?.fonts != null ? `${reviewCounts.fonts} fixes needed` : null}
           onClick={() => handleCleanup("fonts")} disabled={isRunning}
+          flashYellow={overflowWarning}
           noChevron
         />
 
