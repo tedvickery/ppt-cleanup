@@ -1693,7 +1693,7 @@ export default function App() {
                 ...(sizNeedsFix ? { size: titleFontSize } : {}),
                 ...(titleColorNeedsFix ? { color: primaryThemeColorForTitle } : {}),
               } } : {}),
-              ...(targetPadding ? { padding: targetPadding } : { padding: { left: 7.2, right: 7.2, top: 3.6, bottom: 3.6 } }),
+              ...(targetPadding ? { padding: targetPadding } : {}),
               verticalAlignment: "top",
             }], themeColors);
             totalFixes++;
@@ -1941,6 +1941,7 @@ export default function App() {
         const colorJobs = [];
         for (const ss of pptxData.slideShapes) {
           if (ss.isTable || ss.isGroup) continue;
+          if (ss.phType === "title" || ss.phType === "ctrTitle") continue; // title colour handled in Step 1 only
           const os = shapes.items.find(s => String(s.id) === String(ss.id)) || shapes.items.find(s => s.name === ss.name);
           if (!os) continue;
           try { const tr = os.textFrame.textRange; tr.font.load("color"); colorJobs.push({ tr, ss }); } catch (e) { /* no text frame */ }
