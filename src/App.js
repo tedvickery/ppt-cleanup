@@ -1399,23 +1399,10 @@ export default function App() {
           if (headingFont && titleShape.current.fontName !== "(inherited)" && titleShape.current.fontName !== headingFont) titleCount++;
           const titleFontSize = titleMaster?.font?.size || pptxData.layoutPositions?.["title:fontSize"] || null;
           if (titleFontSize && titleShape.current.fontSize && Math.abs(titleShape.current.fontSize - titleFontSize) > 0.5 && Math.abs(titleShape.current.fontSize - titleFontSize) <= 10) titleCount++;
+          // Only count a colour fix if there's an explicit master colour to snap to
           const masterTitleColor = titleMaster?.font?.color || null;
-          const reviewThemeColorList = Object.values(pptxData.theme?.colors || {}).filter(v => v);
           const normCurrent = titleShape.current.color && titleShape.current.color !== "(inherited)" ? (titleShape.current.color.startsWith("#") ? titleShape.current.color : `#${titleShape.current.color}`) : null;
-          let targetTitleColor = masterTitleColor;
-          if (!targetTitleColor && normCurrent && reviewThemeColorList.length > 0) {
-            const hexToRgb = h => { const c = h.replace("#",""); return [parseInt(c.slice(0,2),16), parseInt(c.slice(2,4),16), parseInt(c.slice(4,6),16)]; };
-            const dist = (a, b) => Math.sqrt(a.reduce((s,v,i) => s + (v-b[i])**2, 0));
-            const curRgb = hexToRgb(normCurrent);
-            let nearest = null, nearestDist = Infinity;
-            for (const tc of reviewThemeColorList) {
-              if (!tc || tc.length < 7) continue;
-              const d = dist(curRgb, hexToRgb(tc));
-              if (d < nearestDist) { nearestDist = d; nearest = tc; }
-            }
-            if (nearest && nearestDist < 40) targetTitleColor = nearest;
-          }
-          if (normCurrent && targetTitleColor && normCurrent.toLowerCase() !== targetTitleColor.toLowerCase()) titleCount++;
+          if (normCurrent && masterTitleColor && normCurrent.toLowerCase() !== masterTitleColor.toLowerCase()) titleCount++;
           if (pptxData.layoutPositions?.["title:padding"]) titleCount++;
         }
       } catch (e) { addLog(`  Title count error: ${e.message}`); }
@@ -1654,22 +1641,9 @@ export default function App() {
         const normalisedCurrent = currentTitleColor && currentTitleColor !== "(inherited)"
           ? (currentTitleColor.startsWith("#") ? currentTitleColor : `#${currentTitleColor}`)
           : null;
-        // 1) Master explicit colour; 2) nearest theme colour to current; 3) leave as is
+        // Use master explicit colour only — if not set, leave title colour as is
         const masterTitleColor = titleMaster?.font?.color || null;
-        let primaryThemeColorForTitle = masterTitleColor;
-        if (!primaryThemeColorForTitle && normalisedCurrent && themeColorList.length > 0) {
-          const hexToRgb = h => { const c = h.replace("#",""); return [parseInt(c.slice(0,2),16), parseInt(c.slice(2,4),16), parseInt(c.slice(4,6),16)]; };
-          const dist = (a, b) => Math.sqrt(a.reduce((s,v,i) => s + (v-b[i])**2, 0));
-          const curRgb = hexToRgb(normalisedCurrent);
-          let nearest = null, nearestDist = Infinity;
-          for (const tc of themeColorList) {
-            if (!tc || tc.length < 7) continue;
-            const d = dist(curRgb, hexToRgb(tc));
-            if (d < nearestDist) { nearestDist = d; nearest = tc; }
-          }
-          // Only snap if close enough (within ~40 RGB units) to avoid wild colour changes
-          if (nearest && nearestDist < 40) primaryThemeColorForTitle = nearest;
-        }
+        const primaryThemeColorForTitle = masterTitleColor;
         const titleColorNeedsFix = primaryThemeColorForTitle && normalisedCurrent &&
           normalisedCurrent.toLowerCase() !== primaryThemeColorForTitle.toLowerCase();
         addLog(`  Title colour: current=${normalisedCurrent} target=${primaryThemeColorForTitle} needsFix=${titleColorNeedsFix}`);
