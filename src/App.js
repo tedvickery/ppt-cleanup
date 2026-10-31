@@ -1628,19 +1628,27 @@ export default function App() {
           Math.abs(titleShape.current.fontSize - titleFontSize) > 0.5 &&
           Math.abs(titleShape.current.fontSize - titleFontSize) <= 10;
         const fillNeedsFix = titleShape.shapeFill && titleShape.shapeFill !== "none" && titleShape.masterTarget?.fill === "none";
-        // Use master title placeholder colour if defined, otherwise dk1
-        const masterTitleColor = titleMaster?.font?.color;
-        const primaryThemeColorForTitle = masterTitleColor ||
-          themeColors.dk1 || themeColors.dk2 ||
-          themeColorList.find(c => {
-            const r = parseInt(c.slice(1,3),16), g = parseInt(c.slice(3,5),16), b = parseInt(c.slice(5,7),16);
-            return (r+g+b)/3 < 128;
-          }) || null;
-        // Fix if: target colour is known AND current colour doesn't already match it
+        // Normalise current title colour first — needed for nearest-theme fallback
         const currentTitleColor = titleShape.current.color;
         const normalisedCurrent = currentTitleColor && currentTitleColor !== "(inherited)"
           ? (currentTitleColor.startsWith("#") ? currentTitleColor : `#${currentTitleColor}`)
           : null;
+        // 1) Master explicit colour; 2) nearest theme colour to current; 3) leave as is
+        const masterTitleColor = titleMaster?.font?.color || null;
+        let primaryThemeColorForTitle = masterTitleColor;
+        if (!primaryThemeColorForTitle && normalisedCurrent && themeColorList.length > 0) {
+          const hexToRgb = h => { const c = h.replace("#",""); return [parseInt(c.slice(0,2),16), parseInt(c.slice(2,4),16), parseInt(c.slice(4,6),16)]; };
+          const dist = (a, b) => Math.sqrt(a.reduce((s,v,i) => s + (v-b[i])**2, 0));
+          const curRgb = hexToRgb(normalisedCurrent);
+          let nearest = null, nearestDist = Infinity;
+          for (const tc of themeColorList) {
+            if (!tc || tc.length < 7) continue;
+            const d = dist(curRgb, hexToRgb(tc));
+            if (d < nearestDist) { nearestDist = d; nearest = tc; }
+          }
+          // Only snap if close enough (within ~40 RGB units) to avoid wild colour changes
+          if (nearest && nearestDist < 40) primaryThemeColorForTitle = nearest;
+        }
         const titleColorNeedsFix = primaryThemeColorForTitle && normalisedCurrent &&
           normalisedCurrent.toLowerCase() !== primaryThemeColorForTitle.toLowerCase();
         addLog(`  Title colour: current=${normalisedCurrent} target=${primaryThemeColorForTitle} needsFix=${titleColorNeedsFix}`);
