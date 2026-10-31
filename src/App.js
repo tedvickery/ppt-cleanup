@@ -1130,6 +1130,7 @@ export default function App() {
   const [detectedTitleName, setDetectedTitleName] = useState(null);
   const [reviewCounts, setReviewCounts]   = useState(null);
   const [themeOpen, setThemeOpen]         = useState(false);
+  const [logOpen, setLogOpen]             = useState(false);
 
   // Manual title override, per slide, for this session only — { [slideIndex]: { id, name } }
   const [titleOverrides, setTitleOverrides] = useState({});
@@ -1164,10 +1165,13 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
 
-  const addLog = (msg) => setLog(l => [...l, {
-    time: new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }),
-    msg,
-  }]);
+  const addLog = (msg) => {
+    setLog(l => [...l, {
+      time: new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+      msg,
+    }]);
+    setLogOpen(true);
+  };
 
   const handleSetTitleOverride = useCallback(async () => {
     setOverrideStatus(null);
@@ -2236,9 +2240,17 @@ export default function App() {
 
         {/* Activity log */}
         {log.length > 0 && (
-          <div style={{ background: "#0f172a", padding: "10px 12px", marginTop: 4 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "#64748b", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>Activity</div>
-            {log.map((entry, i) => <LogLine key={i} entry={entry} />)}
+          <div style={{ background: "#0f172a", marginTop: 4 }}>
+            <button onClick={() => setLogOpen(o => !o)}
+              style={{ width: "100%", background: "none", border: "none", cursor: "pointer", padding: "8px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", textAlign: "left" }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: "#64748b", letterSpacing: "0.08em", textTransform: "uppercase" }}>Activity</span>
+              <span style={{ fontSize: 12, color: "#64748b", transition: "transform 0.2s", display: "inline-block", transform: logOpen ? "rotate(180deg)" : "rotate(0deg)" }}>▾</span>
+            </button>
+            {logOpen && (
+              <div style={{ padding: "0 12px 10px" }}>
+                {log.map((entry, i) => <LogLine key={i} entry={entry} />)}
+              </div>
+            )}
           </div>
         )}
 
