@@ -1685,8 +1685,14 @@ export default function App() {
               const needsH = Math.abs(ratioH - 1) > 0.005;
               const needsLeft = Math.abs(ratioLeft - 1) > 0.005;
 
-              if (needsV || needsH || needsLeft) {
-                addLog(`  Squeezing content: V=${ratioV.toFixed(3)} H=${ratioH.toFixed(3)} L=${ratioLeft.toFixed(3)}`);
+              // For every 10% reduction in vertical space, reduce body font by 1pt (max 5pt, floor 8pt)
+              let bodyFontReduction = 0;
+              if (ratioV < 0.95) {
+                bodyFontReduction = Math.min(5, Math.floor((1 - ratioV) / 0.10));
+              }
+
+              if (needsV || needsH || needsLeft || bodyFontReduction > 0) {
+                addLog(`  Squeezing content: V=${ratioV.toFixed(3)} H=${ratioH.toFixed(3)} L=${ratioLeft.toFixed(3)}${bodyFontReduction > 0 ? ` fontReduce=${bodyFontReduction}pt` : ""}`);
                 await PowerPoint.run(async (ctx) => {
                   const slide = ctx.presentation.slides.getItemAt(dupIndex - 1);
                   const allShapes = slide.shapes;
@@ -1709,23 +1715,38 @@ export default function App() {
                     const isLeftOfTitle = (oldLeft + oldWidth) <= cur.left;
 
                     if (isLeftOfTitle && needsLeft) {
-                      // Scale within the space left of the title
                       s.left   = (oldLeft * ratioLeft) * inchToPt;
                       s.top    = (newTitleBottom + (oldTop - oldTitleBottom) * ratioV) * inchToPt;
-                      s.width  = oldWidth  * inchToPt; // preserve width
+                      s.width  = oldWidth  * inchToPt;
                       s.height = oldHeight * ratioV * inchToPt;
                     } else if (isAboveTitle && Math.abs(ratioAbove - 1) > 0.005) {
-                      // Scale top proportionally within the space above the title
                       s.left   = (targetTitlePos.left + (oldLeft - cur.left) * ratioH) * inchToPt;
                       s.top    = (oldTop * ratioAbove) * inchToPt;
                       s.width  = oldWidth  * ratioH * inchToPt;
-                      s.height = oldHeight * inchToPt; // preserve height
+                      s.height = oldHeight * inchToPt;
                     } else {
                       s.left   = (targetTitlePos.left + (oldLeft - cur.left) * ratioH) * inchToPt;
                       s.top    = (newTitleBottom      + (oldTop  - oldTitleBottom) * ratioV) * inchToPt;
                       s.width  = oldWidth  * ratioH * inchToPt;
                       s.height = oldHeight * ratioV * inchToPt;
                     }
+
+                    // Reduce body font size proportionally to the vertical space lost
+                    if (bodyFontReduction > 0) {
+                      try {
+                        s.textFrame.load("hasText");
+                        await ctx.sync();
+                        if (s.textFrame.hasText) {
+                          s.textFrame.textRange.load("font/size");
+                          await ctx.sync();
+                          const currentSize = s.textFrame.textRange.font.size;
+                          if (currentSize && currentSize > 0) {
+                            s.textFrame.textRange.font.size = Math.max(8, currentSize - bodyFontReduction);
+                          }
+                        }
+                      } catch (e) { /* shape may not have a text frame */ }
+                    }
+
                     squeezed++;
                   }
                   await ctx.sync();
