@@ -2034,9 +2034,9 @@ export default function App() {
   };
 
   // Row component — icon circle + title/subtitle + optional badge + chevron
-  const Row = ({ iconBg, iconColor, icon, title, subtitle, count, countColor, countBg, onClick, disabled, solid, flash, noChevron }) => (
+  const Row = ({ iconBg, iconColor, icon, title, subtitle, count, countColor, countBg, onClick, disabled, solid, flash, flashYellow, noChevron }) => (
     <button onClick={onClick} disabled={disabled}
-      style={{ width: "100%", background: solid ? "#1f3f7a" : "#fff", border: solid ? "none" : `1px solid ${flash ? "#f5c6c2" : "#e8eaed"}`, borderRadius: 0, padding: "9px 14px", display: "flex", alignItems: "center", gap: 10, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.55 : 1, textAlign: "left", animation: flash ? "flashRed 0.6s ease-in-out 3" : "none" }}>
+      style={{ width: "100%", background: solid ? "#1f3f7a" : "#fff", border: solid ? "none" : `1px solid ${flash ? "#f5c6c2" : flashYellow ? "#fde68a" : "#e8eaed"}`, borderRadius: 0, padding: "9px 14px", display: "flex", alignItems: "center", gap: 10, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.55 : 1, textAlign: "left", animation: flash ? "flashRed 0.6s ease-in-out 3" : flashYellow ? "flashYellow 0.6s ease-in-out 3" : "none" }}>
       <div style={{ width: 30, height: 30, borderRadius: "50%", background: iconBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
         <span style={{ fontSize: 14, color: iconColor }}>{icon}</span>
       </div>
@@ -2061,6 +2061,13 @@ export default function App() {
           50%  { background: #fce8e6; }
           75%  { background: #f5c6c2; }
           100% { background: #fce8e6; }
+        }
+        @keyframes flashYellow {
+          0%   { background: #fef9e7; }
+          25%  { background: #fde68a; }
+          50%  { background: #fef9e7; }
+          75%  { background: #fde68a; }
+          100% { background: #fef9e7; }
         }
         button:focus { outline: 2px solid #1967d2; outline-offset: 1px; }
       `}</style>
@@ -2138,8 +2145,9 @@ export default function App() {
         <Row
           iconBg="#f3e8fd" iconColor="#8430ce" icon="◈"
           title="Colour fixes"
-          subtitle={reviewCounts?.colours != null ? `${reviewCounts.colours} fixes needed` : null}
+          subtitle={colorWarning ? "⚠ consider higher priority colours" : reviewCounts?.colours != null ? `${reviewCounts.colours} fixes needed` : null}
           onClick={() => handleCleanup("colours")} disabled={isRunning}
+          flashYellow={!!colorWarning}
           noChevron
         />
 
@@ -2159,9 +2167,6 @@ export default function App() {
         )}
         {status === "done" && masterWarning && (
           <div style={{ background: "#fef7e0", border: "1px solid #fde68a", padding: "10px 14px", fontSize: 11, color: "#7d5c00" }}>⚠ This slide may not be aligned to the master. Try copying its contents to a new blank slide.</div>
-        )}
-        {status === "done" && colorWarning && (
-          <div style={{ background: "#fef7e0", border: "1px solid #fde68a", padding: "10px 14px", fontSize: 11, color: "#7d5c00" }}>⚠ {colorWarning}</div>
         )}
         {error && (
           <div style={{ background: "#fce8e6", border: "1px solid #f5c6c2", padding: "10px 14px", fontSize: 11, color: "#c5221f" }}><strong>Error:</strong> {error}</div>
