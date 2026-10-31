@@ -183,7 +183,7 @@ function parseMasterXml(xml, theme) {
     let fontSize = null;
     const szEl = lvl1DefRPr || runRPr;
     if (szEl) { const sz = szEl.getAttribute("sz"); if (sz) fontSize = parseInt(sz, 10) / 100; }
-    if (!fontSize) fontSize = isTitle ? 36 : 18;
+    if (!fontSize && !isTitle) fontSize = 18;
 
     // Colour — full inheritance walk: run → para defRPr → lstStyle lvl1pPr → theme
     const color = getEffectiveColour(runRPr, paraDefRPr, lvl1DefRPr, theme, isTitle);
@@ -300,7 +300,7 @@ function parseMasterXml(xml, theme) {
         const color      = getEffectiveColour(null, null, lvl1DefRPr, theme, phType === "title");
         let fontSize = null;
         if (lvl1DefRPr) { const sz = lvl1DefRPr.getAttribute("sz"); if (sz) fontSize = parseInt(sz, 10) / 100; }
-        if (!fontSize) fontSize = phType === "title" ? 36 : 18;
+        if (!fontSize && phType !== "title") fontSize = 18;
         if (!placeholders.find(p => p.type === phType)) {
           placeholders.push({ type: phType, idx: "0", font: { name: fontName, size: fontSize, color, bold: phType === "title" }, alignment: "left", position: null, fill: null, paraFormat: {} });
         }
@@ -1576,8 +1576,8 @@ export default function App() {
               // Always write heading font name here — most reliable place before applyFixes runs
               const headingFontNow = pptxData.layoutPositions?.["title:fontName"] || titleMaster?.font?.name || pptxData.theme.fonts.heading;
               if (headingFontNow) titleOs.textFrame.textRange.font.name = headingFontNow;
-              // If autofit was active, write size now while autofit is disabled
-              const targetSize = titleMaster?.font?.size || pptxData.layoutPositions?.["title:fontSize"] || null;
+              // If autofit was active and master defines an explicit size, write it now while autofit is disabled
+              const targetSize = pptxData.layoutPositions?.["title:fontSize"] || titleMaster?.font?.size || null;
               if (wasAutofit && targetSize) titleOs.textFrame.textRange.font.size = targetSize;
               await ctx.sync();
               cur = {
