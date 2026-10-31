@@ -1688,7 +1688,7 @@ export default function App() {
               // For every 10% reduction in vertical space, reduce body font by 1pt (max 5pt, floor 8pt)
               let bodyFontReduction = 0;
               if (ratioV < 0.95) {
-                bodyFontReduction = Math.min(5, Math.floor((1 - ratioV) / 0.10));
+                bodyFontReduction = Math.min(3, Math.floor((1 - ratioV) / 0.05));
               }
 
               if (needsV || needsH || needsLeft || bodyFontReduction > 0) {
