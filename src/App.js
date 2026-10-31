@@ -135,6 +135,15 @@ function getEffectiveColour(runRPr, paraDefRPr, lvl1DefRPr, theme, isTitle) {
     (isTitle ? (theme.colors.dark1 || "#000000") : (theme.colors.dark2 || theme.colors.dark1 || "#000000"))
   );
 }
+// Same but returns null if no explicit colour — used for master placeholders so we don't mistake dk1 fallback for an intentional colour
+function getExplicitColour(runRPr, paraDefRPr, lvl1DefRPr, theme) {
+  return (
+    extractColourFromRPr(runRPr,    theme) ||
+    extractColourFromRPr(paraDefRPr, theme) ||
+    extractColourFromRPr(lvl1DefRPr, theme) ||
+    null
+  );
+}
 
 // Walk the full OOXML inheritance chain for font name
 function getEffectiveFont(runRPr, paraDefRPr, lvl1DefRPr, theme, isTitle) {
@@ -185,8 +194,8 @@ function parseMasterXml(xml, theme) {
     if (szEl) { const sz = szEl.getAttribute("sz"); if (sz) fontSize = parseInt(sz, 10) / 100; }
     if (!fontSize && !isTitle) fontSize = 18;
 
-    // Colour — full inheritance walk: run → para defRPr → lstStyle lvl1pPr → theme
-    const color = getEffectiveColour(runRPr, paraDefRPr, lvl1DefRPr, theme, isTitle);
+    // Colour — use explicit-only for master placeholders so dk1 fallback isn't mistaken for intentional colour
+    const color = getExplicitColour(runRPr, paraDefRPr, lvl1DefRPr, theme);
 
     // Bold
     let bold = null;
@@ -297,7 +306,7 @@ function parseMasterXml(xml, theme) {
         const lvl1pPr    = styleEl.getElementsByTagNameNS("*", "lvl1pPr")[0];
         const lvl1DefRPr = lvl1pPr?.getElementsByTagNameNS("*", "defRPr")[0];
         const fontName   = getEffectiveFont(null, null, lvl1DefRPr, theme, phType === "title");
-        const color      = getEffectiveColour(null, null, lvl1DefRPr, theme, phType === "title");
+        const color      = getExplicitColour(null, null, lvl1DefRPr, theme);
         let fontSize = null;
         if (lvl1DefRPr) { const sz = lvl1DefRPr.getAttribute("sz"); if (sz) fontSize = parseInt(sz, 10) / 100; }
         if (!fontSize && phType !== "title") fontSize = 18;
@@ -1390,12 +1399,22 @@ export default function App() {
           if (headingFont && titleShape.current.fontName !== "(inherited)" && titleShape.current.fontName !== headingFont) titleCount++;
           const titleFontSize = titleMaster?.font?.size || pptxData.layoutPositions?.["title:fontSize"] || null;
           if (titleFontSize && titleShape.current.fontSize && Math.abs(titleShape.current.fontSize - titleFontSize) > 0.5 && Math.abs(titleShape.current.fontSize - titleFontSize) <= 10) titleCount++;
-          const masterTitleColor = titleMaster?.font?.color;
-          const reviewThemeColors = pptxData.theme?.colors || {};
-          const reviewThemeColorList = Object.values(reviewThemeColors).filter(v => v);
-          const targetTitleColor = masterTitleColor || reviewThemeColors.dk1 || reviewThemeColors.dk2 ||
-            reviewThemeColorList.find(c => { const r=parseInt(c.slice(1,3),16),g=parseInt(c.slice(3,5),16),b=parseInt(c.slice(5,7),16); return (r+g+b)/3 < 128; }) || null;
+          const masterTitleColor = titleMaster?.font?.color || null;
+          const reviewThemeColorList = Object.values(pptxData.theme?.colors || {}).filter(v => v);
           const normCurrent = titleShape.current.color && titleShape.current.color !== "(inherited)" ? (titleShape.current.color.startsWith("#") ? titleShape.current.color : `#${titleShape.current.color}`) : null;
+          let targetTitleColor = masterTitleColor;
+          if (!targetTitleColor && normCurrent && reviewThemeColorList.length > 0) {
+            const hexToRgb = h => { const c = h.replace("#",""); return [parseInt(c.slice(0,2),16), parseInt(c.slice(2,4),16), parseInt(c.slice(4,6),16)]; };
+            const dist = (a, b) => Math.sqrt(a.reduce((s,v,i) => s + (v-b[i])**2, 0));
+            const curRgb = hexToRgb(normCurrent);
+            let nearest = null, nearestDist = Infinity;
+            for (const tc of reviewThemeColorList) {
+              if (!tc || tc.length < 7) continue;
+              const d = dist(curRgb, hexToRgb(tc));
+              if (d < nearestDist) { nearestDist = d; nearest = tc; }
+            }
+            if (nearest && nearestDist < 40) targetTitleColor = nearest;
+          }
           if (normCurrent && targetTitleColor && normCurrent.toLowerCase() !== targetTitleColor.toLowerCase()) titleCount++;
           if (pptxData.layoutPositions?.["title:padding"]) titleCount++;
         }
