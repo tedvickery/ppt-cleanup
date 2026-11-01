@@ -1736,7 +1736,38 @@ export default function App() {
                   addLog(`  ✓ Squeezed ${squeezed} shapes`);
                 });
 
-                // If vertical space shrank by more than 10%, warn about possible text overflow
+                // Reduce body font size: 1pt per 5% squeeze, max 3pt
+                const squeezePct = 1 - ratioV;
+                if (squeezePct >= 0.05) {
+                  const ptReduction = Math.min(3, Math.floor(squeezePct / 0.05));
+                  addLog(`  Reducing body font by ${ptReduction}pt (squeeze=${(squeezePct*100).toFixed(1)}%)`);
+                  await PowerPoint.run(async ctx2 => {
+                    const slides2 = ctx2.presentation.slides;
+                    slides2.load("items");
+                    await ctx2.sync();
+                    const slide2 = slides2.items[dupIndex];
+                    if (!slide2) return;
+                    const shapes2 = slide2.shapes;
+                    shapes2.load("items");
+                    await ctx2.sync();
+                    const titleId2 = String(titleShape.id);
+                    for (const s2 of shapes2.items) {
+                      if (String(s2.id) === titleId2) continue;
+                      try {
+                        const tr2 = s2.textFrame.textRange;
+                        tr2.load("font/size");
+                        await ctx2.sync();
+                        const curSize = tr2.font.size;
+                        if (curSize && curSize > 0) {
+                          tr2.font.size = Math.max(6, curSize - ptReduction);
+                        }
+                      } catch (e2) { /* shape has no text */ }
+                    }
+                    await ctx2.sync();
+                  });
+                }
+
+                // If vertical space shrank by more than 5%, warn about possible text overflow
                 if (ratioV < 0.95) setOverflowWarning(true);
               }
             }
