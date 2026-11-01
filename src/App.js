@@ -1624,6 +1624,7 @@ export default function App() {
         const tooFarH = cur && Math.abs(cur.left - targetTitlePos.left) > SLIDE_W * 0.30;
         const tooFarV = cur && Math.abs(cur.top  - targetTitlePos.top)  > SLIDE_H * 0.30;
         const posSkipped = tooFarH || tooFarV;
+        addLog(`  Title pos check: cur=(${cur?.left?.toFixed(2)},${cur?.top?.toFixed(2)}) target=(${targetTitlePos.left?.toFixed(2)},${targetTitlePos.top?.toFixed(2)}) slide=${SLIDE_W.toFixed(2)}x${SLIDE_H.toFixed(2)} tooFarH=${tooFarH} tooFarV=${tooFarV} skipped=${posSkipped}`);
         if (posSkipped) addLog(`  Title position skipped — box is >30% from expected (intentional layout?)`);
         const posNeedsFix = !posSkipped && (!cur ||
           Math.abs(cur.left - targetTitlePos.left) > 0.05 ||
