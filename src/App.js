@@ -286,7 +286,7 @@ function parseMasterXml(xml, theme) {
 
   // Always read txStyles.titleStyle font — it often has the full font name (e.g. "Montserrat SemiBold")
   // even when placeholder shapes exist but only store the generic "+mj-lt" reference
-  const txStyles = doc.getElementsByTagNameNS("*", "txStyles")[0];
+  // (txStyles is already declared above for colour reading — reuse it)
   if (txStyles) {
     const titleStyleEl = txStyles.getElementsByTagNameNS("*", "titleStyle")[0];
     if (titleStyleEl) {
