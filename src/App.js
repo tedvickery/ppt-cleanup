@@ -160,6 +160,15 @@ function getEffectiveFont(runRPr, paraDefRPr, lvl1DefRPr, theme, isTitle) {
 function parseMasterXml(xml, theme) {
   const doc = parseXml(xml);
   const placeholders = [];
+
+  // Read txStyles — many masters define title/body colour here rather than in the sp placeholder
+  const txStyles = doc.getElementsByTagNameNS("*", "txStyles")[0];
+  const titleStyleLvl1DefRPr = txStyles?.getElementsByTagNameNS("*", "titleStyle")[0]
+    ?.getElementsByTagNameNS("*", "lvl1pPr")[0]
+    ?.getElementsByTagNameNS("*", "defRPr")[0] || null;
+  const bodyStyleLvl1DefRPr  = txStyles?.getElementsByTagNameNS("*", "bodyStyle")[0]
+    ?.getElementsByTagNameNS("*", "lvl1pPr")[0]
+    ?.getElementsByTagNameNS("*", "defRPr")[0] || null;
   for (const sp of doc.getElementsByTagNameNS("*", "sp")) {
     const ph     = sp.getElementsByTagNameNS("*", "ph")[0];
     const phType = ph?.getAttribute("type") || "body";
@@ -195,7 +204,11 @@ function parseMasterXml(xml, theme) {
     if (!fontSize && !isTitle) fontSize = 18;
 
     // Colour — use explicit-only for master placeholders so dk1 fallback isn't mistaken for intentional colour
-    const color = getExplicitColour(runRPr, paraDefRPr, lvl1DefRPr, theme);
+    // Also check txStyles (titleStyle/bodyStyle) which many masters use instead of the sp element
+    const txStyleFallbackRPr = isTitle ? titleStyleLvl1DefRPr : bodyStyleLvl1DefRPr;
+    const color = getExplicitColour(runRPr, paraDefRPr, lvl1DefRPr, theme)
+               || extractColourFromRPr(txStyleFallbackRPr, theme)
+               || null;
 
     // Bold
     let bold = null;
@@ -1644,6 +1657,7 @@ export default function App() {
           : null;
         // Use master explicit colour only — if not set, leave title colour as is
         const masterTitleColor = titleMaster?.font?.color || null;
+        addLog(`  Title master colour: ${masterTitleColor || "none (will leave as-is)"}`);
         const primaryThemeColorForTitle = masterTitleColor;
         const titleColorNeedsFix = primaryThemeColorForTitle && normalisedCurrent &&
           normalisedCurrent.toLowerCase() !== primaryThemeColorForTitle.toLowerCase();
