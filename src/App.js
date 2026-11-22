@@ -1632,14 +1632,18 @@ export default function App() {
         } catch (e) { /* fall back to XML position */ }
 
         // If the title is more than 30% of the slide dimension away from the expected position,
-        // it's likely intentionally placed (section header, divider, etc.) — skip repositioning
+        // it's likely intentionally placed (section header, divider, etc.) — skip repositioning.
+        // Also skip if cur is null (live read failed) — moving blind is too risky.
         const SLIDE_W = cachedSlideSize.current.width, SLIDE_H = cachedSlideSize.current.height;
-        const tooFarH = cur && Math.abs(cur.left - targetTitlePos.left) > SLIDE_W * 0.30;
-        const tooFarV = cur && Math.abs(cur.top  - targetTitlePos.top)  > SLIDE_H * 0.30;
-        const posSkipped = tooFarH || tooFarV;
-        addLog(`  Title pos check: cur=(${cur?.left?.toFixed(2)},${cur?.top?.toFixed(2)}) target=(${targetTitlePos.left?.toFixed(2)},${targetTitlePos.top?.toFixed(2)}) slide=${SLIDE_W.toFixed(2)}x${SLIDE_H.toFixed(2)} tooFarH=${tooFarH} tooFarV=${tooFarV} skipped=${posSkipped}`);
-        if (posSkipped) addLog(`  Title position skipped — box is >30% from expected (intentional layout?)`);
-        const posNeedsFix = !posSkipped && (!cur ||
+        // Use XML position as fallback for the distance check if live read failed
+        const posRef = cur || titleShape.position;
+        const tooFarH = posRef && Math.abs(posRef.left - targetTitlePos.left) > SLIDE_W * 0.15;
+        const tooFarV = posRef && Math.abs(posRef.top  - targetTitlePos.top)  > SLIDE_H * 0.15;
+        const posSkipped = !cur || tooFarH || tooFarV;
+        addLog(`  Title pos check: cur=(${cur?.left?.toFixed(2)},${cur?.top?.toFixed(2)}) ref=(${posRef?.left?.toFixed(2)},${posRef?.top?.toFixed(2)}) target=(${targetTitlePos.left?.toFixed(2)},${targetTitlePos.top?.toFixed(2)}) slide=${SLIDE_W.toFixed(2)}x${SLIDE_H.toFixed(2)} tooFarH=${tooFarH} tooFarV=${tooFarV} skipped=${posSkipped}`);
+        if (!cur) addLog(`  Title position skipped — live position unavailable, not moving`);
+        else if (tooFarH || tooFarV) addLog(`  Title position skipped — box is >30% from expected (intentional layout?)`);
+        const posNeedsFix = !posSkipped && cur && (
           Math.abs(cur.left - targetTitlePos.left) > 0.05 ||
           Math.abs(cur.top  - targetTitlePos.top)  > 0.05);
         const headingFontForTitle = pptxData.layoutPositions?.["title:fontName"] || titleMaster?.font?.name || pptxData.theme.fonts.heading;
