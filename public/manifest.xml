@@ -12,8 +12,8 @@
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="SnapBack"/>
   <Description DefaultValue="AI-powered slide formatter that syncs your slide to the master theme."/>
-  <IconUrl DefaultValue="https://snap-back.app/icon-80.png"/>
-  <HighResolutionIconUrl DefaultValue="https://snap-back.app/icon-80.png"/>
+  <IconUrl DefaultValue="https://snap-back.app/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://snap-back.app/icon-64.png"/>
   <SupportUrl DefaultValue="https://snap-back.app/home"/>
 
   <Hosts>
@@ -76,6 +76,7 @@
       <bt:Images>
         <bt:Image id="Icon.16x16" DefaultValue="https://snap-back.app/icon-16.png"/>
         <bt:Image id="Icon.32x32" DefaultValue="https://snap-back.app/icon-32.png"/>
+        <bt:Image id="Icon.64x64" DefaultValue="https://snap-back.app/icon-64.png"/>
         <bt:Image id="Icon.80x80" DefaultValue="https://snap-back.app/icon-80.png"/>
       </bt:Images>
       <bt:Urls>
